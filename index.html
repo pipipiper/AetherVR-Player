@@ -5,18 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>VR 播放器 · 本地与在线 360°/SBS 视频</title>
     <meta name="description" content="VR 视频播放器：支持本地文件与在线直链，即点即播 360° 全景与 SBS 左右分屏视频，支持拖拽加载，无需上传。">
-    <meta name="keywords" content="VR Player, Online VR Player, Online SBS VR Player, Side by side VR Player, 360 video player, SBS video player, local VR video player, VR video player">
-    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
-    <meta name="googlebot" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
-    <meta property="og:title" content="Online VR Player - Play Local VR Videos in Your Browser">
-    <meta property="og:description" content="Play local 360 and SBS VR videos in your browser. Drag and drop to start.">
+    <meta name="keywords" content="VR 播放器, VR Player, 360 视频播放器, SBS 视频播放器, 全景视频, 左右分屏">
+    <meta name="robots" content="noindex, nofollow">
+    <meta property="og:title" content="VR 播放器 · 本地与在线 360°/SBS 视频">
+    <meta property="og:description" content="本地文件与在线直链即点即播，支持 360° 全景与 SBS 左右分屏视频。">
     <meta property="og:type" content="website">
-    <meta property="og:site_name" content="Online VR Player">
+    <meta property="og:site_name" content="VR 播放器">
     <meta property="og:url" content="./">
     <meta property="og:image" content="./background-pic.jpg">
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="Online VR Player - Play Local VR Videos in Your Browser">
-    <meta name="twitter:description" content="Play local 360 and SBS VR videos in your browser. Drag and drop to start.">
+    <meta name="twitter:title" content="VR 播放器 · 本地与在线 360°/SBS 视频">
+    <meta name="twitter:description" content="本地文件与在线直链即点即播，支持 360° 全景与 SBS 左右分屏视频。">
     <meta name="twitter:image" content="./background-pic.jpg">
     <link rel="icon" href="./favicon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="./favicon.svg">
@@ -24,22 +23,18 @@
     {
       "@context": "https://schema.org",
       "@type": "WebApplication",
-      "name": "Online VR Player",
-      "description": "Online VR Player to play local 360 and SBS (side-by-side) VR videos in the browser.",
+      "name": "VR 播放器",
+      "description": "支持本地文件与在线直链的 VR 视频播放器，即点即播 360° 全景与 SBS 左右分屏视频。",
       "applicationCategory": "MultimediaApplication",
       "operatingSystem": "Any",
-      "offers": {
-        "@type": "Offer",
-        "price": "0",
-        "priceCurrency": "USD"
-      },
+      "inLanguage": "zh-CN",
       "keywords": [
+        "VR 播放器",
         "VR Player",
-        "Online VR Player",
-        "Online SBS VR Player",
-        "Side by side VR Player",
-        "360 video player",
-        "SBS video player"
+        "360 视频播放器",
+        "SBS 视频播放器",
+        "全景视频",
+        "左右分屏"
       ]
     }
     </script>
@@ -729,6 +724,46 @@
             border-color: rgba(0,0,0,.15); border-top-color: #2f6bff;
         }
 
+        /* ── 播放列表面板 ───────────────────────────────── */
+        .playlist-panel {
+            position: absolute; top: 14px; right: 14px; z-index: 26;
+            width: 300px; max-width: 78vw; max-height: calc(100% - 120px);
+            display: none; flex-direction: column;
+            background: rgba(18,21,28,.88);
+            backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+            border: 1px solid rgba(255,255,255,.09); border-radius: 14px;
+            color: #e8ecf3; overflow: hidden;
+            box-shadow: 0 12px 32px rgba(0,0,0,.35);
+        }
+        .playlist-panel.active { display: flex; }
+        .playlist-head {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 10px 14px; font-size: 13px; font-weight: 600;
+            border-bottom: 1px solid rgba(255,255,255,.08);
+        }
+        .playlist-close {
+            background: none; border: none; color: #9aa3b2;
+            cursor: pointer; font-size: 15px; padding: 2px 6px;
+        }
+        .playlist-close:hover { color: #fff; }
+        .playlist-items { list-style: none; margin: 0; padding: 6px; overflow-y: auto; }
+        .playlist-item {
+            display: flex; align-items: center; gap: 8px;
+            padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 12.5px;
+        }
+        .playlist-item:hover { background: rgba(255,255,255,.08); }
+        .playlist-item.playing { background: rgba(47,107,255,.25); }
+        .playlist-item.missing { opacity: .45; cursor: not-allowed; }
+        .pl-index { flex: none; width: 22px; color: #8a93a5; font-size: 11px; text-align: right; }
+        .pl-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .pl-badge {
+            flex: none; font-size: 10px; padding: 2px 6px; border-radius: 6px;
+            background: rgba(255,255,255,.10); color: #aab3c2;
+        }
+        .playlist-item.playing .pl-badge { background: rgba(47,107,255,.55); color: #fff; }
+        .hero-file-row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+        .control-btn:disabled { opacity: .35; cursor: default; }
+
         /* ── touch behavior ────────────────────────────────── */
         /* 禁掉双击缩放/点按延迟；画布和进度条手势完全由 JS 接管 */
         html, body { touch-action: manipulation; }
@@ -789,6 +824,11 @@
                 padding: 8px 10px; gap: 8px; border-radius: 14px;
             }
             .control-btn { width: 40px; height: 40px; }
+            /* 播放列表：移动端变为底部悬浮面板 */
+            .playlist-panel {
+                top: auto; left: 10px; right: 10px; bottom: 84px;
+                width: auto; max-width: none; max-height: 46%;
+            }
             /* 进度条强制独占第一行（flex-basis:100% 才会换行，width 无效） */
             .progress-container { flex: 1 1 100%; width: 100%; order: -1; padding: 10px 0; }
             .progress-bar { height: 8px; }
@@ -832,15 +872,21 @@
                     <button id="openUrlBtn" class="url-play-btn" title="播放链接"><i class="fa-solid fa-link"></i>&nbsp; 播放链接</button>
                 </div>
                 <div class="hero-divider"><span>或</span></div>
-                <label for="videoFile" class="file-input-label hero-file">
-                    <i class="fa-solid fa-folder-open"></i>&nbsp; 打开本地文件
-                </label>
-                <p class="hero-hint">也可以直接把视频文件拖到这里</p>
+                <div class="hero-file-row">
+                    <label for="videoFile" class="file-input-label hero-file">
+                        <i class="fa-solid fa-folder-open"></i>&nbsp; 打开本地文件
+                    </label>
+                    <label for="folderInput" class="file-input-label hero-file" id="folderLabel">
+                        <i class="fa-solid fa-folder-tree"></i>&nbsp; 打开文件夹
+                    </label>
+                </div>
+                <p class="hero-hint">也可以直接把视频文件、文件夹或 .dpl 播放列表拖到这里</p>
                 <button id="heroClose" class="hero-close" style="display:none"><i class="fa-solid fa-xmark"></i>&nbsp; 返回播放</button>
                 <div class="hero-loading" id="heroLoading"><div class="seek-loading-spinner"></div><span id="heroLoadingText">正在检测…</span></div>
                 <div class="error-message" id="errorMessage"></div>
                 <button id="transcodeBtn" class="url-play-btn transcode-btn" style="display:none"><i class="fa-solid fa-gears"></i>&nbsp; 服务器转码播放（实时转为 4K H.264）</button>
-                <input type="file" id="videoFile" accept="video/*">
+                <input type="file" id="videoFile" accept="video/*,.dpl" multiple>
+                <input type="file" id="folderInput" webkitdirectory multiple>
             </div>
 
             <div class="sbs-options" id="sbsOptions">
@@ -863,7 +909,9 @@
 
             <div class="video-container" id="videoContainer">
                 <div class="controls">
+                <button class="control-btn playlist-ctl" id="prevBtn" title="上一个" style="display:none"><i class="fa-solid fa-backward-step"></i></button>
                 <button class="control-btn" id="playPauseBtn"><i class="fa-solid fa-play"></i></button>
+                <button class="control-btn playlist-ctl" id="nextBtn" title="下一个" style="display:none"><i class="fa-solid fa-forward-step"></i></button>
                 <div class="progress-container">
                     <div class="progress-bar" id="progressBar">
                         <div class="progress-fill" id="progressFill"></div>
@@ -886,6 +934,7 @@
                         <option value="0.25">0.25x</option>
                     </select>
                 </div>
+                <button class="control-btn playlist-ctl" id="playlistBtn" title="播放列表" style="display:none"><i class="fa-solid fa-list-ul"></i></button>
                 <button class="control-btn" id="fullscreenBtn"><i class="fa-solid fa-expand"></i></button>
             </div>
                 <div class="vr-info" id="vrInfo">
@@ -896,6 +945,13 @@
                 <canvas id="vrCanvas"></canvas>
                 <button class="big-play-btn" id="bigPlayBtn" title="播放"><i class="fa-solid fa-play"></i></button>
                 <div class="seek-loading" id="seekLoading"><div class="seek-loading-spinner"></div><span id="seekLoadingText">转码加载中…</span></div>
+                <div class="playlist-panel" id="playlistPanel">
+                    <div class="playlist-head">
+                        <span id="playlistTitle">播放列表</span>
+                        <button class="playlist-close" id="playlistClose" title="关闭"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                    <ul class="playlist-items" id="playlistItems"></ul>
+                </div>
             </div>
         </div>
     </div>
@@ -1014,6 +1070,214 @@
         const seekLoadingText = document.getElementById('seekLoadingText');
         function effectiveCurrentTime() {
             return transcodeSrcUrl ? hlsOffset + videoPlayer.currentTime : videoPlayer.currentTime;
+        }
+
+        // ── 播放列表（文件夹 / 多选 / .dpl 导入）────────────────
+        let playlist = [];          // [{name, file?, url?, missing?}]
+        let playlistIndex = -1;
+        let lastDplEntries = null;  // 最近导入的 dpl 条目，选择文件夹后可重新匹配
+        const filePool = new Map(); // 小写文件名 -> File
+        const playlistPanel = document.getElementById('playlistPanel');
+        const playlistItems = document.getElementById('playlistItems');
+        const playlistTitle = document.getElementById('playlistTitle');
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
+        const playlistBtn = document.getElementById('playlistBtn');
+
+        function isVideoFileName(name) {
+            return /\.(mp4|m4v|webm|ogv|ogg|mov|mkv|avi|ts|m2ts|flv|wmv|3gp)$/i.test(name);
+        }
+        function basenameOf(p) {
+            return String(p).split(/[\\/]/).filter(Boolean).pop() || String(p);
+        }
+        function safeDecode(s) {
+            try { return decodeURIComponent(s); } catch (e) { return s; }
+        }
+        function addToFilePool(files) {
+            files.forEach((f) => filePool.set(f.name.toLowerCase(), f));
+        }
+
+        function renderPlaylist() {
+            playlistItems.innerHTML = '';
+            playlist.forEach((item, i) => {
+                const li = document.createElement('li');
+                li.className = 'playlist-item'
+                    + (i === playlistIndex ? ' playing' : '')
+                    + (item.missing ? ' missing' : '');
+                const badge = item.missing ? '缺失' : (item.url ? '链接' : '本地');
+                const idx = document.createElement('span');
+                idx.className = 'pl-index';
+                idx.textContent = i + 1;
+                const name = document.createElement('span');
+                name.className = 'pl-name';
+                name.textContent = item.name;
+                const tag = document.createElement('span');
+                tag.className = 'pl-badge';
+                tag.textContent = badge;
+                li.append(idx, name, tag);
+                li.title = item.name;
+                if (!item.missing) {
+                    li.addEventListener('click', () => {
+                        playAt(i);
+                        if (isMobileDevice) playlistPanel.classList.remove('active');
+                    });
+                }
+                playlistItems.appendChild(li);
+            });
+            playlistTitle.textContent = playlist.length ? `播放列表（${playlist.length}）` : '播放列表';
+        }
+
+        function updatePlaylistButtons() {
+            const has = playlist.length > 0;
+            playlistBtn.style.display = has ? '' : 'none';
+            const multi = playlist.length > 1;
+            prevBtn.style.display = multi ? '' : 'none';
+            nextBtn.style.display = multi ? '' : 'none';
+            prevBtn.disabled = playlistIndex <= 0;
+            nextBtn.disabled = playlistIndex < 0 || playlistIndex >= playlist.length - 1;
+        }
+
+        function setPlaylist(items, startIndex) {
+            // 重新匹配（dpl + 后选文件夹）时尽量保留当前播放位置
+            const current = playlistIndex >= 0 ? playlist[playlistIndex] : null;
+            playlist = items;
+            playlistIndex = current ? items.findIndex((it) => it === current
+                || (current.file && it.file === current.file)
+                || (current.url && it.url && it.url === current.url)) : -1;
+            renderPlaylist();
+            updatePlaylistButtons();
+            if (typeof startIndex === 'number' && items[startIndex] && !items[startIndex].missing) {
+                playAt(startIndex);
+            }
+        }
+
+        function clearPlaylist() {
+            playlist = [];
+            playlistIndex = -1;
+            lastDplEntries = null;
+            dplResolved = true;
+            filePool.clear();
+            renderPlaylist();
+            updatePlaylistButtons();
+            playlistPanel.classList.remove('active');
+        }
+
+        function playAt(i) {
+            const item = playlist[i];
+            if (!item || item.missing) return;
+            playlistIndex = i;
+            renderPlaylist();
+            updatePlaylistButtons();
+            if (item.file) {
+                loadVideoFile(item.file);
+            } else {
+                showLoadSpin('加载中…'); // 远程条目先做编码预探测，期间盖住画面
+                loadVideoURL(item.url);
+            }
+        }
+        function playNext() {
+            if (playlistIndex >= 0 && playlistIndex < playlist.length - 1) playAt(playlistIndex + 1);
+        }
+        function playPrev() {
+            if (playlistIndex > 0) playAt(playlistIndex - 1);
+        }
+
+        // 文件选择（多选 / 文件夹 / 拖放统一入口）
+        function handleFiles(fileList) {
+            const files = Array.from(fileList || []);
+            if (!files.length) return;
+            const dpl = files.find((f) => /\.dpl$/i.test(f.name));
+            const videos = files.filter((f) => f.type.startsWith('video/') || isVideoFileName(f.name));
+            if (videos.length) {
+                videos.sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN', { numeric: true }));
+                addToFilePool(videos);
+            }
+            if (dpl) {
+                importDpl(dpl);
+                return;
+            }
+            if (!videos.length) {
+                showError('未找到可播放的视频文件。');
+                return;
+            }
+            // 之前有未完全匹配的 dpl：用新文件重新匹配；否则按新选择建列表
+            if (lastDplEntries && !dplResolved) {
+                applyDpl(false);
+                return;
+            }
+            lastDplEntries = null;
+            setPlaylist(videos.map((f) => ({ name: f.name, file: f })), 0);
+        }
+
+        // ── .dpl（PotPlayer 播放列表）解析 ──
+        function readTextAuto(file) {
+            // PotPlayer 的 dpl 常见为 UTF-8(BOM) 或 GBK，先试 UTF-8 严格模式
+            return file.arrayBuffer().then((buf) => {
+                try {
+                    return new TextDecoder('utf-8', { fatal: true }).decode(buf);
+                } catch (e) {
+                    return new TextDecoder('gbk').decode(buf);
+                }
+            });
+        }
+        function parseDpl(text) {
+            if (!/DAUMPLAYLIST/i.test(text.slice(0, 200))) {
+                throw new Error('不是有效的 DPL 文件');
+            }
+            const map = new Map();
+            text.split(/\r?\n/).forEach((line) => {
+                const m = line.match(/^(\d+)\*([^*]+)\*(.*)$/);
+                if (!m) return;
+                const key = m[2].toLowerCase();
+                if (!map.has(m[1])) map.set(m[1], {});
+                map.get(m[1])[key] = m[3].trim();
+            });
+            return [...map.keys()].sort((a, b) => Number(a) - Number(b))
+                .map((k) => map.get(k))
+                .filter((e) => e.file);
+        }
+        async function importDpl(file) {
+            let entries;
+            try {
+                entries = parseDpl(await readTextAuto(file));
+            } catch (e) {
+                showError('播放列表解析失败：' + e.message);
+                return;
+            }
+            if (!entries.length) {
+                showError('播放列表为空或格式无法识别。');
+                return;
+            }
+            lastDplEntries = entries;
+            applyDpl(true);
+        }
+        let dplResolved = true;
+        function applyDpl(autoplay) {
+            let missing = 0;
+            const items = lastDplEntries.map((e) => {
+                if (/^https?:\/\//i.test(e.file)) {
+                    return { name: e.title || basenameOf(safeDecode(e.file)), url: e.file };
+                }
+                const f = filePool.get(basenameOf(e.file).toLowerCase());
+                if (f) return { name: e.title || f.name, file: f };
+                missing++;
+                return { name: e.title || basenameOf(e.file), missing: true };
+            });
+            dplResolved = missing === 0;
+            setPlaylist(items);
+            playlistPanel.classList.add('active');
+            const first = items.findIndex((it) => !it.missing);
+            if (first < 0) {
+                // 全部缺失：提示用户补选文件/文件夹
+                showError('播放列表中的文件都未匹配到本地文件：把视频所在文件夹（或对应文件）也选进来即可自动匹配。');
+                dropZone.classList.add('active');
+                return;
+            }
+            hideError();
+            // 首次导入直接开播；后续补选文件时，仅在当前没有播放任何内容时才自动开播
+            if (autoplay || (playlistIndex === -1 && !videoPlayer.currentSrc)) {
+                playAt(first);
+            }
         }
 
         // 触屏设备：角标换成手势图标和触摸操作说明
@@ -1610,6 +1874,7 @@
                 hideHeroLoading();
                 const reason = probeUnplayableReason(probe);
                 if (reason) {
+                    hideLoadSpin(); // playAt 里可能已显示「加载中…」
                     let probeName = '网络视频';
                     try {
                         probeName = decodeURIComponent(new URL(rawUrl).pathname).split('/').filter(Boolean).pop() || probeName;
@@ -1662,17 +1927,35 @@
 
         const videoUrlInput = document.getElementById('videoUrl');
         const openUrlBtn = document.getElementById('openUrlBtn');
-        openUrlBtn.addEventListener('click', () => loadVideoURL(videoUrlInput.value));
+        // 直接输入链接播放时脱离当前播放列表
+        openUrlBtn.addEventListener('click', () => { clearPlaylist(); loadVideoURL(videoUrlInput.value); });
         videoUrlInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') loadVideoURL(videoUrlInput.value);
+            if (e.key === 'Enter') { clearPlaylist(); loadVideoURL(videoUrlInput.value); }
         });
 
-        // File input change handler
+        // File input change handler（多选 / .dpl / 单文件统一入口）
         videoFileInput.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                loadVideoFile(file);
-            }
+            handleFiles(e.target.files);
+            e.target.value = '';
+        });
+        const folderInput = document.getElementById('folderInput');
+        folderInput.addEventListener('change', (e) => {
+            handleFiles(e.target.files);
+            e.target.value = '';
+        });
+        // iOS 等不支持选择文件夹的环境隐藏入口（可用多选代替）
+        if (!('webkitdirectory' in document.createElement('input'))) {
+            document.getElementById('folderLabel').style.display = 'none';
+        }
+        // 播放列表按钮
+        prevBtn.addEventListener('click', (e) => { e.stopPropagation(); playPrev(); });
+        nextBtn.addEventListener('click', (e) => { e.stopPropagation(); playNext(); });
+        playlistBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            playlistPanel.classList.toggle('active');
+        });
+        document.getElementById('playlistClose').addEventListener('click', () => {
+            playlistPanel.classList.remove('active');
         });
 
         // Drag and drop handlers
@@ -1688,11 +1971,7 @@
         dropZone.addEventListener('drop', (e) => {
             e.preventDefault();
             dropZone.classList.remove('drag-over');
-            
-            const file = e.dataTransfer.files[0];
-            if (file) {
-                loadVideoFile(file);
-            }
+            handleFiles(e.dataTransfer.files);
         });
 
         // "打开新视频" reopens the central panel (pausing playback);
@@ -1782,6 +2061,10 @@
         videoPlayer.addEventListener('ended', () => {
             document.body.classList.remove('playing');
             scheduleChromeResize();
+            // 播放列表自动连播下一集
+            if (playlistIndex >= 0 && playlistIndex < playlist.length - 1) {
+                playNext();
+            }
         });
 
         // 顶栏收起/展开的过渡结束后再重算渲染尺寸
