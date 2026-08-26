@@ -97,15 +97,19 @@ function parseFfmpegDuration(text) {
   return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
 }
 
+function localProxyInput(target) {
+  const localHost = ["0.0.0.0", "::", "::1", "localhost"].includes(HOST) ? "127.0.0.1" : HOST;
+  const localAuthority = net.isIP(localHost) === 6 ? `[${localHost}]` : localHost;
+  return `http://${localAuthority}:${PORT}/proxy?url=${encodeURIComponent(target)}`;
+}
+
 function startTranscode(target, ownerIp, res, start = 0) {
   if (hlsSession) stopHlsSession(hlsSession);
   const id = crypto.randomBytes(12).toString("hex");
   const dir = path.join(HLS_ROOT, id);
   fs.mkdirSync(dir, { recursive: true });
 
-  const localHost = ["0.0.0.0", "::", "::1", "localhost"].includes(HOST) ? "127.0.0.1" : HOST;
-  const localAuthority = net.isIP(localHost) === 6 ? `[${localHost}]` : localHost;
-  const proxyInput = `http://${localAuthority}:${PORT}/proxy?url=${encodeURIComponent(target)}`;
+  const proxyInput = localProxyInput(target);
   const proc = spawn(FFMPEG, [
     "-hide_banner", "-loglevel", "info", "-nostdin",
     "-rw_timeout", "15000000",
@@ -192,17 +196,24 @@ function startTranscode(target, ownerIp, res, start = 0) {
 /* ffprobe 远程视频信息探测：只读容器/流头（配合 Range 秒级返回），
  * 让前端在尝试播放前就知道编码是否可能不支持，避免长时间黑屏。 */
 function probeRemoteMedia(target, res) {
+  const proxyInput = localProxyInput(target);
   const proc = spawn(FFPROBE, [
     "-v", "error",
     "-rw_timeout", "15000000",
-    "-show_entries", "stream=codec_type,codec_name,width,height:format=format_name,duration,size",
+    "-show_entries", "stream=codec_type,codec_name,width,height:format=format_name",
     "-of", "json",
-    target,
+    proxyInput,
   ]);
   let out = "";
   let err = "";
-  const killer = setTimeout(() => { try { proc.kill("SIGKILL"); } catch {} }, 25000);
-  proc.stdout.on("data", (d) => { out += d; });
+  const killer = setTimeout(() => { try { proc.kill("SIGKILL"); } catch {} }, 15000);
+  proc.stdout.on("data", (d) => {
+    out += d;
+    if (out.length > 1024 * 1024) {
+      err = "probe output too large";
+      try { proc.kill("SIGKILL"); } catch {}
+    }
+  });
   proc.stderr.on("data", (d) => { err = (err + d.toString()).slice(-2048); });
   const fail = (message) => {
     if (res.writableEnded) return;
@@ -225,11 +236,14 @@ function probeRemoteMedia(target, res) {
         video: v ? { codec: v.codec_name || "", width: v.width || 0, height: v.height || 0 } : null,
         audio: a ? { codec: a.codec_name || "" } : null,
         formatName: format.format_name || "",
-        duration: Number(format.duration) || null,
-        size: Number(format.size) || null,
       }));
     } catch {
       fail("探测结果解析失败");
+    }
+  });
+  res.once("close", () => {
+    if (!res.writableEnded && proc.exitCode === null) {
+      try { proc.kill("SIGKILL"); } catch {}
     }
   });
 }

@@ -662,7 +662,18 @@
             background: rgba(255,255,255,.16);
         }
         .progress-bar:hover { border: none; }
-        .progress-fill { background: var(--yellow); border-radius: 999px; }
+        .progress-fill {
+            background: var(--yellow); border-radius: 999px;
+            position: relative;
+        }
+        /* 进度条头部的圆形滑块 */
+        .progress-fill::after {
+            content: ''; position: absolute; right: 0; top: 50%;
+            transform: translate(35%, -50%);
+            width: 12px; height: 12px; border-radius: 50%;
+            background: var(--yellow);
+            box-shadow: 0 1px 5px rgba(0,0,0,.35);
+        }
         .time-display { color: rgba(255,255,255,.65); font-size: 12px; }
         .volume-control, .speed-control { color: rgba(255,255,255,.65); }
         .volume-slider { accent-color: var(--yellow); }
@@ -1564,8 +1575,12 @@
             const fmt = (p.formatName || '').toLowerCase();
             const w = p.video.width || 0, h = p.video.height || 0;
             if (fmt.includes('matroska') && isSafariBrowser) return 'MKV 封装格式';
-            if (/(hevc|h265|h\.265)/.test(vcodec) && (isMobileDevice || !isSafariBrowser)) {
+            const isHevc = /(hevc|h265|h\.265)/.test(vcodec);
+            if (isHevc && !isSafariBrowser) {
                 return 'HEVC/H.265 编码';
+            }
+            if (isHevc && isMobileDevice && (w > 4096 || h > 2160)) {
+                return '超过手机硬解能力的 ' + w + '×' + h + ' HEVC 视频';
             }
             if (/(wmv|vc1|msmpeg4|mpeg2video|mpeg1video|theora|rv40|vp6)/.test(vcodec)) {
                 return vcodec.toUpperCase() + ' 编码';
@@ -1783,7 +1798,8 @@
 
         // Progress bar
         videoPlayer.addEventListener('timeupdate', () => {
-            if (scrubbing) return; // 拖动预览期间不覆盖进度显示
+            // 拖动预览 / 转码快进重启期间不覆盖进度显示（旧流的进度会把条拽回去）
+            if (scrubbing || transcodeRestarting) return;
             const dur = effectiveDuration();
             const cur = effectiveCurrentTime();
             if (dur) {
@@ -1813,6 +1829,10 @@
             const pos = posFromClientX(clientX);
             const dur = effectiveDuration();
             if (dur) {
+                // 先更新视觉：点击后进度条立即跟手（转码重启需要等几秒，
+                // 不能等加载完才跳）；再执行真实跳转 / 转码重启
+                progressFill.style.width = (pos * 100) + '%';
+                currentTimeDisplay.textContent = formatTime(pos * dur);
                 seekToGlobal(pos * dur);
             }
         }
