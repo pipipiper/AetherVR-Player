@@ -876,7 +876,7 @@
                     <label for="videoFile" class="file-input-label hero-file">
                         <i class="fa-solid fa-folder-open"></i>&nbsp; 打开本地文件
                     </label>
-                    <label for="folderInput" class="file-input-label hero-file" id="folderLabel">
+                    <label for="folderInput" class="file-input-label hero-file" id="folderLabel" title="读取整个文件夹，自动排除 50MB 以下的小文件">
                         <i class="fa-solid fa-folder-tree"></i>&nbsp; 打开文件夹
                     </label>
                 </div>
@@ -1076,7 +1076,8 @@
         let playlist = [];          // [{name, file?, url?, missing?}]
         let playlistIndex = -1;
         let lastDplEntries = null;  // 最近导入的 dpl 条目，选择文件夹后可重新匹配
-        const filePool = new Map(); // 小写文件名 -> File
+        const filePool = new Map(); // 小写文件名 -> File[]（同名文件可能位于不同子目录）
+        let activeLocalObjectURL = null;
         const playlistPanel = document.getElementById('playlistPanel');
         const playlistItems = document.getElementById('playlistItems');
         const playlistTitle = document.getElementById('playlistTitle');
@@ -1093,8 +1094,34 @@
         function safeDecode(s) {
             try { return decodeURIComponent(s); } catch (e) { return s; }
         }
+        function normalizeLocalPath(p) {
+            return String(p || '').replace(/\\/g, '/').replace(/^\.\//, '').toLowerCase();
+        }
         function addToFilePool(files) {
-            files.forEach((f) => filePool.set(f.name.toLowerCase(), f));
+            files.forEach((f) => {
+                const key = f.name.toLowerCase();
+                const bucket = filePool.get(key) || [];
+                if (!bucket.includes(f)) bucket.push(f);
+                filePool.set(key, bucket);
+            });
+        }
+        function findLocalFile(p) {
+            const candidates = filePool.get(basenameOf(p).toLowerCase()) || [];
+            if (candidates.length === 1) return candidates[0];
+            if (!candidates.length) return null;
+            const target = normalizeLocalPath(p);
+            // 文件夹选择会提供 webkitRelativePath；同名文件只在路径后缀唯一匹配时采用，
+            // 避免 DPL 指向 A/video.mp4 却误播 B/video.mp4。
+            const matches = candidates.filter((f) => {
+                const rel = normalizeLocalPath(f.webkitRelativePath || f.name);
+                return target === rel || target.endsWith('/' + rel);
+            });
+            return matches.length === 1 ? matches[0] : null;
+        }
+        function releaseLocalObjectURL() {
+            if (!activeLocalObjectURL) return;
+            URL.revokeObjectURL(activeLocalObjectURL);
+            activeLocalObjectURL = null;
         }
 
         function renderPlaylist() {
@@ -1191,13 +1218,18 @@
         }
 
         // 文件选择（多选 / 文件夹 / 拖放统一入口）
-        function handleFiles(fileList) {
+        // opts.minSize：过滤掉过小的文件（打开文件夹时排除样片/预告等杂文件）
+        function handleFiles(fileList, opts = {}) {
             const files = Array.from(fileList || []);
             if (!files.length) return;
             const dpl = files.find((f) => /\.dpl$/i.test(f.name));
-            const videos = files.filter((f) => f.type.startsWith('video/') || isVideoFileName(f.name));
+            const videos = files.filter((f) => (f.type.startsWith('video/') || isVideoFileName(f.name))
+                && (!opts.minSize || f.size >= opts.minSize));
             if (videos.length) {
-                videos.sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN', { numeric: true }));
+                videos.sort((a, b) => (a.webkitRelativePath || a.name)
+                    .localeCompare(b.webkitRelativePath || b.name, 'zh-Hans-CN', { numeric: true }));
+                // 普通的新选择应替换旧文件池；只有给未匹配 DPL 补文件时才累加。
+                if (!dpl && !(lastDplEntries && !dplResolved)) filePool.clear();
                 addToFilePool(videos);
             }
             if (dpl) {
@@ -1205,7 +1237,8 @@
                 return;
             }
             if (!videos.length) {
-                showError('未找到可播放的视频文件。');
+                showError('未找到可播放的视频文件。'
+                    + (opts.minSize ? '（已排除 ' + Math.round(opts.minSize / 1024 / 1024) + 'MB 以下的小文件）' : ''));
                 return;
             }
             // 之前有未完全匹配的 dpl：用新文件重新匹配；否则按新选择建列表
@@ -1214,7 +1247,7 @@
                 return;
             }
             lastDplEntries = null;
-            setPlaylist(videos.map((f) => ({ name: f.name, file: f })), 0);
+            setPlaylist(videos.map((f) => ({ name: f.webkitRelativePath || f.name, file: f })), 0);
         }
 
         // ── .dpl（PotPlayer 播放列表）解析 ──
@@ -1266,7 +1299,7 @@
                 if (/^https?:\/\//i.test(e.file)) {
                     return { name: e.title || basenameOf(safeDecode(e.file)), url: e.file };
                 }
-                const f = filePool.get(basenameOf(e.file).toLowerCase());
+                const f = findLocalFile(e.file);
                 if (f) return { name: e.title || f.name, file: f };
                 missing++;
                 return { name: e.title || basenameOf(e.file), missing: true };
@@ -1717,7 +1750,9 @@
             isSbsVideo = false;
 
             // Create object URL for the video
+            releaseLocalObjectURL();
             const videoURL = URL.createObjectURL(file);
+            activeLocalObjectURL = videoURL;
             const generation = ++mediaLoadGeneration;
             armMediaReadyTriggers(generation);
             videoPlayer.src = videoURL;
@@ -1933,6 +1968,7 @@
 
             const generation = ++mediaLoadGeneration;
             armMediaReadyTriggers(generation);
+            releaseLocalObjectURL();
             videoPlayer.src = playable;
             videoContainer.classList.add('active');
             document.body.classList.add('has-video');
@@ -1969,7 +2005,8 @@
         });
         const folderInput = document.getElementById('folderInput');
         folderInput.addEventListener('change', (e) => {
-            handleFiles(e.target.files);
+            // 打开文件夹：排除 50MB 以下的小文件（样片/预告等）
+            handleFiles(e.target.files, { minSize: 50 * 1024 * 1024 });
             e.target.value = '';
         });
         // iOS 等不支持选择文件夹的环境隐藏入口（可用多选代替）
@@ -2423,9 +2460,7 @@
 
         // Clean up object URL when page unloads
         window.addEventListener('beforeunload', () => {
-            if (videoPlayer.src && videoPlayer.src.startsWith('blob:')) {
-                URL.revokeObjectURL(videoPlayer.src);
-            }
+            releaseLocalObjectURL();
         });
     </script>
 </body>
