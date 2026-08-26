@@ -56,7 +56,8 @@ const VIDEO_ENCODER = IS_MAC
 
 const HLS_IDLE_MS = 2 * 60 * 1000;
 const HLS_MAX_MS = 2 * 60 * 60 * 1000;
-const TRANSCODE_COOLDOWN_MS = 15 * 1000;
+// 冷却只防恶意刷接口：快进重启转码也走 /transcode，不能定得太长
+const TRANSCODE_COOLDOWN_MS = 4 * 1000;
 const transcodeStarts = new Map();
 let hlsSession = null;
 
@@ -81,33 +82,16 @@ setInterval(() => {
 // 启动时清理上次遗留的分片目录
 try { fs.rmSync(HLS_ROOT, { recursive: true, force: true }); } catch {}
 
-const FFPROBE = FFMPEG.replace(/ffmpeg$/, "ffprobe");
-
-// 探测片源真实时长（HLS 的 duration 是 Infinity，前端需要真实值兜底）
-function probeDuration(target) {
-  return new Promise((resolve) => {
-    const proc = spawn(FFPROBE, [
-      "-v", "error",
-      "-show_entries", "format=duration",
-      "-of", "default=noprint_wrappers=1:nokey=1",
-      target,
-    ]);
-    let out = "";
-    const timer = setTimeout(() => {
-      try { proc.kill("SIGKILL"); } catch {}
-      resolve(null);
-    }, 15000);
-    proc.stdout.on("data", (d) => { out += d.toString(); });
-    proc.on("exit", () => {
-      clearTimeout(timer);
-      const d = parseFloat(out.trim());
-      resolve(isFinite(d) && d > 0 ? d : null);
-    });
-    proc.on("error", () => { clearTimeout(timer); resolve(null); });
-  });
+// FFmpeg 在打开输入后会打印 Duration；直接复用转码进程的信息，
+// 避免另启 ffprobe 重复读取远程大文件或占用签名链接的并发数。
+function parseFfmpegDuration(text) {
+  const match = text.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
+  if (!match) return null;
+  const seconds = Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
+  return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
 }
 
-function startTranscode(target, ownerIp, res) {
+function startTranscode(target, ownerIp, res, start = 0) {
   if (hlsSession) stopHlsSession(hlsSession);
   const id = crypto.randomBytes(12).toString("hex");
   const dir = path.join(HLS_ROOT, id);
@@ -117,8 +101,11 @@ function startTranscode(target, ownerIp, res) {
   const localAuthority = net.isIP(localHost) === 6 ? `[${localHost}]` : localHost;
   const proxyInput = `http://${localAuthority}:${PORT}/proxy?url=${encodeURIComponent(target)}`;
   const proc = spawn(FFMPEG, [
-    "-hide_banner", "-loglevel", "error", "-nostdin",
+    "-hide_banner", "-loglevel", "info", "-nostdin",
     "-rw_timeout", "15000000",
+    // 从指定时间点开始转码（快进重启）。-ss 放在 -i 前走 HTTP Range 快速
+    // 定位，重编码下输出帧精确；输出时间轴从 0 开始，前端自行加偏移显示。
+    ...(start > 0 ? ["-ss", start.toFixed(3)] : []),
     "-i", proxyInput,
     "-map", "0:v:0", "-map", "0:a:0?",
     ...VIDEO_ENCODER,
@@ -142,14 +129,19 @@ function startTranscode(target, ownerIp, res) {
     ready: false,
     exited: false,
     error: "",
+    duration: null,
+    durationProbe: "",
     startTimer: null,
   };
   hlsSession = session;
-  // 与转码并行探测片源时长（HLS 的 duration 是 Infinity，前端需要真实值兜底）
-  session.probedDuration = null;
-  probeDuration(target).then((d) => { session.probedDuration = d; });
   proc.stderr.on("data", (d) => {
-    session.error = (session.error + d.toString()).slice(-4096);
+    const text = d.toString();
+    session.error = (session.error + text).slice(-4096);
+    if (session.duration === null) {
+      session.durationProbe = (session.durationProbe + text).slice(-32768);
+      session.duration = parseFfmpegDuration(session.durationProbe);
+      if (session.duration !== null) session.durationProbe = "";
+    }
   });
   proc.once("error", (err) => {
     session.exited = true;
@@ -177,7 +169,7 @@ function startTranscode(target, ownerIp, res) {
       if (segReady) {
         session.ready = true;
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ playlist: `/hls/${id}/index.m3u8`, duration: session.probedDuration }));
+        res.end(JSON.stringify({ playlist: `/hls/${id}/index.m3u8`, duration: session.duration, start }));
       } else {
         stopHlsSession(session);
         res.writeHead(500, { "Content-Type": "application/json" });
@@ -351,7 +343,7 @@ const server = http
       const ip = clientIp(req);
       const previousStart = transcodeStarts.get(ip) || 0;
       if (Date.now() - previousStart < TRANSCODE_COOLDOWN_MS) {
-        res.writeHead(429, { "Content-Type": "application/json", "Retry-After": "15" });
+        res.writeHead(429, { "Content-Type": "application/json", "Retry-After": "4" });
         res.end(JSON.stringify({ error: "操作过于频繁，请稍后重试" }));
         return;
       }
@@ -361,19 +353,25 @@ const server = http
         return;
       }
       let target;
+      let start = 0;
       try {
         const body = await readJson(req);
         target = typeof body.url === "string" ? body.url.trim() : "";
         if (!target || target.length > 4096) throw new Error("Invalid video URL");
         const u = new URL(target);
         await resolveSafeTarget(u);
+        // 可选：从该秒数开始转码（前端快进重启）。范围钳制到 [0, 12h]。
+        const startRaw = Number(body.start);
+        if (Number.isFinite(startRaw) && startRaw > 0) {
+          start = Math.min(startRaw, 12 * 3600);
+        }
       } catch (err) {
         res.writeHead(400, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: err.message }));
         return;
       }
       transcodeStarts.set(ip, Date.now());
-      startTranscode(target, ip, res);
+      startTranscode(target, ip, res, start);
       return;
     }
     if (urlPath === "/transcode/status") {
