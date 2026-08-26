@@ -675,6 +675,19 @@
         .speed-select:hover { border-color: rgba(255,255,255,.3); box-shadow: none; }
         .speed-select option { background: #1a1e27; color: #e8ecf3; }
 
+        /* ── 自动播放被拦截时的中央大播放按钮 ──────────────── */
+        .big-play-btn {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 28; display: none;
+            width: 76px; height: 76px; border-radius: 50%;
+            border: none; cursor: pointer;
+            font-size: 26px; color: #fff;
+            background: rgba(47,107,255,.92);
+            box-shadow: 0 10px 30px rgba(0,0,0,.35);
+        }
+        .big-play-btn.active { display: flex; align-items: center; justify-content: center; }
+
         /* ── touch behavior ────────────────────────────────── */
         /* 禁掉双击缩放/点按延迟；画布和进度条手势完全由 JS 接管 */
         html, body { touch-action: manipulation; }
@@ -839,6 +852,7 @@
                 </div>
                 <video id="videoPlayer" playsinline webkit-playsinline></video>
                 <canvas id="vrCanvas"></canvas>
+                <button class="big-play-btn" id="bigPlayBtn" title="播放"><i class="fa-solid fa-play"></i></button>
             </div>
         </div>
     </div>
@@ -890,6 +904,42 @@
         // Show drop zone initially
         dropZone.classList.add('active');
 
+        // ── 播放辅助 ─────────────────────────────────────────
+        const bigPlayBtn = document.getElementById('bigPlayBtn');
+
+        // 自动播放尝试；被浏览器拦截（iOS 手势过期）时显示中央大播放按钮
+        function tryAutoplay() {
+            videoPlayer.play().catch(() => {
+                bigPlayBtn.classList.add('active');
+            });
+        }
+        bigPlayBtn.addEventListener('click', () => {
+            bigPlayBtn.classList.remove('active');
+            videoPlayer.play().catch(() => {});
+        });
+
+        // 进入 VR 的待触发标记消费：iOS 上 HLS 的 loadedmetadata 时机不可靠，
+        // loadeddata / canplay / play 任一先到即触发
+        function consumePendingVr() {
+            if (pendingVrMode) {
+                pendingVrMode = false;
+                enterVRView();
+            }
+        }
+        function armPendingVrTriggers() {
+            ['loadeddata', 'canplay', 'play'].forEach((evt) => {
+                videoPlayer.addEventListener(evt, consumePendingVr, { once: true });
+            });
+        }
+
+        // HLS 的 duration 可能是 Infinity：用服务端 ffprobe 探测的时长兜底
+        let fallbackDuration = null;
+        function effectiveDuration() {
+            const d = videoPlayer.duration;
+            if (d && isFinite(d)) return d;
+            return fallbackDuration;
+        }
+
         // 触屏设备：角标换成手势图标和触摸操作说明
         if (window.matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window) {
             const vrInfoIcon = vrInfo.querySelector('i');
@@ -900,6 +950,7 @@
 
         // Format time helper
         function formatTime(seconds) {
+            if (!isFinite(seconds)) return '--:--';
             const mins = Math.floor(seconds / 60);
             const secs = Math.floor(seconds % 60);
             return `${mins}:${secs.toString().padStart(2, '0')}`;
@@ -1304,6 +1355,7 @@
             hideError();
             document.getElementById('transcodeBtn').style.display = 'none';
             delete videoPlayer.dataset.remoteUrl;
+            fallbackDuration = null;
 
             // Create object URL for the video
             const videoURL = URL.createObjectURL(file);
@@ -1333,12 +1385,10 @@
                     sbsOptions.classList.remove('active');
                 }
 
-                if (pendingVrMode) {
-                    pendingVrMode = false;
-                    enterVRView();
-                }
+                consumePendingVr();
+                armPendingVrTriggers();
                 // Gentle autoplay attempt (may be blocked by the browser)
-                videoPlayer.play().catch(() => {});
+                tryAutoplay();
             }, { once: true });
         }
 
@@ -1408,6 +1458,7 @@
             hideError();
             document.getElementById('transcodeBtn').style.display = 'none';
             videoPlayer.dataset.remoteUrl = url;
+            fallbackDuration = null;
 
             videoPlayer.src = playable;
             videoContainer.classList.add('active');
@@ -1435,12 +1486,10 @@
                 } else {
                     sbsOptions.classList.remove('active');
                 }
-                if (pendingVrMode) {
-                    pendingVrMode = false;
-                    enterVRView();
-                }
+                consumePendingVr();
+                armPendingVrTriggers();
                 // Gentle autoplay attempt (may be blocked by the browser)
-                videoPlayer.play().catch(() => {});
+                tryAutoplay();
             }, { once: true });
         }
 
@@ -1501,7 +1550,11 @@
             transcodeBtn.disabled = true;
             transcodeBtn.textContent = '正在启动转码（8K 实时转码约需十几秒）…';
             try {
-                const resp = await fetch('/transcode?url=' + encodeURIComponent(remoteUrl));
+                const resp = await fetch('/transcode', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: remoteUrl })
+                });
                 const data = await resp.json();
                 if (!resp.ok || !data.playlist) {
                     throw new Error(data.error || ('HTTP ' + resp.status));
@@ -1511,6 +1564,7 @@
                 // 同源 HLS 地址，走标准加载流程（会自动进入 VR 模式）
                 const displayName = (videoPlayer.dataset.remoteName || '网络视频') + '（转码 4K）';
                 loadVideoURL(location.origin + data.playlist);
+                fallbackDuration = (typeof data.duration === 'number' && isFinite(data.duration)) ? data.duration : null;
                 fileName.textContent = displayName;
             } catch (e) {
                 showError('转码播放失败：' + e.message);
@@ -1541,6 +1595,7 @@
             if (isVrMode && videoTexture) {
                 videoTexture.needsUpdate = true;
             }
+            bigPlayBtn.classList.remove('active');
             // 移动端播放时隐藏顶栏（CSS 媒体查询控制），隐藏后重算 VR 画布
             document.body.classList.add('playing');
             scheduleChromeResize();
@@ -1572,14 +1627,20 @@
         // Progress bar
         videoPlayer.addEventListener('timeupdate', () => {
             if (scrubbing) return; // 拖动预览期间不覆盖进度显示
-            const progress = (videoPlayer.currentTime / videoPlayer.duration) * 100;
-            progressFill.style.width = progress + '%';
+            const dur = effectiveDuration();
+            if (dur) {
+                progressFill.style.width = (videoPlayer.currentTime / dur) * 100 + '%';
+                durationDisplay.textContent = formatTime(dur);
+            } else {
+                durationDisplay.textContent = '--:--';
+            }
             currentTimeDisplay.textContent = formatTime(videoPlayer.currentTime);
         });
 
         // Update duration
         videoPlayer.addEventListener('loadedmetadata', () => {
-            durationDisplay.textContent = formatTime(videoPlayer.duration);
+            const dur = effectiveDuration();
+            durationDisplay.textContent = dur ? formatTime(dur) : '--:--';
         });
 
         // Seek on progress bar click / touch
@@ -1592,8 +1653,9 @@
 
         function seekFromClientX(clientX) {
             const pos = posFromClientX(clientX);
-            if (videoPlayer.duration) {
-                videoPlayer.currentTime = pos * videoPlayer.duration;
+            const dur = effectiveDuration();
+            if (dur) {
+                videoPlayer.currentTime = pos * dur;
             }
         }
 
@@ -1601,8 +1663,9 @@
         function previewSeek(clientX) {
             const pos = posFromClientX(clientX);
             progressFill.style.width = (pos * 100) + '%';
-            if (videoPlayer.duration) {
-                currentTimeDisplay.textContent = formatTime(pos * videoPlayer.duration);
+            const dur = effectiveDuration();
+            if (dur) {
+                currentTimeDisplay.textContent = formatTime(pos * dur);
             }
         }
 
