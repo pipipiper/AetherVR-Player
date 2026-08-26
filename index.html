@@ -668,6 +668,51 @@
         }
         .speed-select:hover { border-color: rgba(255,255,255,.3); box-shadow: none; }
         .speed-select option { background: #1a1e27; color: #e8ecf3; }
+
+        /* ── mobile (≤640px) ───────────────────────────────── */
+        @media (max-width: 640px) {
+            /* top bar: compact single row */
+            .top-bar { height: 56px; padding: 0 10px; gap: 8px; }
+            body.has-video .page-content { padding-top: 56px; }
+            .top-bar .left  { flex: 1 1 auto; min-width: 0; }
+            .top-bar .center, .top-bar .right { flex: 0 0 auto; }
+            .file-info { gap: 0; font-size: 11px; }
+            .file-info p { max-width: 84px; }
+            .file-info p:not(:first-child) { display: none; }
+            .view-btn { padding: 7px 10px; font-size: 12px; white-space: nowrap; }
+            .ghost-btn { padding: 8px 11px; white-space: nowrap; }
+            .ghost-btn .btn-text { display: none; }   /* icon only */
+
+            /* hero panel */
+            .drop-zone {
+                width: calc(100vw - 32px);
+                padding: 34px 22px 28px; border-radius: 20px;
+            }
+            .hero-icon { font-size: 28px; margin-bottom: 10px; }
+            .hero-title { font-size: 22px; }
+            .hero-sub { font-size: 12.5px; margin-bottom: 22px; }
+            .hero-url { flex-direction: column; align-items: stretch; }
+            .hero-url input { width: 100%; }
+            .hero-url .url-play-btn { width: 100%; padding: 12px; }
+
+            /* vr hint badge */
+            .vr-info { top: 10px; left: 10px; padding: 6px 10px; font-size: 11px; }
+
+            /* sbs floating card */
+            .sbs-options { top: 66px; width: calc(100vw - 28px); padding: 10px 14px; }
+            .sbs-options .sbs-row { gap: 10px; justify-content: space-between; }
+            .sbs-options label { font-size: 12px; gap: 6px; }
+
+            /* controls: two rows, big touch targets */
+            .controls { margin: 0 10px 10px; padding: 8px 10px; gap: 8px; border-radius: 14px; }
+            .control-btn { width: 40px; height: 40px; }
+            .progress-container { width: 100%; order: -1; }
+            .progress-bar { height: 8px; }
+            .time-display { min-width: 0; font-size: 11px; }
+            /* iOS 不允许 JS 调音量，隐藏无效滑杆 */
+            .volume-control { display: none; }
+            .speed-select { height: 36px; }
+        }
     </style>
 </head>
 <body>
@@ -689,7 +734,7 @@
                 </div>
             </div>
             <div class="right">
-                <button id="newVideoBtn" class="ghost-btn"><i class="fa-solid fa-plus"></i>&nbsp; 打开新视频</button>
+                <button id="newVideoBtn" class="ghost-btn"><i class="fa-solid fa-plus"></i><span class="btn-text">&nbsp; 打开新视频</span></button>
             </div>
         </div>
 
@@ -761,7 +806,7 @@
                     <i class="fa-solid fa-mouse"></i>
                     <span class="hint-text">&nbsp;拖动旋转视角 · 滚轮缩放</span>
                 </div>
-                <video id="videoPlayer"></video>
+                <video id="videoPlayer" playsinline webkit-playsinline></video>
                 <canvas id="vrCanvas"></canvas>
             </div>
         </div>
@@ -1419,6 +1464,11 @@
                 }
             });
         });
+
+        // iPhone Safari 不支持普通元素全屏（仅 <video> 可以），隐藏全屏按钮
+        if (!document.documentElement.requestFullscreen && !document.documentElement.webkitRequestFullscreen) {
+            fullscreenBtn.style.display = 'none';
+        }
 
         // Setup VR controls
         setupVRControls();

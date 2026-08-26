@@ -65,6 +65,7 @@ node server.js --host 127.0.0.1 --port 8080
 | 浏览器 | 说明 |
 | --- | --- |
 | Safari | 推荐。对 HEVC / H.265 支持最好 |
+| Safari (iPhone / iPad) | 已适配移动端界面，视频内联播放（`playsinline`），不会跳转系统播放器；音量和全屏由系统控制 |
 | Chrome / Edge | H.264 + AAC 的 MP4 完美支持；**HEVC 大多无法解码**，会提示转码 |
 | Firefox | 同 Chrome，不支持 HEVC |
 
