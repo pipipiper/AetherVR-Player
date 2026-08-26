@@ -753,7 +753,16 @@
         }
         .playlist-item:hover { background: rgba(255,255,255,.08); }
         .playlist-item.playing { background: rgba(47,107,255,.25); }
-        .playlist-item.missing { opacity: .45; cursor: not-allowed; }
+        .playlist-item.st-unresolved .pl-name,
+        .playlist-item.st-missing .pl-name,
+        .playlist-item.st-conflict .pl-name,
+        .playlist-item.st-denied .pl-name { color: #b6bfcb; }
+        .playlist-item.st-unresolved .pl-badge { background: rgba(255,196,66,.18); color: #ffd479; }
+        .playlist-item.st-missing .pl-badge { background: rgba(255,92,92,.18); color: #ff9a9a; }
+        .playlist-item.st-conflict .pl-badge { background: rgba(255,150,50,.18); color: #ffb37a; }
+        .playlist-item.st-denied .pl-badge { background: rgba(255,92,92,.14); color: #e08d8d; }
+        .playlist-item.st-remote .pl-badge { background: rgba(80,160,255,.18); color: #9cc4ff; }
+        .playlist-item.st-ready .pl-badge { background: rgba(72,199,142,.16); color: #8fe0b4; }
         .pl-index { flex: none; width: 22px; color: #8a93a5; font-size: 11px; text-align: right; }
         .pl-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .pl-badge {
@@ -761,6 +770,25 @@
             background: rgba(255,255,255,.10); color: #aab3c2;
         }
         .playlist-item.playing .pl-badge { background: rgba(47,107,255,.55); color: #fff; }
+        .playlist-tools {
+            display: flex; gap: 6px; padding: 8px 10px 4px;
+        }
+        .pl-tool-btn {
+            flex: 1; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.10);
+            color: #cfd6e2; font-size: 11px; padding: 5px 4px; border-radius: 7px; cursor: pointer;
+            white-space: nowrap;
+        }
+        .pl-tool-btn:hover { background: rgba(255,255,255,.14); color: #fff; }
+        .pl-tool-btn:disabled { opacity: .4; cursor: default; }
+        .playlist-summary {
+            margin: 4px 10px 2px; padding: 6px 8px; font-size: 11px; line-height: 1.5;
+            color: #9aa3b2; background: rgba(255,255,255,.05); border-radius: 7px;
+        }
+        .playlist-summary.warn { color: #ffd479; background: rgba(255,196,66,.12); }
+        .playlist-foot {
+            padding: 7px 12px; font-size: 10.5px; color: #707a8c; text-align: center;
+            border-top: 1px solid rgba(255,255,255,.07);
+        }
         .hero-file-row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
         .control-btn:disabled { opacity: .35; cursor: default; }
 
@@ -950,8 +978,17 @@
                         <span id="playlistTitle">播放列表</span>
                         <button class="playlist-close" id="playlistClose" title="关闭"><i class="fa-solid fa-xmark"></i></button>
                     </div>
+                    <div class="playlist-tools">
+                        <button class="pl-tool-btn" id="addDirBtn" title="选择媒体文件夹，自动匹配未授权的本地条目"><i class="fa-solid fa-folder-plus"></i>&nbsp;添加媒体目录</button>
+                        <button class="pl-tool-btn" id="rematchBtn" title="用已授权的目录重新匹配所有未授权条目"><i class="fa-solid fa-arrows-rotate"></i>&nbsp;重新匹配</button>
+                        <button class="pl-tool-btn" id="clearListBtn" title="清空播放列表"><i class="fa-solid fa-trash-can"></i>&nbsp;清空</button>
+                    </div>
+                    <div class="playlist-summary" id="playlistSummary" style="display:none"></div>
                     <ul class="playlist-items" id="playlistItems"></ul>
+                    <div class="playlist-foot">本地文件仅在浏览器内读取，不会上传服务器</div>
                 </div>
+                <input type="file" id="grantFileInput" accept="video/*" style="display:none">
+                <input type="file" id="grantDirInput" webkitdirectory multiple style="display:none">
             </div>
         </div>
     </div>
@@ -1072,18 +1109,37 @@
             return transcodeSrcUrl ? hlsOffset + videoPlayer.currentTime : videoPlayer.currentTime;
         }
 
-        // ── 播放列表（文件夹 / 多选 / .dpl 导入）────────────────
-        let playlist = [];          // [{name, file?, url?, missing?}]
+        // ── 播放列表（文件夹 / 多选 / .dpl 导入 + 渐进式授权）────────
+        // 条目状态机：ready（已匹配本地文件）/ remote（在线链接）/
+        // unresolved（未授权）/ missing（授权过目录仍未找到）/ conflict（同名冲突）
+        let playlist = [];          // [{name, originalPath, normalizedPath, url, file, fileHandle, status, error}]
         let playlistIndex = -1;
-        let lastDplEntries = null;  // 最近导入的 dpl 条目，选择文件夹后可重新匹配
-        const filePool = new Map(); // 小写文件名 -> File[]（同名文件可能位于不同子目录）
+        let lastDplEntries = null;  // 最近导入的 dpl 条目（用于重新匹配）
+        let dplResolved = true;
+        // 授权文件索引：小写 basename -> [{file, rel}]，rel 为授权目录内相对路径（规范化小写）
+        const filePool = new Map();
         let activeLocalObjectURL = null;
+        let grantingIndex = -1;     // 正在为哪个条目做单独授权
         const playlistPanel = document.getElementById('playlistPanel');
         const playlistItems = document.getElementById('playlistItems');
         const playlistTitle = document.getElementById('playlistTitle');
+        const playlistSummary = document.getElementById('playlistSummary');
         const prevBtn = document.getElementById('prevBtn');
         const nextBtn = document.getElementById('nextBtn');
         const playlistBtn = document.getElementById('playlistBtn');
+        const addDirBtn = document.getElementById('addDirBtn');
+        const rematchBtn = document.getElementById('rematchBtn');
+        const clearListBtn = document.getElementById('clearListBtn');
+        const grantFileInput = document.getElementById('grantFileInput');
+        const grantDirInput = document.getElementById('grantDirInput');
+
+        const STATUS_BADGE = {
+            ready: '本地', remote: '在线', unresolved: '未授权',
+            missing: '未找到', conflict: '同名冲突', denied: '已取消',
+        };
+        function isPlayable(item) {
+            return item && (item.status === 'ready' || item.status === 'remote');
+        }
 
         function isVideoFileName(name) {
             return /\.(mp4|m4v|webm|ogv|ogg|mov|mkv|avi|ts|m2ts|flv|wmv|3gp)$/i.test(name);
@@ -1094,44 +1150,64 @@
         function safeDecode(s) {
             try { return decodeURIComponent(s); } catch (e) { return s; }
         }
-        function normalizeLocalPath(p) {
-            return String(p || '').replace(/\\/g, '/').replace(/^\.\//, '').toLowerCase();
+        // 路径规范化：去引号、URL 解码、反斜杠→正斜杠、合并连续斜杠、去 ./ 、统一小写
+        function normalizePath(p) {
+            let s = String(p || '').trim().replace(/^["']+|["']+$/g, '');
+            try { s = decodeURIComponent(s); } catch (e) {}
+            return s.replace(/\\/g, '/').replace(/\/{2,}/g, '/').replace(/^\.\//, '').toLowerCase();
         }
-        function addToFilePool(files) {
-            files.forEach((f) => {
+        function addToFilePool(entries) {
+            entries.forEach((entry) => {
+                const f = entry.file || entry; // 兼容直接传 File
+                const rel = entry.rel || normalizePath(f.webkitRelativePath || f.name);
                 const key = f.name.toLowerCase();
                 const bucket = filePool.get(key) || [];
-                if (!bucket.includes(f)) bucket.push(f);
+                if (!bucket.some((e) => e.file === f)) bucket.push({ file: f, rel });
                 filePool.set(key, bucket);
             });
         }
-        function findLocalFile(p) {
-            const candidates = filePool.get(basenameOf(p).toLowerCase()) || [];
-            if (candidates.length === 1) return candidates[0];
+        // 匹配优先级：路径后缀唯一匹配 > 文件名唯一匹配 > 冲突（不静默乱绑）
+        function matchLocalEntry(originalPath) {
+            const norm = normalizePath(originalPath);
+            const base = norm.split('/').pop();
+            const candidates = filePool.get(base) || [];
             if (!candidates.length) return null;
-            const target = normalizeLocalPath(p);
-            // 文件夹选择会提供 webkitRelativePath；同名文件只在路径后缀唯一匹配时采用，
-            // 避免 DPL 指向 A/video.mp4 却误播 B/video.mp4。
-            const matches = candidates.filter((f) => {
-                const rel = normalizeLocalPath(f.webkitRelativePath || f.name);
-                return target === rel || target.endsWith('/' + rel);
-            });
-            return matches.length === 1 ? matches[0] : null;
+            const suffix = candidates.filter((c) => norm === c.rel || norm.endsWith('/' + c.rel));
+            if (suffix.length === 1) return { file: suffix[0].file };
+            if (suffix.length > 1) return { conflict: true };
+            if (candidates.length === 1) return { file: candidates[0].file };
+            return { conflict: true };
+        }
+        function applyMatchToItem(item) {
+            const r = matchLocalEntry(item.originalPath);
+            if (r && r.file) {
+                item.file = r.file;
+                item.status = 'ready';
+                item.error = '';
+            } else if (r && r.conflict) {
+                item.file = null;
+                item.status = 'conflict';
+                item.error = '存在同名文件，请手动选择';
+            } else {
+                item.file = null;
+                item.status = filePool.size ? 'missing' : 'unresolved';
+                item.error = '';
+            }
         }
         function releaseLocalObjectURL() {
             if (!activeLocalObjectURL) return;
             URL.revokeObjectURL(activeLocalObjectURL);
             activeLocalObjectURL = null;
         }
+        window.addEventListener('pagehide', releaseLocalObjectURL);
 
+        // ── 渲染 ──
         function renderPlaylist() {
             playlistItems.innerHTML = '';
             playlist.forEach((item, i) => {
                 const li = document.createElement('li');
-                li.className = 'playlist-item'
-                    + (i === playlistIndex ? ' playing' : '')
-                    + (item.missing ? ' missing' : '');
-                const badge = item.missing ? '缺失' : (item.url ? '链接' : '本地');
+                li.className = 'playlist-item st-' + item.status
+                    + (i === playlistIndex ? ' playing' : '');
                 const idx = document.createElement('span');
                 idx.className = 'pl-index';
                 idx.textContent = i + 1;
@@ -1140,18 +1216,38 @@
                 name.textContent = item.name;
                 const tag = document.createElement('span');
                 tag.className = 'pl-badge';
-                tag.textContent = badge;
+                tag.textContent = STATUS_BADGE[item.status] || item.status;
                 li.append(idx, name, tag);
-                li.title = item.name;
-                if (!item.missing) {
-                    li.addEventListener('click', () => {
-                        playAt(i);
-                        if (isMobileDevice) playlistPanel.classList.remove('active');
-                    });
-                }
+                li.title = item.originalPath || item.name;
+                li.addEventListener('click', () => onItemClick(i)); // 所有条目都可点击
                 playlistItems.appendChild(li);
             });
             playlistTitle.textContent = playlist.length ? `播放列表（${playlist.length}）` : '播放列表';
+            updateSummary();
+        }
+
+        function updateSummary() {
+            if (!playlist.length) {
+                playlistSummary.style.display = 'none';
+                return;
+            }
+            const total = playlist.length;
+            const ready = playlist.filter(isPlayable).length;
+            const need = total - ready;
+            playlistSummary.classList.remove('warn');
+            playlistSummary.style.display = '';
+            playlistSummary.textContent = need === 0
+                ? `播放列表已载入，共 ${total} 项，全部可播放。`
+                : `播放列表共 ${total} 项：${ready} 项可播放，${need} 项需要授权。点击条目选择对应文件，或「添加媒体目录」自动匹配。`;
+        }
+        let summaryTimer = null;
+        function showPlaylistBanner(text) {
+            // 在面板内提示，不遮挡列表本身
+            if (summaryTimer) clearTimeout(summaryTimer);
+            playlistSummary.style.display = '';
+            playlistSummary.classList.add('warn');
+            playlistSummary.textContent = text;
+            summaryTimer = setTimeout(updateSummary, 5000);
         }
 
         function updatePlaylistButtons() {
@@ -1160,12 +1256,13 @@
             const multi = playlist.length > 1;
             prevBtn.style.display = multi ? '' : 'none';
             nextBtn.style.display = multi ? '' : 'none';
-            prevBtn.disabled = findPlayableIndex(playlistIndex, -1) < 0;
-            nextBtn.disabled = findPlayableIndex(playlistIndex, 1) < 0;
+            prevBtn.disabled = playlistIndex <= 0;
+            nextBtn.disabled = playlistIndex < 0 || playlistIndex >= playlist.length - 1;
+            rematchBtn.disabled = !lastDplEntries;
         }
 
         function setPlaylist(items, startIndex) {
-            // 重新匹配（dpl + 后选文件夹）时尽量保留当前播放位置
+            // 重新匹配（dpl + 后选目录）时尽量保留当前播放位置
             const current = playlistIndex >= 0 ? playlist[playlistIndex] : null;
             playlist = items;
             playlistIndex = current ? items.findIndex((it) => it === current
@@ -1173,7 +1270,7 @@
                 || (current.url && it.url && it.url === current.url)) : -1;
             renderPlaylist();
             updatePlaylistButtons();
-            if (typeof startIndex === 'number' && items[startIndex] && !items[startIndex].missing) {
+            if (typeof startIndex === 'number' && isPlayable(items[startIndex])) {
                 playAt(startIndex);
             }
         }
@@ -1189,12 +1286,8 @@
             playlistPanel.classList.remove('active');
         }
 
-        function playAt(i) {
-            const item = playlist[i];
-            if (!item || item.missing) return;
-            playlistIndex = i;
-            renderPlaylist();
-            updatePlaylistButtons();
+        // ── 播放与授权 ──
+        function playResolved(item) {
             if (item.file) {
                 loadVideoFile(item.file);
             } else {
@@ -1202,19 +1295,121 @@
                 loadVideoURL(item.url);
             }
         }
-        function findPlayableIndex(from, step) {
-            for (let i = from + step; i >= 0 && i < playlist.length; i += step) {
-                if (!playlist[i].missing) return i;
+        function playAt(i) {
+            const item = playlist[i];
+            if (!item) return;
+            playlistIndex = i;
+            renderPlaylist();
+            updatePlaylistButtons();
+            if (isPlayable(item)) {
+                playResolved(item);
+            } else {
+                // 未授权条目：选中并引导授权（不自动弹系统选择器）
+                showPlaylistBanner(`「${item.name}」尚未授权，点击该条目选择对应文件后即可播放。`);
             }
-            return -1;
         }
-        function playNext() {
-            const next = findPlayableIndex(playlistIndex, 1);
-            if (next >= 0) playAt(next);
+        function onItemClick(i) {
+            const item = playlist[i];
+            if (!item) return;
+            if (isPlayable(item)) {
+                playAt(i);
+                if (isMobileDevice) playlistPanel.classList.remove('active');
+            } else {
+                playlistIndex = i;
+                renderPlaylist();
+                updatePlaylistButtons();
+                requestFileForItem(i); // 用户手势 → 直接弹文件选择器
+            }
         }
-        function playPrev() {
-            const prev = findPlayableIndex(playlistIndex, -1);
-            if (prev >= 0) playAt(prev);
+        function stepPlaylist(step) {
+            const i = playlistIndex + step;
+            if (i < 0 || i >= playlist.length) return;
+            playAt(i); // playAt 内部处理未授权条目：选中并提示，不静默跳过
+        }
+        function playNext() { stepPlaylist(1); }
+        function playPrev() { stepPlaylist(-1); }
+
+        // 单个条目授权：优先 File System Access API，回退隐藏 input
+        async function requestFileForItem(i) {
+            const item = playlist[i];
+            if (!item) return;
+            grantingIndex = i;
+            if (window.showOpenFilePicker) {
+                try {
+                    const [handle] = await window.showOpenFilePicker({
+                        id: 'vr-player-grant',
+                        types: [{
+                            description: '视频文件',
+                            accept: { 'video/*': ['.mp4', '.m4v', '.webm', '.mov', '.mkv', '.avi', '.ts', '.m2ts', '.flv', '.wmv', '.3gp', '.ogv'] },
+                        }],
+                        multiple: false,
+                    });
+                    const file = await handle.getFile();
+                    bindFileToItem(i, file, handle);
+                } catch (err) {
+                    // 用户取消：条目保留，状态不变，不影响其他条目
+                }
+                grantingIndex = -1;
+            } else {
+                grantFileInput.value = '';
+                grantFileInput.click();
+            }
+        }
+        function bindFileToItem(i, file, handle) {
+            const item = playlist[i];
+            if (!item) return;
+            // 校验：文件名须与条目一致（已统一大小写、URL 编码与斜杠差异）
+            const want = (item.normalizedPath || normalizePath(item.originalPath)).split('/').pop();
+            const got = normalizePath(file.name);
+            if (want !== got) {
+                showPlaylistBanner(`选择的文件「${file.name}」与条目「${item.name}」不一致，请重新选择。`);
+                return;
+            }
+            item.file = file;
+            item.fileHandle = handle;
+            item.status = 'ready';
+            item.error = '';
+            addToFilePool([file]); // 加入索引，方便后续匹配同名/同目录条目
+            playAt(i);
+        }
+
+        // 添加媒体目录：优先 showDirectoryPicker 递归枚举，回退 webkitdirectory
+        async function addMediaDirectory() {
+            if (window.showDirectoryPicker) {
+                try {
+                    const dirHandle = await window.showDirectoryPicker({ id: 'vr-player-media' });
+                    const entries = [];
+                    await enumerateDir(dirHandle, dirHandle.name, entries);
+                    if (entries.length) addToFilePool(entries);
+                    rematchAll(`已从「${dirHandle.name}」索引 ${entries.length} 个视频文件。`);
+                } catch (err) {
+                    // 用户取消目录选择：不做任何事
+                }
+            } else {
+                grantDirInput.value = '';
+                grantDirInput.click();
+            }
+        }
+        async function enumerateDir(dirHandle, prefix, out) {
+            for await (const [name, handle] of dirHandle.entries()) {
+                if (name.startsWith('.')) continue;
+                if (handle.kind === 'directory') {
+                    await enumerateDir(handle, prefix + '/' + name, out);
+                } else if (isVideoFileName(name)) {
+                    const file = await handle.getFile();
+                    out.push({ file, rel: normalizePath(prefix + '/' + name) });
+                }
+            }
+        }
+        // 重新匹配所有未解析条目；已成功匹配/已授权的条目不动的
+        function rematchAll(note) {
+            playlist.forEach((item) => {
+                if (!item.url && item.status !== 'ready') applyMatchToItem(item);
+            });
+            dplResolved = !playlist.some((it) => !isPlayable(it));
+            renderPlaylist();
+            updatePlaylistButtons();
+            if (note) showPlaylistBanner(note);
         }
 
         // 文件选择（多选 / 文件夹 / 拖放统一入口）
@@ -1243,11 +1438,16 @@
             }
             // 之前有未完全匹配的 dpl：用新文件重新匹配；否则按新选择建列表
             if (lastDplEntries && !dplResolved) {
-                applyDpl(false);
+                rematchAll();
                 return;
             }
             lastDplEntries = null;
-            setPlaylist(videos.map((f) => ({ name: f.webkitRelativePath || f.name, file: f })), 0);
+            setPlaylist(videos.map((f) => ({
+                name: f.webkitRelativePath || f.name,
+                originalPath: f.webkitRelativePath || f.name,
+                normalizedPath: normalizePath(f.webkitRelativePath || f.name),
+                url: '', file: f, fileHandle: null, status: 'ready', error: '',
+            })), 0);
         }
 
         // ── .dpl（PotPlayer 播放列表）解析 ──
@@ -1289,34 +1489,43 @@
                 showError('播放列表为空或格式无法识别。');
                 return;
             }
+            // 导入新列表时取消旧的远程探测，避免旧请求覆盖新列表状态
+            urlLoadRequestId++;
+            if (activeProbeController) { activeProbeController.abort(); activeProbeController = null; }
+            hideHeroLoading();
             lastDplEntries = entries;
             applyDpl(true);
         }
-        let dplResolved = true;
-        function applyDpl(autoplay) {
-            let missing = 0;
-            const items = lastDplEntries.map((e) => {
-                if (/^https?:\/\//i.test(e.file)) {
-                    return { name: e.title || basenameOf(safeDecode(e.file)), url: e.file };
-                }
-                const f = findLocalFile(e.file);
-                if (f) return { name: e.title || f.name, file: f };
-                missing++;
-                return { name: e.title || basenameOf(e.file), missing: true };
-            });
-            dplResolved = missing === 0;
-            setPlaylist(items);
-            playlistPanel.classList.add('active');
-            const first = items.findIndex((it) => !it.missing);
-            if (first < 0) {
-                // 全部缺失：提示用户补选文件/文件夹
-                showError('播放列表中的文件都未匹配到本地文件：把视频所在文件夹（或对应文件）也选进来即可自动匹配。');
-                dropZone.classList.add('active');
-                return;
+        function entryToItem(e) {
+            const rawPath = e.file;
+            const title = e.title;
+            if (/^https?:\/\//i.test(rawPath)) {
+                return {
+                    name: title || basenameOf(safeDecode(rawPath)),
+                    originalPath: rawPath, normalizedPath: '',
+                    url: rawPath, file: null, fileHandle: null,
+                    status: 'remote', error: '',
+                };
             }
+            const item = {
+                name: title || basenameOf(safeDecode(rawPath)),
+                originalPath: rawPath, normalizedPath: normalizePath(rawPath),
+                url: '', file: null, fileHandle: null,
+                status: 'unresolved', error: '',
+            };
+            applyMatchToItem(item);
+            return item;
+        }
+        function applyDpl(autoplay) {
+            const items = lastDplEntries.map(entryToItem);
+            dplResolved = items.every(isPlayable);
+            setPlaylist(items);
+            dropZone.classList.remove('active'); // 收起中央遮挡层，只展示列表面板
+            playlistPanel.classList.add('active');
             hideError();
-            // 首次导入直接开播；后续补选文件时，仅在当前没有播放任何内容时才自动开播
-            if (autoplay || (playlistIndex === -1 && !videoPlayer.currentSrc)) {
+            const first = items.findIndex(isPlayable);
+            // 有可播放条目时首播；全部未授权也只展示列表，不遮挡、不报错
+            if (first >= 0 && (autoplay || (playlistIndex === -1 && !videoPlayer.currentSrc))) {
                 playAt(first);
             }
         }
@@ -2023,6 +2232,26 @@
         document.getElementById('playlistClose').addEventListener('click', () => {
             playlistPanel.classList.remove('active');
         });
+        // 播放列表工具栏：添加媒体目录 / 重新匹配 / 清空
+        addDirBtn.addEventListener('click', (e) => { e.stopPropagation(); addMediaDirectory(); });
+        rematchBtn.addEventListener('click', (e) => { e.stopPropagation(); rematchAll(); });
+        clearListBtn.addEventListener('click', (e) => { e.stopPropagation(); clearPlaylist(); });
+        // 单独授权回退：showOpenFilePicker 不可用时走隐藏 input
+        grantFileInput.addEventListener('change', (e) => {
+            const f = e.target.files && e.target.files[0];
+            if (f && grantingIndex >= 0) bindFileToItem(grantingIndex, f, null);
+            grantingIndex = -1;
+            e.target.value = '';
+        });
+        // 添加媒体目录回退：showDirectoryPicker 不可用时走 webkitdirectory
+        grantDirInput.addEventListener('change', (e) => {
+            const videos = Array.from(e.target.files || []).filter(f => isVideoFileName(f.name));
+            if (videos.length) {
+                addToFilePool(videos);
+                rematchAll(`已索引 ${videos.length} 个视频文件。`);
+            }
+            e.target.value = '';
+        });
 
         // Drag and drop handlers
         dropZone.addEventListener('dragover', (e) => {
@@ -2127,8 +2356,16 @@
         videoPlayer.addEventListener('ended', () => {
             document.body.classList.remove('playing');
             scheduleChromeResize();
-            // 播放列表自动连播下一集
-            if (playlistIndex >= 0) playNext();
+            // 播放列表自动连播：下一条可播则直接续播；未授权则停下并打开面板引导授权
+            if (playlistIndex < 0) return;
+            const next = playlist[playlistIndex + 1];
+            if (!next) return;
+            if (isPlayable(next)) {
+                playNext();
+            } else {
+                playAt(playlistIndex + 1);
+                playlistPanel.classList.add('active');
+            }
         });
 
         // 顶栏收起/展开的过渡结束后再重算渲染尺寸
