@@ -673,6 +673,12 @@
         .speed-select:hover { border-color: rgba(255,255,255,.3); box-shadow: none; }
         .speed-select option { background: #1a1e27; color: #e8ecf3; }
 
+        /* ── touch behavior ────────────────────────────────── */
+        /* 禁掉双击缩放/点按延迟；画布和进度条手势完全由 JS 接管 */
+        html, body { touch-action: manipulation; }
+        #vrCanvas { touch-action: none; }
+        .progress-container { touch-action: none; }
+
         /* ── mobile (≤640px) ───────────────────────────────── */
         @media (max-width: 640px) {
             /* top bar: compact single row + 灵动岛安全区 */
@@ -709,7 +715,7 @@
             .hero-title { font-size: 22px; }
             .hero-sub { font-size: 12.5px; margin-bottom: 22px; }
             .hero-url { flex-direction: column; align-items: stretch; }
-            .hero-url input { width: 100%; }
+            .hero-url input { width: 100%; font-size: 16px; }  /* ≥16px 避免 iOS 聚焦自动放大页面 */
             .hero-url .url-play-btn { width: 100%; padding: 12px; }
 
             /* vr hint badge */
@@ -1187,17 +1193,49 @@
             vrCanvas.addEventListener('pointercancel', endDrag);
             vrCanvas.addEventListener('lostpointercapture', endDrag);
 
-            // Touch controls for mobile
+            // Touch controls for mobile: 单指旋转视角，双指捏合缩放（FOV）
             let touchStart = null;
+            let pinchStartDist = 0;
+
+            function touchDistance(t) {
+                return Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+            }
+
             vrCanvas.addEventListener('touchstart', (e) => {
                 if (!isVrMode) return;
                 e.preventDefault();
-                touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-            });
+                if (e.touches.length === 2) {
+                    pinchStartDist = touchDistance(e.touches);
+                    touchStart = null; // 双指期间暂停旋转
+                } else if (e.touches.length === 1) {
+                    touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+                }
+            }, { passive: false });
 
             vrCanvas.addEventListener('touchmove', (e) => {
-                if (!isVrMode || !touchStart) return;
+                if (!isVrMode) return;
                 e.preventDefault();
+
+                // 双指捏合 → 缩放（张开 = 拉近画面 = FOV 变小）
+                if (e.touches.length === 2 && camera) {
+                    const dist = touchDistance(e.touches);
+                    if (pinchStartDist > 0 && dist > 0) {
+                        const scale = pinchStartDist / dist;
+                        const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
+                        if (isFullscreen) {
+                            fullscreenVrFov = Math.max(minFov, Math.min(maxFov, fullscreenVrFov * scale));
+                            camera.fov = fullscreenVrFov;
+                        } else {
+                            originalVrFov = Math.max(minFov, Math.min(maxFov, originalVrFov * scale));
+                            camera.fov = originalVrFov;
+                        }
+                        camera.updateProjectionMatrix();
+                    }
+                    pinchStartDist = dist;
+                    return;
+                }
+
+                if (!touchStart) return;
 
                 const deltaX = e.touches[0].clientX - touchStart.x;
                 const deltaY = e.touches[0].clientY - touchStart.y;
@@ -1208,10 +1246,16 @@
                 rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, rotation.x));
 
                 touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-            });
+            }, { passive: false });
 
-            vrCanvas.addEventListener('touchend', () => {
-                touchStart = null;
+            vrCanvas.addEventListener('touchend', (e) => {
+                if (e.touches.length < 2) pinchStartDist = 0;
+                // 双指抬起后剩一根手指：重置起点继续旋转，避免视角跳变
+                if (e.touches.length === 1) {
+                    touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+                } else {
+                    touchStart = null;
+                }
             });
 
             // Mouse wheel controls for FOV (zoom)
@@ -1465,6 +1509,7 @@
 
         // Progress bar
         videoPlayer.addEventListener('timeupdate', () => {
+            if (scrubbing) return; // 拖动预览期间不覆盖进度显示
             const progress = (videoPlayer.currentTime / videoPlayer.duration) * 100;
             progressFill.style.width = progress + '%';
             currentTimeDisplay.textContent = formatTime(videoPlayer.currentTime);
@@ -1476,25 +1521,47 @@
         });
 
         // Seek on progress bar click / touch
-        function seekFromClientX(clientX) {
+        let scrubbing = false;
+
+        function posFromClientX(clientX) {
             const rect = progressBar.getBoundingClientRect();
-            const pos = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+            return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+        }
+
+        function seekFromClientX(clientX) {
+            const pos = posFromClientX(clientX);
             if (videoPlayer.duration) {
                 videoPlayer.currentTime = pos * videoPlayer.duration;
             }
         }
+
+        // 拖动过程中只更新视觉预览，不真正 seek（避免每个 touchmove 都触发解码器重置）
+        function previewSeek(clientX) {
+            const pos = posFromClientX(clientX);
+            progressFill.style.width = (pos * 100) + '%';
+            if (videoPlayer.duration) {
+                currentTimeDisplay.textContent = formatTime(pos * videoPlayer.duration);
+            }
+        }
+
         progressBar.addEventListener('click', (e) => seekFromClientX(e.clientX));
 
-        // 触摸：点按/拖动进度条直接 seek（监听容器以获得更大的触控区域）
+        // 触摸：拖动预览、松手才 seek（监听容器以获得更大的触控区域）
         const progressTouchArea = progressBar.parentElement;
         progressTouchArea.addEventListener('touchstart', (e) => {
             e.preventDefault();
-            seekFromClientX(e.touches[0].clientX);
+            scrubbing = true;
+            previewSeek(e.touches[0].clientX);
         }, { passive: false });
         progressTouchArea.addEventListener('touchmove', (e) => {
             e.preventDefault();
-            seekFromClientX(e.touches[0].clientX);
+            if (scrubbing) previewSeek(e.touches[0].clientX);
         }, { passive: false });
+        progressTouchArea.addEventListener('touchend', (e) => {
+            if (!scrubbing) return;
+            scrubbing = false;
+            seekFromClientX(e.changedTouches[0].clientX);
+        });
 
         // Volume control
         volumeSlider.addEventListener('input', (e) => {
