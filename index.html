@@ -1355,14 +1355,22 @@
             let hint = '无法播放此视频：浏览器报告了媒体错误。';
             if (err && err.code === 4) {
                 hint = '浏览器不支持该视频的编码或封装格式（常见于 MKV、HEVC/H.265、10-bit H.264 或 AC3/DTS 音频）。'
-                     + '可转换为 MP4（H.264 视频 + AAC 音频），例如：'
-                     + 'ffmpeg -i input.mkv -c:v libx264 -c:a aac output.mp4';
+                     + '手机端尤其注意：8K HEVC 视频超出手机硬解能力（iPhone 通常最高 4K），'
+                     + '请改用 4K / 1080p 的 H.264 版本。转换命令：'
+                     + 'ffmpeg -i input.mp4 -c:v libx264 -vf scale=4096:-2 -c:a aac output.mp4';
             } else if (err && err.code === 3) {
                 hint = '视频文件似乎已损坏或不完整。';
             } else if (err && err.code === 2) {
                 hint = '读取视频时发生网络错误（链接可能已失效或被拒绝访问）。';
             }
             showError(hint);
+            // 报错文案在中央面板里，而视频加载后面板是隐藏的——重新弹出面板让用户看到报错
+            if (!videoPlayer.paused) videoPlayer.pause();
+            dropZone.classList.add('active');
+            const heroCloseBtn = document.getElementById('heroClose');
+            if (heroCloseBtn && videoPlayer.src) {
+                heroCloseBtn.style.display = 'inline-flex';
+            }
         });
 
         // Network playback: route cross-origin URLs through the local proxy
