@@ -1,0 +1,1560 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VR 播放器 · 本地与在线 360°/SBS 视频</title>
+    <meta name="description" content="VR 视频播放器：支持本地文件与在线直链，即点即播 360° 全景与 SBS 左右分屏视频，支持拖拽加载，无需上传。">
+    <meta name="keywords" content="VR Player, Online VR Player, Online SBS VR Player, Side by side VR Player, 360 video player, SBS video player, local VR video player, VR video player">
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
+    <meta name="googlebot" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
+    <meta property="og:title" content="Online VR Player - Play Local VR Videos in Your Browser">
+    <meta property="og:description" content="Play local 360 and SBS VR videos in your browser. Drag and drop to start.">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Online VR Player">
+    <meta property="og:url" content="./">
+    <meta property="og:image" content="./background-pic.jpg">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Online VR Player - Play Local VR Videos in Your Browser">
+    <meta name="twitter:description" content="Play local 360 and SBS VR videos in your browser. Drag and drop to start.">
+    <meta name="twitter:image" content="./background-pic.jpg">
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="./favicon.svg">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Online VR Player",
+      "description": "Online VR Player to play local 360 and SBS (side-by-side) VR videos in the browser.",
+      "applicationCategory": "MultimediaApplication",
+      "operatingSystem": "Any",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "keywords": [
+        "VR Player",
+        "Online VR Player",
+        "Online SBS VR Player",
+        "Side by side VR Player",
+        "360 video player",
+        "SBS video player"
+      ]
+    }
+    </script>
+    <link rel="stylesheet" href="./vendor/fonts.css">
+    <link rel="stylesheet" href="./vendor/fontawesome/all.min.css">
+    <script src="./vendor/three.min.js"></script>
+    <style>
+        /* ── tokens ──────────────────────────────────────────── */
+        :root {
+            --bg:        #0D0D0D;
+            --surface:   #161616;
+            --surface-2: #1F1F1F;
+            --border:    #2E2E2E;
+            --border-hi: #F0F0F0;
+            --text:      #F0F0F0;
+            --muted:     #555;
+            --yellow:    #F5E642;
+            --red:       #E83232;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        .sr-only {
+            position: absolute; width: 1px; height: 1px;
+            padding: 0; margin: -1px; overflow: hidden;
+            clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+        }
+
+        body {
+            font-family: 'Space Grotesk', -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            margin: 0; padding: 0; overflow: hidden;
+        }
+
+        /* grid pattern when no video loaded */
+        body:not(.has-video)::before {
+            content: "";
+            position: fixed; inset: 0;
+            background-image:
+                linear-gradient(var(--surface-2) 1px, transparent 1px),
+                linear-gradient(90deg, var(--surface-2) 1px, transparent 1px);
+            background-size: 48px 48px;
+            z-index: -1;
+        }
+
+        body.has-video { background: #000; }
+
+        .container {
+            background: transparent;
+            max-width: 100vw; width: 100vw;
+            margin: 0; height: 100vh; padding: 0;
+            text-align: center;
+            display: flex; flex-direction: column;
+            box-sizing: border-box; position: relative;
+        }
+        .container.has-video { background: #000; }
+
+        .container.fullscreen,
+        body.fullscreen {
+            border-radius: 0; padding: 0; margin: 0;
+            width: 100%; height: 100vh;
+            min-height: 100vh; max-height: 100vh; overflow: hidden;
+        }
+        .container:fullscreen,
+        .container:-webkit-full-screen,
+        .container:-moz-full-screen {
+            width: 100vw; height: 100vh;
+            max-width: 100vw; max-height: 100vh;
+            margin: 0; padding: 0;
+        }
+        .container.fullscreen .drop-zone,
+        .container.fullscreen .file-info,
+        .container.fullscreen .sbs-options,
+        .container.fullscreen .error-message { display: none; }
+        .container.fullscreen .view-toggle { position: static; transform: none; }
+
+        /* ── top bar ─────────────────────────────────────────── */
+        .top-bar {
+            position: absolute; top: 0; left: 0; right: 0;
+            height: 56px;
+            display: flex; align-items: center;
+            justify-content: space-between; gap: 12px;
+            padding: 0 20px;
+            background: var(--bg);
+            border-bottom: 2px solid var(--border);
+            z-index: 30; box-sizing: border-box;
+        }
+        .container.has-video .top-bar { background: rgba(10,10,10,0.92); }
+
+        .top-bar .left, .top-bar .center, .top-bar .right {
+            display: flex; align-items: center; gap: 10px;
+        }
+        .top-bar .left  { flex: 0 1 380px; min-width: 0; }
+        .top-bar .center { flex: 0 0 auto; justify-content: center; }
+        .top-bar .right { flex: 0 1 240px; justify-content: flex-end; }
+
+        /* ── view toggle ─────────────────────────────────────── */
+        .view-toggle { display: flex; gap: 0; align-items: center; }
+
+        .view-btn {
+            padding: 7px 16px;
+            background: var(--surface);
+            color: var(--muted);
+            border: 2px solid var(--border);
+            border-radius: 0;
+            cursor: pointer;
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 0.72em;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            transition: color 0.1s, background 0.1s, border-color 0.1s, box-shadow 0.1s, transform 0.1s;
+        }
+        .view-btn:first-child { border-right: none; }
+        .view-btn:hover:not(.active) {
+            color: var(--text);
+            border-color: var(--border-hi);
+            background: var(--surface-2);
+        }
+        .view-btn.active {
+            background: var(--yellow);
+            color: var(--bg);
+            border-color: var(--yellow);
+            box-shadow: 3px 3px 0 rgba(245,230,66,0.35);
+        }
+
+        /* ── file input button ───────────────────────────────── */
+        .file-input-wrapper { margin: 0; }
+
+        .file-input-label {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 7px 14px;
+            background: var(--surface);
+            color: var(--text);
+            border: 2px solid var(--border-hi);
+            border-radius: 0;
+            cursor: pointer;
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 0.72em;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            box-shadow: 3px 3px 0 var(--border-hi);
+            transition: transform 0.1s, box-shadow 0.1s;
+        }
+        .file-input-label:hover  { transform: translate(-1px,-1px); box-shadow: 4px 4px 0 var(--border-hi); }
+        .file-input-label:active { transform: translate(2px, 2px);  box-shadow: 1px 1px 0 var(--border-hi); }
+
+        input[type="file"] { display: none; }
+
+        /* ── file info ───────────────────────────────────────── */
+        .file-info {
+            display: flex; gap: 14px; align-items: center;
+            color: var(--muted);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.68em;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            max-width: 380px;
+        }
+        .file-info p { margin: 0; overflow: hidden; text-overflow: ellipsis; max-width: 160px; }
+        .file-info strong { color: var(--text); }
+
+        /* ── page layout ─────────────────────────────────────── */
+        .page-content {
+            flex: 1; position: relative;
+            padding-top: 56px;
+            box-sizing: border-box;
+            display: flex; flex-direction: column;
+        }
+
+        /* ── ad ──────────────────────────────────────────────── */
+
+        /* ── video container ─────────────────────────────────── */
+        .video-container {
+            position: relative; width: 100%; height: 100%;
+            min-height: 0; max-height: 100vh;
+            margin: 0; background: #000;
+            overflow: hidden; display: none;
+            padding-bottom: 56px; box-sizing: border-box;
+        }
+        .video-container.active { display: flex; flex-direction: column; }
+
+        .container.fullscreen .video-container {
+            max-height: 100vh; min-height: 100vh;
+            height: 100vh; width: 100vw;
+        }
+        .container.fullscreen #vrCanvas { height: 100%; min-height: 100%; width: 100vw; }
+        .container.fullscreen video    { height: 100%; max-height: 100%; width: 100vw; }
+
+        video {
+            width: 100%; height: 100%; display: block;
+            flex: 1; min-height: 0;
+            position: absolute; inset: 0; z-index: 1;
+            object-fit: contain;
+        }
+
+        .video-hidden {
+            opacity: 0; pointer-events: none;
+            position: absolute; width: 1px; height: 1px; left: -9999px;
+        }
+
+        #vrCanvas {
+            width: 100%; height: 100%; min-height: 0;
+            display: none; cursor: grab;
+            position: absolute; inset: 0; z-index: 1;
+        }
+        #vrCanvas.active   { display: block; }
+        #vrCanvas.dragging { cursor: grabbing; }
+
+        /* ── vr info badge ───────────────────────────────────── */
+        .vr-info {
+            position: absolute; top: 14px; left: 14px;
+            background: var(--surface);
+            color: var(--muted);
+            padding: 7px 12px;
+            border: 2px solid var(--border);
+            box-shadow: 3px 3px 0 var(--border);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.68em;
+            letter-spacing: 0.07em;
+            text-transform: uppercase;
+            z-index: 10; display: none;
+            transition: opacity 0.2s;
+        }
+        .vr-info.active { display: block; }
+        .vr-info.compact .hint-text { display: none; }
+
+        /* ── sbs options ─────────────────────────────────────── */
+        .sbs-options {
+            margin-top: 12px; padding: 14px 16px;
+            background: var(--surface);
+            border: 2px solid var(--border);
+            display: none;
+        }
+        .sbs-options.active { display: block; }
+        .sbs-options label {
+            display: flex; align-items: center; gap: 10px;
+            margin: 8px 0; cursor: pointer;
+            font-size: 0.78em; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 0.06em;
+            color: var(--muted);
+        }
+        .sbs-options input[type="radio"] { cursor: pointer; accent-color: var(--yellow); }
+
+        /* ── controls bar ────────────────────────────────────── */
+        .controls {
+            background: var(--bg);
+            border-top: 2px solid var(--border);
+            padding: 0 16px;
+            display: flex; align-items: center; gap: 10px;
+            position: absolute; bottom: 0; left: 0; right: 0;
+            z-index: 30; height: 56px;
+        }
+
+        .control-btn {
+            background: transparent;
+            border: 2px solid var(--border);
+            color: var(--text);
+            font-size: 0.9em;
+            cursor: pointer;
+            padding: 0;
+            width: 34px; height: 34px;
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: 2px 2px 0 var(--border);
+            transition: transform 0.1s, box-shadow 0.1s, background 0.1s, border-color 0.1s, color 0.1s;
+        }
+        .control-btn:hover {
+            background: var(--yellow); color: var(--bg);
+            border-color: var(--yellow);
+            box-shadow: 3px 3px 0 rgba(245,230,66,0.4);
+            transform: translate(-1px,-1px);
+        }
+        .control-btn:active {
+            transform: translate(1px,1px);
+            box-shadow: 1px 1px 0 var(--border);
+        }
+
+        /* ── progress bar ────────────────────────────────────── */
+        .progress-container {
+            flex: 1; min-width: 120px;
+            display: flex; align-items: center;
+        }
+
+        .progress-bar {
+            width: 100%; height: 20px;
+            background: var(--surface-2);
+            border: 2px solid var(--border);
+            cursor: pointer; position: relative;
+        }
+        .progress-bar:hover { border-color: var(--yellow); }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--yellow);
+            width: 0%;
+        }
+
+        /* ── time display ────────────────────────────────────── */
+        .time-display {
+            color: var(--muted);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.7em;
+            letter-spacing: 0.05em;
+            min-width: 96px; text-align: center;
+        }
+
+        /* ── volume ──────────────────────────────────────────── */
+        .volume-control { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+        .volume-slider  { width: 72px; accent-color: var(--yellow); cursor: pointer; }
+
+        /* ── speed ───────────────────────────────────────────── */
+        .speed-control { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+
+        .speed-select {
+            background: var(--surface);
+            color: var(--text);
+            border: 2px solid var(--border);
+            border-radius: 0;
+            padding: 4px 8px;
+            height: 34px;
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 0.72em;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            outline: none; cursor: pointer;
+            box-shadow: 2px 2px 0 var(--border);
+            transition: border-color 0.1s, box-shadow 0.1s;
+        }
+        .speed-select:hover { border-color: var(--yellow); box-shadow: 2px 2px 0 rgba(245,230,66,0.35); }
+        .speed-select option { background: var(--surface); color: var(--text); }
+
+        /* ── drop zone ───────────────────────────────────────── */
+        .drop-zone {
+            position: absolute; left: 50%; top: 50%;
+            transform: translate(-50%, -50%);
+            width: min(480px, 88vw);
+            padding: 52px 44px;
+            background: var(--surface);
+            border: 2px solid var(--border);
+            box-shadow: 6px 6px 0 var(--surface-2);
+            display: none; text-align: center;
+            color: var(--muted); cursor: pointer;
+            transition: border-color 0.1s, box-shadow 0.1s, color 0.1s;
+        }
+        .drop-zone.active { display: block; }
+        .drop-zone:hover {
+            border-color: var(--yellow);
+            color: var(--text);
+            box-shadow: 8px 8px 0 rgba(245,230,66,0.12);
+        }
+        .drop-zone.drag-over {
+            border-color: var(--yellow);
+            color: var(--text);
+            box-shadow: 8px 8px 0 rgba(245,230,66,0.25);
+            transform: translate(-50%, -50%) scale(1.01);
+        }
+
+        .drop-zone .drop-icon {
+            font-size: 2.4em;
+            margin-bottom: 20px;
+            display: block;
+            color: var(--border-hi);
+        }
+        .drop-zone .drop-primary {
+            font-size: 0.9em;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: inherit;
+            margin-bottom: 10px;
+        }
+        .drop-zone .drop-secondary {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.68em;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            color: var(--muted);
+        }
+
+        /* ── error ───────────────────────────────────────────── */
+        .error-message {
+            color: var(--red);
+            background: #1A0808;
+            border: 2px solid var(--red);
+            box-shadow: 3px 3px 0 var(--red);
+            padding: 12px 16px;
+            margin-top: 12px;
+            display: none;
+            font-size: 0.78em;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+        .error-message.active { display: block; }
+
+        /* ── mobile ──────────────────────────────────────────── */
+        @media (max-width: 768px) {
+            .controls { flex-wrap: wrap; height: auto; padding: 8px 12px; }
+            .progress-container { width: 100%; order: -1; }
+        }
+    </style>
+    <style>
+        .url-input-wrapper { display: flex; align-items: center; gap: 6px; margin-right: 10px; }
+        .url-input-wrapper input {
+            width: 220px; max-width: 32vw; padding: 6px 10px; font-size: 12px;
+            font-family: 'JetBrains Mono', monospace; color: var(--fg, #eee);
+            background: rgba(255,255,255,0.06); border: 1px solid var(--border, #333);
+            border-radius: 4px; outline: none;
+        }
+        .url-input-wrapper input:focus { border-color: #e8ff47; }
+        .url-play-btn {
+            white-space: nowrap; padding: 6px 12px; font-size: 12px; cursor: pointer;
+            font-family: inherit; color: var(--fg, #eee); background: transparent;
+            border: 1px solid var(--border, #333); border-radius: 4px;
+        }
+        .url-play-btn:hover { border-color: #e8ff47; color: #e8ff47; }
+    </style>
+    <style>
+        /* ── clean light theme overrides ───────────────────── */
+        :root {
+            --bg:        #f4f6f9;
+            --surface:   #ffffff;
+            --surface-2: #e9edf3;
+            --border:    #e3e7ee;
+            --border-hi: #c9d2e0;
+            --text:      #1d2735;
+            --muted:     #8a94a6;
+            --yellow:    #2f6bff;   /* accent blue */
+            --red:       #e0492f;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC',
+                         'Hiragino Sans GB', 'Microsoft YaHei', 'Segoe UI', sans-serif;
+        }
+
+        /* ── top bar: hidden until a video is loaded ───────── */
+        .top-bar {
+            display: none; height: 60px;
+            background: rgba(255,255,255,.85);
+            backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+            border-bottom: 1px solid var(--border);
+        }
+        body.has-video .top-bar { display: flex; }
+        .container.has-video .top-bar { background: rgba(255,255,255,.85); }
+        .page-content { padding-top: 0; }
+        body.has-video .page-content { padding-top: 60px; }
+
+        /* ── view toggle ───────────────────────────────────── */
+        .view-btn {
+            text-transform: none; letter-spacing: 0;
+            font-size: 13px; font-weight: 500; padding: 8px 18px;
+            border-width: 1px; background: #fff; color: var(--muted);
+            font-family: inherit;
+        }
+        .view-btn:first-child { border-radius: 10px 0 0 10px; }
+        .view-btn:last-child  { border-radius: 0 10px 10px 0; }
+        .view-btn:hover:not(.active) {
+            background: #f2f5fa; color: var(--text); border-color: var(--border-hi);
+        }
+        .view-btn.active {
+            background: var(--yellow); color: #fff;
+            border-color: var(--yellow); box-shadow: none;
+        }
+
+        /* ── file info ─────────────────────────────────────── */
+        .file-info { text-transform: none; letter-spacing: 0; font-size: 12px; }
+        .file-info strong { color: var(--muted); font-weight: 500; }
+        .file-info p { color: var(--text); max-width: 220px; }
+
+        /* ── ghost button (打开新视频) ─────────────────────── */
+        .ghost-btn {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 8px 16px; font-size: 13px; font-family: inherit;
+            color: var(--text); background: #fff;
+            border: 1px solid var(--border-hi); border-radius: 10px;
+            cursor: pointer; transition: border-color .15s, color .15s;
+        }
+        .ghost-btn:hover { border-color: var(--yellow); color: var(--yellow); }
+
+        /* ── hero / drop zone (central panel) ──────────────── */
+        .drop-zone {
+            width: min(600px, 92vw);
+            padding: 46px 44px 38px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            box-shadow: 0 24px 70px rgba(29,39,53,.08);
+            cursor: default; color: var(--text); z-index: 40;
+        }
+        .drop-zone:hover {
+            border-color: var(--border); color: var(--text);
+            box-shadow: 0 24px 70px rgba(29,39,53,.08);
+        }
+        .drop-zone.drag-over {
+            border-color: var(--yellow); color: var(--text);
+            box-shadow: 0 0 0 4px rgba(47,107,255,.15), 0 24px 70px rgba(29,39,53,.10);
+            transform: translate(-50%, -50%);
+        }
+        .hero-icon  { font-size: 34px; color: var(--yellow); margin-bottom: 14px; }
+        .hero-title { font-size: 26px; font-weight: 700; letter-spacing: .02em; margin-bottom: 8px; }
+        .hero-sub   { font-size: 13.5px; color: var(--muted); margin-bottom: 26px; }
+        .hero-url   { width: 100%; margin: 0; }
+        .hero-divider {
+            display: flex; align-items: center; gap: 12px;
+            color: #b7bfcc; font-size: 12px; margin: 18px 0;
+        }
+        .hero-divider::before, .hero-divider::after {
+            content: ""; flex: 1; height: 1px; background: var(--border);
+        }
+        .hero-hint  { margin-top: 16px; font-size: 12px; color: #aab3c2; }
+        .hero-close {
+            margin-top: 20px; display: none; align-items: center; gap: 6px;
+            padding: 7px 16px; font-size: 12.5px; font-family: inherit;
+            color: var(--muted); background: none;
+            border: 1px solid var(--border); border-radius: 999px; cursor: pointer;
+        }
+        .hero-close:hover { color: var(--text); border-color: var(--border-hi); }
+
+        /* ── url input + play button inside hero ───────────── */
+        .url-input-wrapper input {
+            flex: 1; width: auto; max-width: none;
+            padding: 11px 14px; font-size: 13px; font-family: inherit;
+            color: var(--text); background: #f5f7fa;
+            border: 1px solid var(--border); border-radius: 10px;
+        }
+        .url-input-wrapper input:focus { border-color: var(--yellow); background: #fff; }
+        .url-play-btn {
+            padding: 11px 18px; font-size: 13px; font-weight: 600;
+            color: #fff; background: var(--yellow);
+            border: 1px solid var(--yellow); border-radius: 10px;
+            font-family: inherit; transition: background .15s;
+        }
+        .url-play-btn:hover { background: #2459d8; border-color: #2459d8; color: #fff; }
+
+        /* ── file open button inside hero ──────────────────── */
+        .file-input-label {
+            padding: 12px 28px; font-size: 14px; font-weight: 600;
+            text-transform: none; letter-spacing: 0;
+            border: 1px solid var(--border-hi); border-radius: 12px;
+            box-shadow: none; color: var(--text); background: #fff;
+            font-family: inherit;
+        }
+        .file-input-label:hover {
+            transform: none; box-shadow: none;
+            border-color: var(--yellow); color: var(--yellow);
+        }
+        .file-input-label:active { transform: none; box-shadow: none; }
+
+        /* ── error ─────────────────────────────────────────── */
+        .error-message {
+            margin-top: 18px; text-align: left;
+            background: #fef2f0; border: 1px solid #f4c8c1; color: #c23a22;
+            border-radius: 10px; box-shadow: none;
+            font-size: 12.5px; font-weight: 500;
+            letter-spacing: 0; text-transform: none; line-height: 1.7;
+        }
+
+        /* ── sbs options: floating card over video ─────────── */
+        .sbs-options {
+            position: absolute; top: 76px; left: 50%;
+            transform: translateX(-50%); z-index: 25;
+            margin: 0; padding: 12px 20px;
+            background: rgba(255,255,255,.94);
+            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+            border: 1px solid var(--border); border-radius: 14px;
+            box-shadow: 0 10px 30px rgba(29,39,53,.12);
+        }
+        .sbs-options .sbs-title {
+            margin: 0 0 8px; font-size: 12px; font-weight: 600; color: var(--muted);
+        }
+        .sbs-options .sbs-row { display: flex; gap: 18px; }
+        .sbs-options label {
+            margin: 0; font-size: 12.5px; font-weight: 500;
+            text-transform: none; letter-spacing: 0; color: var(--text);
+        }
+        .sbs-options input[type="radio"] { accent-color: var(--yellow); }
+
+        /* ── vr info badge ─────────────────────────────────── */
+        .vr-info {
+            background: rgba(255,255,255,.88);
+            backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+            color: #5a6474; border: 1px solid var(--border); border-radius: 10px;
+            box-shadow: 0 6px 18px rgba(29,39,53,.10);
+            font-size: 12px; letter-spacing: 0; text-transform: none;
+            padding: 8px 14px;
+        }
+
+        /* ── controls: dark floating glass bar ─────────────── */
+        .video-container { padding-bottom: 0; }
+        .controls {
+            height: auto; margin: 0 14px 14px; padding: 10px 14px;
+            background: rgba(18,21,28,.78);
+            backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+            border: 1px solid rgba(255,255,255,.09); border-radius: 16px;
+            gap: 12px;
+        }
+        .control-btn {
+            width: 36px; height: 36px; border: none; border-radius: 10px;
+            background: transparent; color: #dfe4ec; box-shadow: none; font-size: 14px;
+        }
+        .control-btn:hover {
+            background: rgba(255,255,255,.12); color: #fff;
+            border: none; box-shadow: none; transform: none;
+        }
+        .control-btn:active { transform: none; box-shadow: none; }
+        .progress-bar {
+            height: 6px; border: none; border-radius: 999px;
+            background: rgba(255,255,255,.16);
+        }
+        .progress-bar:hover { border: none; }
+        .progress-fill { background: var(--yellow); border-radius: 999px; }
+        .time-display { color: rgba(255,255,255,.65); font-size: 12px; }
+        .volume-control, .speed-control { color: rgba(255,255,255,.65); }
+        .volume-slider { accent-color: var(--yellow); }
+        .speed-select {
+            background: rgba(255,255,255,.10); color: #e8ecf3;
+            border: 1px solid rgba(255,255,255,.14); border-radius: 8px;
+            box-shadow: none; font-size: 12px; text-transform: none;
+            letter-spacing: 0; height: 32px; font-family: inherit;
+        }
+        .speed-select:hover { border-color: rgba(255,255,255,.3); box-shadow: none; }
+        .speed-select option { background: #1a1e27; color: #e8ecf3; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="sr-only">VR 播放器</h1>
+        <p class="sr-only">在浏览器中播放本地与在线的 360° 全景、SBS（左右分屏）VR 视频，支持拖拽加载，无需上传。</p>
+        <div class="top-bar">
+            <div class="left">
+                <div class="file-info" id="fileInfo">
+                    <p><strong>文件:</strong> <span id="fileName"></span></p>
+                    <p><strong>大小:</strong> <span id="fileSize"></span></p>
+                    <p><strong>类型:</strong> <span id="fileType"></span></p>
+                </div>
+            </div>
+            <div class="center">
+                <div class="view-toggle">
+                    <button class="view-btn" id="normalViewBtn"><i class="fa-solid fa-tv"></i>&nbsp; 普通模式</button>
+                    <button class="view-btn active" id="vrViewBtn"><i class="fa-solid fa-vr-cardboard"></i>&nbsp; VR / 360</button>
+                </div>
+            </div>
+            <div class="right">
+                <button id="newVideoBtn" class="ghost-btn"><i class="fa-solid fa-plus"></i>&nbsp; 打开新视频</button>
+            </div>
+        </div>
+
+        <div class="page-content">
+            <div class="drop-zone hero" id="dropZone">
+                <div class="hero-icon"><i class="fa-solid fa-vr-cardboard"></i></div>
+                <h2 class="hero-title">VR 播放器</h2>
+                <p class="hero-sub">本地文件与在线直链即点即播 · 支持 360° 全景与 SBS 分屏</p>
+                <div class="url-input-wrapper hero-url">
+                    <input type="url" id="videoUrl" placeholder="粘贴视频链接，回车播放…" spellcheck="false" autocomplete="off">
+                    <button id="openUrlBtn" class="url-play-btn" title="播放链接"><i class="fa-solid fa-link"></i>&nbsp; 播放链接</button>
+                </div>
+                <div class="hero-divider"><span>或</span></div>
+                <label for="videoFile" class="file-input-label hero-file">
+                    <i class="fa-solid fa-folder-open"></i>&nbsp; 打开本地文件
+                </label>
+                <p class="hero-hint">也可以直接把视频文件拖到这里</p>
+                <button id="heroClose" class="hero-close" style="display:none"><i class="fa-solid fa-xmark"></i>&nbsp; 返回播放</button>
+                <div class="error-message" id="errorMessage"></div>
+                <input type="file" id="videoFile" accept="video/*">
+            </div>
+
+            <div class="sbs-options" id="sbsOptions">
+                <p class="sbs-title">SBS 视频格式</p>
+                <div class="sbs-row">
+                    <label>
+                        <input type="radio" name="sbsMode" value="left" checked>
+                        <span>仅左眼</span>
+                    </label>
+                    <label>
+                        <input type="radio" name="sbsMode" value="right">
+                        <span>仅右眼</span>
+                    </label>
+                    <label>
+                        <input type="radio" name="sbsMode" value="split">
+                        <span>左右分屏</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="video-container" id="videoContainer">
+                <div class="controls">
+                <button class="control-btn" id="playPauseBtn"><i class="fa-solid fa-play"></i></button>
+                <div class="progress-container">
+                    <div class="progress-bar" id="progressBar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                </div>
+                <div class="time-display">
+                    <span id="currentTime">0:00</span> / <span id="duration">0:00</span>
+                </div>
+                <div class="volume-control">
+                    <span style="color: white;"><i class="fa-solid fa-volume-high"></i></span>
+                    <input type="range" class="volume-slider" id="volumeSlider" min="0" max="100" value="100">
+                </div>
+                <div class="speed-control">
+                    <span style="color: white;"><i class="fa-solid fa-gauge-high"></i></span>
+                    <select id="speedSelect" class="speed-select">
+                        <option value="2">2x</option>
+                        <option value="1.5">1.5x</option>
+                        <option value="1" selected>1x</option>
+                        <option value="0.5">0.5x</option>
+                        <option value="0.25">0.25x</option>
+                    </select>
+                </div>
+                <button class="control-btn" id="fullscreenBtn"><i class="fa-solid fa-expand"></i></button>
+            </div>
+                <div class="vr-info" id="vrInfo">
+                    <i class="fa-solid fa-mouse"></i>
+                    <span class="hint-text">&nbsp;拖动旋转视角 · 滚轮缩放</span>
+                </div>
+                <video id="videoPlayer"></video>
+                <canvas id="vrCanvas"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const videoFileInput = document.getElementById('videoFile');
+        const videoPlayer = document.getElementById('videoPlayer');
+        const videoContainer = document.getElementById('videoContainer');
+        const dropZone = document.getElementById('dropZone');
+        const fileInfo = document.getElementById('fileInfo');
+        const fileName = document.getElementById('fileName');
+        const fileSize = document.getElementById('fileSize');
+        const fileType = document.getElementById('fileType');
+        const errorMessage = document.getElementById('errorMessage');
+        const playPauseBtn = document.getElementById('playPauseBtn');
+        const progressBar = document.getElementById('progressBar');
+        const progressFill = document.getElementById('progressFill');
+        const currentTimeDisplay = document.getElementById('currentTime');
+        const durationDisplay = document.getElementById('duration');
+        const volumeSlider = document.getElementById('volumeSlider');
+        const speedSelect = document.getElementById('speedSelect');
+        const fullscreenBtn = document.getElementById('fullscreenBtn');
+        const normalViewBtn = document.getElementById('normalViewBtn');
+        const vrViewBtn = document.getElementById('vrViewBtn');
+        const vrCanvas = document.getElementById('vrCanvas');
+        const vrInfo = document.getElementById('vrInfo');
+        const sbsOptions = document.getElementById('sbsOptions');
+
+        // VR/360 variables
+        let scene, camera, renderer, sphere, videoTexture;
+        let isVrMode = false;
+        let isDragging = false;
+        let previousMousePosition = { x: 0, y: 0 };
+        let rotation = { x: 0, y: 0 };
+        let isSbsVideo = false;
+        let sbsMode = 'left'; // 'left', 'right', or 'split'
+        let pendingVrMode = false;
+        let vrInitPromise = null;
+        let resizeListenerAttached = false;
+        const baseFov = 90;
+        const fullscreenFov = 90;
+        const minFov = 40;
+        const maxFov = 110;
+        let originalVrFov = baseFov;
+        let fullscreenVrFov = fullscreenFov;
+        let normalVrSize = null;
+        let vrInfoHideTimer = null;
+
+        // Show drop zone initially
+        dropZone.classList.add('active');
+
+        // Format time helper
+        function formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        // Format file size helper
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+        }
+
+        // Initialize Three.js for VR/360 view
+        function initVRViewer() {
+            if (vrInitPromise) {
+                return vrInitPromise;
+            }
+
+            vrInitPromise = new Promise((resolve) => {
+                // Wait a frame so the canvas has real dimensions
+                requestAnimationFrame(() => {
+                    const rect = vrCanvas.getBoundingClientRect();
+                    const width = rect.width || window.innerWidth;
+                    const height = rect.height || window.innerHeight;
+
+                    // Scene
+                    scene = new THREE.Scene();
+
+                    // Camera
+                    camera = new THREE.PerspectiveCamera(baseFov, width / height, 0.1, 1000);
+                    camera.position.set(0, 0, 0);
+
+                    // Renderer
+                    renderer = new THREE.WebGLRenderer({ canvas: vrCanvas, antialias: true });
+                    renderer.setSize(width, height);
+                    renderer.setPixelRatio(window.devicePixelRatio);
+
+                    // Create sphere geometry
+                    const geometry = new THREE.SphereGeometry(500, 60, 40);
+                    geometry.scale(-1, 1, 1); // Invert the sphere
+
+                    // Create video texture
+                    videoTexture = new THREE.VideoTexture(videoPlayer);
+                    videoTexture.minFilter = THREE.LinearFilter;
+                    videoTexture.magFilter = THREE.LinearFilter;
+                    videoTexture.format = THREE.RGBAFormat;
+
+                    // Create material with video texture
+                    const material = new THREE.MeshBasicMaterial({ map: videoTexture });
+
+                    // Create mesh
+                    sphere = new THREE.Mesh(geometry, material);
+                    scene.add(sphere);
+
+                    if (!resizeListenerAttached) {
+                        // Handle window resize
+                        window.addEventListener('resize', () => {
+                            if (isVrMode && renderer) {
+                                const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
+                                resizeVRRenderer(!!isFullscreen);
+                            }
+                        });
+                        resizeListenerAttached = true;
+                    }
+
+                    resolve();
+                });
+            });
+
+            return vrInitPromise;
+        }
+
+        // Detect if video is SBS format (check aspect ratio)
+        function detectSBSVideo(video) {
+            return new Promise((resolve) => {
+                const check = () => {
+                    const aspectRatio = video.videoWidth / video.videoHeight;
+                    // SBS videos typically have aspect ratio around 3.5:1 or higher
+                    // Normal videos are usually 16:9 (1.78:1) or 4:3 (1.33:1)
+                    const isSBS = aspectRatio > 2.5;
+                    resolve(isSBS);
+                };
+                // Metadata may already be available when called from inside a
+                // loadedmetadata handler — waiting for the event again would hang.
+                if (video.readyState >= 1 && video.videoWidth) {
+                    check();
+                } else {
+                    video.addEventListener('loadedmetadata', check, { once: true });
+                }
+            });
+        }
+
+        // Create SBS texture based on mode
+        function createSBSTexture(video, mode) {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            // For split mode, keep original dimensions
+            // For left/right, use half width
+            if (mode === 'split') {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+            } else {
+                canvas.width = video.videoWidth / 2;
+                canvas.height = video.videoHeight;
+            }
+
+            const halfWidth = video.videoWidth / 2;
+            let animationFrameId = null;
+
+            function draw() {
+                if (video.readyState >= 2) {
+                    if (mode === 'left') {
+                        ctx.drawImage(video, 0, 0, halfWidth, video.videoHeight, 0, 0, canvas.width, canvas.height);
+                    } else if (mode === 'right') {
+                        ctx.drawImage(video, halfWidth, 0, halfWidth, video.videoHeight, 0, 0, canvas.width, canvas.height);
+                    } else if (mode === 'split') {
+                        // Draw left eye on left, right eye on right (stretched to full width)
+                        ctx.drawImage(video, 0, 0, halfWidth, video.videoHeight, 0, 0, halfWidth, canvas.height);
+                        ctx.drawImage(video, halfWidth, 0, halfWidth, video.videoHeight, halfWidth, 0, halfWidth, canvas.height);
+                    }
+                }
+            }
+
+            // Update texture
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.minFilter = THREE.LinearFilter;
+            texture.magFilter = THREE.LinearFilter;
+            texture.format = THREE.RGBAFormat;
+
+            // Update function
+            const updateTexture = () => {
+                if (isVrMode && video.readyState >= 2) {
+                    draw();
+                    texture.needsUpdate = true;
+                }
+                if (isVrMode && !video.paused && !video.ended) {
+                    animationFrameId = requestAnimationFrame(updateTexture);
+                }
+            };
+
+            // Start updating when video plays
+            const startUpdate = () => {
+                if (animationFrameId) cancelAnimationFrame(animationFrameId);
+                updateTexture();
+            };
+
+            video.addEventListener('play', startUpdate);
+            video.addEventListener('seeked', draw);
+            
+            // Initial draw
+            if (video.readyState >= 2) {
+                draw();
+            }
+
+            if (!video.paused && !video.ended) {
+                startUpdate();
+            }
+
+            return texture;
+        }
+
+        // Update VR view
+        function updateVRView() {
+            if (!isVrMode || !renderer) return;
+
+            // Update camera rotation
+            camera.rotation.order = 'YXZ';
+            camera.rotation.y = rotation.y;
+            camera.rotation.x = rotation.x;
+
+            // Update video texture
+            if (videoTexture) {
+                videoTexture.needsUpdate = true;
+            }
+
+            renderer.render(scene, camera);
+            requestAnimationFrame(updateVRView);
+        }
+
+        function enterVRView() {
+            isVrMode = true;
+            videoPlayer.classList.add('video-hidden');
+            vrCanvas.classList.add('active');
+            vrInfo.classList.add('active');
+            vrInfo.classList.remove('compact');
+            normalViewBtn.classList.remove('active');
+            vrViewBtn.classList.add('active');
+
+            // Ensure controls are visible
+            const controls = document.querySelector('.controls');
+            if (controls) {
+                controls.style.display = 'flex';
+            }
+
+            initVRViewer().then(() => {
+                originalVrFov = camera ? camera.fov : baseFov;
+                fullscreenVrFov = fullscreenFov;
+                const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
+                resizeVRRenderer(!!isFullscreen);
+                // Update texture based on SBS mode
+                if (isSbsVideo && sphere) {
+                    const newTexture = createSBSTexture(videoPlayer, sbsMode);
+                    if (sphere.material.map && sphere.material.map !== videoTexture) {
+                        sphere.material.map.dispose();
+                    }
+                    sphere.material.map = newTexture;
+                    sphere.material.needsUpdate = true;
+                } else if (sphere) {
+                    // Use regular video texture for non-SBS videos
+                    if (sphere.material.map && sphere.material.map !== videoTexture) {
+                        sphere.material.map.dispose();
+                    }
+                    sphere.material.map = videoTexture;
+                    sphere.material.needsUpdate = true;
+                }
+
+                updateVRView();
+            });
+
+            if (vrInfoHideTimer) {
+                clearTimeout(vrInfoHideTimer);
+            }
+            vrInfoHideTimer = setTimeout(() => {
+                vrInfo.classList.add('compact');
+            }, 10000);
+        }
+
+        // Switch to VR view
+        function switchToVRView() {
+            if (!videoPlayer.src) {
+                showError('请先加载视频。');
+                return;
+            }
+
+            if (videoPlayer.readyState < 2) {
+                pendingVrMode = true;
+                videoPlayer.addEventListener('loadeddata', () => {
+                    if (pendingVrMode) {
+                        pendingVrMode = false;
+                        enterVRView();
+                    }
+                }, { once: true });
+                return;
+            }
+
+            pendingVrMode = false;
+            enterVRView();
+        }
+
+        // Switch to normal view
+        function switchToNormalView() {
+            isVrMode = false;
+            videoPlayer.classList.remove('video-hidden');
+            vrCanvas.classList.remove('active');
+            vrInfo.classList.remove('active');
+            vrInfo.classList.remove('compact');
+            normalViewBtn.classList.add('active');
+            vrViewBtn.classList.remove('active');
+        }
+
+        // Mouse controls for VR view
+        function setupVRControls() {
+            // Use Pointer Events + setPointerCapture so drag always ends
+            // cleanly regardless of where the pointer is released (outside
+            // window, over controls, etc.). Listening on document lets the
+            // drag start even when the pointer is over the controls overlay.
+            document.addEventListener('pointerdown', (e) => {
+                if (!isVrMode) return;
+                if (e.pointerType === 'touch') return; // handled by touch events
+                if (e.button !== 0) return; // left button only
+                // Only allow drag to start from the canvas area, not from any UI chrome
+                if (e.target.closest('.controls, .top-bar, .vr-info')) return;
+                isDragging = true;
+                vrCanvas.setPointerCapture(e.pointerId);
+                vrCanvas.classList.add('dragging');
+                previousMousePosition = { x: e.clientX, y: e.clientY };
+            });
+
+            vrCanvas.addEventListener('pointermove', (e) => {
+                if (!isDragging || !isVrMode) return;
+                if (e.pointerType === 'touch') return;
+
+                const deltaX = e.clientX - previousMousePosition.x;
+                const deltaY = e.clientY - previousMousePosition.y;
+
+                rotation.y += deltaX * 0.002;
+                rotation.x += deltaY * 0.002;
+
+                rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, rotation.x));
+
+                previousMousePosition = { x: e.clientX, y: e.clientY };
+            });
+
+            const endDrag = () => {
+                isDragging = false;
+                vrCanvas.classList.remove('dragging');
+            };
+
+            vrCanvas.addEventListener('pointerup', endDrag);
+            vrCanvas.addEventListener('pointercancel', endDrag);
+            vrCanvas.addEventListener('lostpointercapture', endDrag);
+
+            // Touch controls for mobile
+            let touchStart = null;
+            vrCanvas.addEventListener('touchstart', (e) => {
+                if (!isVrMode) return;
+                e.preventDefault();
+                touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            });
+
+            vrCanvas.addEventListener('touchmove', (e) => {
+                if (!isVrMode || !touchStart) return;
+                e.preventDefault();
+
+                const deltaX = e.touches[0].clientX - touchStart.x;
+                const deltaY = e.touches[0].clientY - touchStart.y;
+
+                rotation.y += deltaX * 0.002;
+                rotation.x += deltaY * 0.002;
+
+                rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, rotation.x));
+
+                touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            });
+
+            vrCanvas.addEventListener('touchend', () => {
+                touchStart = null;
+            });
+
+            // Mouse wheel controls for FOV (zoom)
+            vrCanvas.addEventListener('wheel', (e) => {
+                if (!isVrMode || !camera) return;
+                e.preventDefault();
+                const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
+                const delta = Math.sign(e.deltaY) * 2;
+                if (isFullscreen) {
+                    fullscreenVrFov = Math.max(minFov, Math.min(maxFov, fullscreenVrFov + delta));
+                    camera.fov = fullscreenVrFov;
+                } else {
+                    originalVrFov = Math.max(minFov, Math.min(maxFov, originalVrFov + delta));
+                    camera.fov = originalVrFov;
+                }
+                camera.updateProjectionMatrix();
+            }, { passive: false });
+        }
+
+        // Load video file
+        async function loadVideoFile(file) {
+            if (!file) return;
+
+            // Check if it's a video file (MIME type can be empty for some containers)
+            const looksLikeVideo = file.type.startsWith('video/')
+                || /\.(mp4|m4v|webm|ogv|ogg|mov|mkv|avi|ts|m2ts|flv|wmv|3gp)$/i.test(file.name);
+            if (!looksLikeVideo) {
+                showError('请选择有效的视频文件。');
+                return;
+            }
+
+            // Hide drop zone and error
+            dropZone.classList.remove('active');
+            hideError();
+
+            // Create object URL for the video
+            const videoURL = URL.createObjectURL(file);
+            videoPlayer.src = videoURL;
+
+            // Show video container
+            videoContainer.classList.add('active');
+            document.body.classList.add('has-video');
+            document.querySelector('.container')?.classList.add('has-video');
+
+            // Update file info
+            fileName.textContent = file.name;
+            fileSize.textContent = formatFileSize(file.size);
+            fileType.textContent = file.type || '未知';
+            fileInfo.classList.add('active');
+
+            // Reset player; VR/360 is the default view once metadata is ready
+            pendingVrMode = true;
+            videoPlayer.load();
+
+            // Detect SBS format
+            videoPlayer.addEventListener('loadedmetadata', async () => {
+                isSbsVideo = await detectSBSVideo(videoPlayer);
+                if (isSbsVideo) {
+                    sbsOptions.classList.add('active');
+                } else {
+                    sbsOptions.classList.remove('active');
+                }
+
+                if (pendingVrMode) {
+                    pendingVrMode = false;
+                    enterVRView();
+                }
+                // Gentle autoplay attempt (may be blocked by the browser)
+                videoPlayer.play().catch(() => {});
+            }, { once: true });
+        }
+
+        // Show error message
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.classList.add('active');
+        }
+
+        // Hide error message
+        function hideError() {
+            errorMessage.classList.remove('active');
+        }
+
+        // Report unsupported codec/container instead of a silent black screen
+        videoPlayer.addEventListener('error', () => {
+            if (!videoPlayer.currentSrc) return;
+            const err = videoPlayer.error;
+            let hint = '无法播放此视频：浏览器报告了媒体错误。';
+            if (err && err.code === 4) {
+                hint = '浏览器不支持该视频的编码或封装格式（常见于 MKV、HEVC/H.265、10-bit H.264 或 AC3/DTS 音频）。'
+                     + '可转换为 MP4（H.264 视频 + AAC 音频），例如：'
+                     + 'ffmpeg -i input.mkv -c:v libx264 -c:a aac output.mp4';
+            } else if (err && err.code === 3) {
+                hint = '视频文件似乎已损坏或不完整。';
+            } else if (err && err.code === 2) {
+                hint = '读取视频时发生网络错误（链接可能已失效或被拒绝访问）。';
+            }
+            showError(hint);
+        });
+
+        // Network playback: route cross-origin URLs through the local proxy
+        function toPlayableURL(url) {
+            try {
+                const u = new URL(url, location.href);
+                if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+                if (u.origin === location.origin) return u.href;
+                return '/proxy?url=' + encodeURIComponent(u.href);
+            } catch (e) { return null; }
+        }
+
+        async function loadVideoURL(url) {
+            const playable = toPlayableURL((url || '').trim());
+            if (!playable) {
+                showError('请输入有效的 http(s) 视频链接。');
+                return;
+            }
+
+            dropZone.classList.remove('active');
+            hideError();
+
+            videoPlayer.src = playable;
+            videoContainer.classList.add('active');
+            document.body.classList.add('has-video');
+            document.querySelector('.container')?.classList.add('has-video');
+
+            let name = '网络视频';
+            try {
+                name = decodeURIComponent(new URL(url).pathname).split('/').filter(Boolean).pop() || name;
+            } catch (e) {}
+            fileName.textContent = name;
+            fileSize.textContent = '在线';
+            fileType.textContent = '链接';
+            fileInfo.classList.add('active');
+
+            // VR/360 is the default view once metadata is ready
+            pendingVrMode = true;
+            videoPlayer.load();
+
+            videoPlayer.addEventListener('loadedmetadata', async () => {
+                isSbsVideo = await detectSBSVideo(videoPlayer);
+                if (isSbsVideo) {
+                    sbsOptions.classList.add('active');
+                } else {
+                    sbsOptions.classList.remove('active');
+                }
+                if (pendingVrMode) {
+                    pendingVrMode = false;
+                    enterVRView();
+                }
+                // Gentle autoplay attempt (may be blocked by the browser)
+                videoPlayer.play().catch(() => {});
+            }, { once: true });
+        }
+
+        const videoUrlInput = document.getElementById('videoUrl');
+        const openUrlBtn = document.getElementById('openUrlBtn');
+        openUrlBtn.addEventListener('click', () => loadVideoURL(videoUrlInput.value));
+        videoUrlInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') loadVideoURL(videoUrlInput.value);
+        });
+
+        // File input change handler
+        videoFileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                loadVideoFile(file);
+            }
+        });
+
+        // Drag and drop handlers
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('drag-over');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('drag-over');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('drag-over');
+            
+            const file = e.dataTransfer.files[0];
+            if (file) {
+                loadVideoFile(file);
+            }
+        });
+
+        // "打开新视频" reopens the central panel (pausing playback);
+        // the close button returns to the video
+        const newVideoBtn = document.getElementById('newVideoBtn');
+        const heroClose = document.getElementById('heroClose');
+        newVideoBtn.addEventListener('click', () => {
+            if (!videoPlayer.paused) videoPlayer.pause();
+            heroClose.style.display = videoPlayer.src ? 'inline-flex' : 'none';
+            dropZone.classList.add('active');
+        });
+        heroClose.addEventListener('click', () => {
+            dropZone.classList.remove('active');
+        });
+
+        // Play/Pause button - works in both normal and VR mode
+        playPauseBtn.addEventListener('click', (e) => {
+            e.stopPropagation(); // Prevent event bubbling
+            if (videoPlayer.paused) {
+                videoPlayer.play().catch(err => {
+                    console.error('Error playing video:', err);
+                });
+                playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
+            } else {
+                videoPlayer.pause();
+                playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
+            }
+        });
+
+        // Video play/pause events - update button and VR texture
+        videoPlayer.addEventListener('play', () => {
+            playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
+            // Ensure VR texture updates when playing
+            if (isVrMode && videoTexture) {
+                videoTexture.needsUpdate = true;
+            }
+        });
+
+        videoPlayer.addEventListener('pause', () => {
+            playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
+        });
+
+        // Progress bar
+        videoPlayer.addEventListener('timeupdate', () => {
+            const progress = (videoPlayer.currentTime / videoPlayer.duration) * 100;
+            progressFill.style.width = progress + '%';
+            currentTimeDisplay.textContent = formatTime(videoPlayer.currentTime);
+        });
+
+        // Update duration
+        videoPlayer.addEventListener('loadedmetadata', () => {
+            durationDisplay.textContent = formatTime(videoPlayer.duration);
+        });
+
+        // Seek on progress bar click
+        progressBar.addEventListener('click', (e) => {
+            const rect = progressBar.getBoundingClientRect();
+            const pos = (e.clientX - rect.left) / rect.width;
+            videoPlayer.currentTime = pos * videoPlayer.duration;
+        });
+
+        // Volume control
+        volumeSlider.addEventListener('input', (e) => {
+            videoPlayer.volume = e.target.value / 100;
+        });
+
+        // Speed control
+        speedSelect.addEventListener('change', (e) => {
+            videoPlayer.playbackRate = parseFloat(e.target.value);
+        });
+
+        // View toggle buttons
+        normalViewBtn.addEventListener('click', switchToNormalView);
+        vrViewBtn.addEventListener('click', switchToVRView);
+
+        // SBS mode change
+        document.querySelectorAll('input[name="sbsMode"]').forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                sbsMode = e.target.value;
+                if (isVrMode && isSbsVideo && sphere) {
+                    const newTexture = createSBSTexture(videoPlayer, sbsMode);
+                    sphere.material.map = newTexture;
+                    sphere.material.needsUpdate = true;
+                }
+            });
+        });
+
+        // Setup VR controls
+        setupVRControls();
+
+        vrInfo.addEventListener('mouseenter', () => {
+            vrInfo.classList.remove('compact');
+        });
+
+        vrInfo.addEventListener('mouseleave', () => {
+            if (isVrMode) {
+                if (vrInfoHideTimer) {
+                    clearTimeout(vrInfoHideTimer);
+                }
+                vrInfoHideTimer = setTimeout(() => {
+                    vrInfo.classList.add('compact');
+                }, 1000);
+            }
+        });
+
+        // Spacebar toggles play/pause
+        document.addEventListener('keydown', (e) => {
+            if (e.code !== 'Space') return;
+            const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : '';
+            if (tag === 'input' || tag === 'textarea' || e.target.isContentEditable) return;
+            e.preventDefault();
+            playPauseBtn.click();
+        });
+
+        // Fullscreen
+        fullscreenBtn.addEventListener('click', () => {
+            const container = document.querySelector('.container');
+            const fullscreenTarget = document.documentElement;
+            const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
+            
+            if (!isFullscreen) {
+                if (isVrMode) {
+                    const rect = videoContainer.getBoundingClientRect();
+                    normalVrSize = { width: rect.width, height: rect.height };
+                }
+                // Enter fullscreen
+                if (fullscreenTarget.requestFullscreen) {
+                    fullscreenTarget.requestFullscreen().catch(err => {
+                        console.log('Error attempting to enable fullscreen:', err);
+                    });
+                } else if (fullscreenTarget.webkitRequestFullscreen) {
+                    fullscreenTarget.webkitRequestFullscreen();
+                } else if (fullscreenTarget.webkitRequestFullScreen) {
+                    fullscreenTarget.webkitRequestFullScreen();
+                } else if (fullscreenTarget.mozRequestFullScreen) {
+                    fullscreenTarget.mozRequestFullScreen();
+                } else if (fullscreenTarget.msRequestFullscreen) {
+                    fullscreenTarget.msRequestFullscreen();
+                }
+            } else {
+                // Exit fullscreen
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                } else if (document.webkitExitFullscreen) {
+                    document.webkitExitFullscreen();
+                } else if (document.webkitCancelFullScreen) {
+                    document.webkitCancelFullScreen();
+                } else if (document.mozCancelFullScreen) {
+                    document.mozCancelFullScreen();
+                } else if (document.msExitFullscreen) {
+                    document.msExitFullscreen();
+                }
+            }
+        });
+
+        // Handle fullscreen changes
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
+        document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+        document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+        document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+
+        function resizeVRRenderer(useWindowSize = false) {
+            if (!renderer || !camera) return;
+            const targetRect = useWindowSize
+                ? { width: window.innerWidth, height: window.innerHeight }
+                : videoContainer.getBoundingClientRect();
+            const width = targetRect.width || window.innerWidth;
+            const height = targetRect.height || window.innerHeight;
+            camera.fov = useWindowSize ? fullscreenVrFov : originalVrFov;
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+            renderer.setSize(width, height);
+        }
+
+        function handleFullscreenChange() {
+            const container = document.querySelector('.container');
+            const body = document.body;
+            const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
+            
+            if (isFullscreen) {
+                container.classList.add('fullscreen');
+                body.classList.add('fullscreen');
+                
+                // Ensure controls are visible in fullscreen
+                const controls = document.querySelector('.controls');
+                if (controls) {
+                    controls.style.display = 'flex';
+                }
+                
+                // Resize VR canvas if in VR mode
+                if (isVrMode && renderer) {
+                    setTimeout(() => {
+                        resizeVRRenderer(true);
+                    }, 100);
+                }
+            } else {
+                container.classList.remove('fullscreen');
+                body.classList.remove('fullscreen');
+                
+                // Resize VR canvas if in VR mode
+                if (isVrMode && renderer) {
+                    setTimeout(() => {
+                        if (normalVrSize && camera) {
+                            camera.aspect = normalVrSize.width / normalVrSize.height;
+                            camera.updateProjectionMatrix();
+                            renderer.setSize(normalVrSize.width, normalVrSize.height);
+                        }
+                        resizeVRRenderer(false);
+                        requestAnimationFrame(() => resizeVRRenderer(false));
+                    }, 100);
+                }
+            }
+        }
+
+        // (video 'error' handling lives in the detailed listener added earlier)
+
+        // Clean up object URL when page unloads
+        window.addEventListener('beforeunload', () => {
+            if (videoPlayer.src && videoPlayer.src.startsWith('blob:')) {
+                URL.revokeObjectURL(videoPlayer.src);
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+# 系统 / 依赖
+.DS_Store
+node_modules/
+
+# 开发 / 测试产物（不入库）
+build_local.py
+test_load.js
+test.mp4
+test.mkv
+test_hevc.mp4
+preview.png
+original-site.png

@@ -1,0 +1,10 @@
+{
+  "name": "local-vr-player",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Offline-local mirror of onlinevrplayer.com - play local 360 / SBS VR videos in the browser",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js"
+  }
+}
