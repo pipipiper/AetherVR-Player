@@ -1532,6 +1532,18 @@
             videoPlayer.addEventListener(evt, hideLoadSpin);
         });
 
+        // 拖动进度条 / 播放中缓冲的加载提示（电脑端与手机端通用）。
+        // seeking/waiting 在任何卡顿前触发，seeked/playing/pause 负责收起。
+        videoPlayer.addEventListener('seeking', () => {
+            if (!transcodeRestarting) showLoadSpin('加载中…');
+        });
+        videoPlayer.addEventListener('seeked', hideLoadSpin);
+        videoPlayer.addEventListener('waiting', () => {
+            if (!transcodeRestarting) showLoadSpin('缓冲中…');
+        });
+        videoPlayer.addEventListener('playing', hideLoadSpin);
+        videoPlayer.addEventListener('pause', hideLoadSpin);
+
         async function probeRemoteMedia(url) {
             try {
                 const resp = await fetch('/probe', {
