@@ -40,11 +40,19 @@ const os = require("os");
 
 const HLS_ROOT = path.join(os.tmpdir(), "vr-player-hls");
 const FFMPEG =
-  [process.env.FFMPEG, "/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"].find(
+  [process.env.FFMPEG, "/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"].find(
     (p) => p && fs.existsSync(p)
   ) || "ffmpeg";
 
+// macOS 用 VideoToolbox 硬编；Linux（无 GPU 直通）用 libx264 软编。
+// 32 vCPU 软编 4K veryfast 远超实时；CRF 20 保证 VR 画质。
+const IS_MAC = process.platform === "darwin";
+const VIDEO_ENCODER = IS_MAC
+  ? ["-c:v", "h264_videotoolbox", "-b:v", "10M"]
+  : ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20"];
+
 let hlsSession = null; // { id, proc, dir }
+let hlsLastAccess = Date.now();
 
 function killHlsSession() {
   if (hlsSession) {
@@ -53,6 +61,13 @@ function killHlsSession() {
     hlsSession = null;
   }
 }
+
+// 看门狗：2 分钟没有任何分片/播放列表请求 → 自动停掉转码（云端无人值守防空跑）
+setInterval(() => {
+  if (hlsSession && Date.now() - hlsLastAccess > 120000) {
+    killHlsSession();
+  }
+}, 30000);
 
 // 启动时清理上次遗留的分片目录
 try { fs.rmSync(HLS_ROOT, { recursive: true, force: true }); } catch {}
@@ -63,11 +78,11 @@ function startTranscode(target, res) {
   const dir = path.join(HLS_ROOT, id);
   fs.mkdirSync(dir, { recursive: true });
 
+  hlsLastAccess = Date.now();
   const proc = spawn(FFMPEG, [
     "-hide_banner", "-loglevel", "error",
     "-i", target,
-    "-c:v", "h264_videotoolbox",   // Apple 硬件编码，8K 也能跑实时
-    "-b:v", "10M",
+    ...VIDEO_ENCODER,
     "-vf", "scale=3840:-2",        // 8K SBS → 4K，iPhone 可硬解
     "-c:a", "copy",                // 音源是 AAC，直接透传省 CPU
     "-f", "hls",
@@ -178,6 +193,7 @@ const server = http
       return;
     }
     if (urlPath.startsWith("/hls/")) {
+      hlsLastAccess = Date.now();
       const file = path.join(HLS_ROOT, path.normalize(urlPath.slice(5)));
       if (!file.startsWith(HLS_ROOT)) {
         res.writeHead(403).end("Forbidden");
