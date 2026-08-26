@@ -708,6 +708,16 @@
         }
         @keyframes seek-spin { to { transform: rotate(360deg); } }
 
+        /* ── 链接检测中的面板内加载提示 ─────────────────── */
+        .hero-loading {
+            display: none; align-items: center; gap: 10px;
+            margin-top: 18px; color: #5b6472; font-size: 13px;
+        }
+        .hero-loading.active { display: flex; }
+        .hero-loading .seek-loading-spinner {
+            border-color: rgba(0,0,0,.15); border-top-color: #2f6bff;
+        }
+
         /* ── touch behavior ────────────────────────────────── */
         /* 禁掉双击缩放/点按延迟；画布和进度条手势完全由 JS 接管 */
         html, body { touch-action: manipulation; }
@@ -816,6 +826,7 @@
                 </label>
                 <p class="hero-hint">也可以直接把视频文件拖到这里</p>
                 <button id="heroClose" class="hero-close" style="display:none"><i class="fa-solid fa-xmark"></i>&nbsp; 返回播放</button>
+                <div class="hero-loading" id="heroLoading"><div class="seek-loading-spinner"></div><span id="heroLoadingText">正在检测…</span></div>
                 <div class="error-message" id="errorMessage"></div>
                 <button id="transcodeBtn" class="url-play-btn transcode-btn" style="display:none"><i class="fa-solid fa-gears"></i>&nbsp; 服务器转码播放（实时转为 4K H.264）</button>
                 <input type="file" id="videoFile" accept="video/*">
@@ -985,6 +996,7 @@
         // 前端用 hlsOffset 把「会话内时间」映射回「全片时间」。
         let hlsOffset = 0;            // 当前转码会话的起始时间（秒）
         let transcodeSrcUrl = null;   // 当前转码会话的原始远程地址；非转码播放时为 null
+        let transcodeDisplayName = null;
         let transcodeRestarting = false;
         let ignoreMediaError = false; // 重启转码切换流期间，忽略旧 HLS 流的报错
         const seekLoading = document.getElementById('seekLoading');
@@ -1411,6 +1423,7 @@
             fallbackDuration = null;
             hlsOffset = 0;
             transcodeSrcUrl = null;
+            transcodeDisplayName = null;
             bigPlayBtn.classList.remove('active');
             isSbsVideo = false;
 
@@ -1434,6 +1447,7 @@
             // Reset player; VR/360 is the default view once metadata is ready
             pendingVrMode = true;
             videoPlayer.load();
+            showLoadSpin('视频加载中…');
         }
 
         // Show error message
@@ -1492,11 +1506,97 @@
             } catch (e) { return null; }
         }
 
+        // ── 编码预探测：播放前判断能否直解，避免长时间黑屏 ──────────
+        const isMobileDevice = window.matchMedia('(pointer: coarse)').matches
+            || /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        const isSafariBrowser = /^((?!chrome|chromium|crios|fxios|android).)*safari/i.test(navigator.userAgent);
+
+        const heroLoading = document.getElementById('heroLoading');
+        const heroLoadingText = document.getElementById('heroLoadingText');
+        function showHeroLoading(text) {
+            heroLoadingText.textContent = text;
+            heroLoading.classList.add('active');
+        }
+        function hideHeroLoading() {
+            heroLoading.classList.remove('active');
+        }
+        function showLoadSpin(text) {
+            seekLoadingText.textContent = text;
+            seekLoading.classList.add('active');
+        }
+        function hideLoadSpin() {
+            seekLoading.classList.remove('active');
+        }
+        // 首帧就绪或出错时收起「加载中」提示
+        ['loadeddata', 'canplay', 'error'].forEach((evt) => {
+            videoPlayer.addEventListener(evt, hideLoadSpin);
+        });
+
+        async function probeRemoteMedia(url) {
+            try {
+                const resp = await fetch('/probe', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url })
+                });
+                if (!resp.ok) return null;
+                return await resp.json();
+            } catch (e) { return null; }
+        }
+
+        // 返回 null 表示「可能能播，正常加载」；否则返回不可播原因（中文）
+        function probeUnplayableReason(p) {
+            if (!p || !p.video) return null;
+            const vcodec = (p.video.codec || '').toLowerCase();
+            const acodec = ((p.audio && p.audio.codec) || '').toLowerCase();
+            const fmt = (p.formatName || '').toLowerCase();
+            const w = p.video.width || 0, h = p.video.height || 0;
+            if (fmt.includes('matroska') && isSafariBrowser) return 'MKV 封装格式';
+            if (/(hevc|h265|h\.265)/.test(vcodec) && (isMobileDevice || !isSafariBrowser)) {
+                return 'HEVC/H.265 编码';
+            }
+            if (/(wmv|vc1|msmpeg4|mpeg2video|mpeg1video|theora|rv40|vp6)/.test(vcodec)) {
+                return vcodec.toUpperCase() + ' 编码';
+            }
+            if (isMobileDevice && (w > 4096 || h > 2160)) {
+                return '超过手机硬解能力的 ' + w + '×' + h + ' 分辨率';
+            }
+            if (/(dts|truehd)/.test(acodec)) return acodec.toUpperCase() + ' 音频编码';
+            if (/(ac3|eac3)/.test(acodec) && !isSafariBrowser) return acodec.toUpperCase() + ' 音频编码';
+            return null;
+        }
+
         async function loadVideoURL(url) {
-            const playable = toPlayableURL((url || '').trim());
+            const rawUrl = (url || '').trim();
+            const playable = toPlayableURL(rawUrl);
             if (!playable) {
                 showError('请输入有效的 http(s) 视频链接。');
                 return;
+            }
+
+            // 远程链接先做编码预探测：明显播不了就直接给转码入口，
+            // 不再让视频元素长时间黑屏干等 error 事件。
+            const isRemoteUrl = /^https?:\/\//i.test(rawUrl) && !rawUrl.startsWith(location.origin);
+            if (isRemoteUrl) {
+                showHeroLoading('正在检测视频编码信息…');
+                const probe = await probeRemoteMedia(rawUrl);
+                hideHeroLoading();
+                const reason = probeUnplayableReason(probe);
+                if (reason) {
+                    let probeName = '网络视频';
+                    try {
+                        probeName = decodeURIComponent(new URL(rawUrl).pathname).split('/').filter(Boolean).pop() || probeName;
+                    } catch (e) {}
+                    videoPlayer.dataset.remoteUrl = rawUrl;
+                    videoPlayer.dataset.remoteName = probeName;
+                    fileName.textContent = probeName;
+                    showError('检测到' + reason + '，当前浏览器大概率无法直接播放。'
+                        + '可点击下方按钮，由服务器实时转码为 4K H.264 后播放。');
+                    dropZone.classList.add('active');
+                    document.getElementById('transcodeBtn').style.display = 'inline-block';
+                    return;
+                }
+                // 探测失败或判断可播：走正常加载（加载期间有「加载中」提示）
             }
 
             dropZone.classList.remove('active');
@@ -1506,6 +1606,7 @@
             fallbackDuration = null;
             hlsOffset = 0;
             transcodeSrcUrl = null;
+            transcodeDisplayName = null;
             bigPlayBtn.classList.remove('active');
             isSbsVideo = false;
 
@@ -1529,6 +1630,7 @@
             // VR/360 is the default view once metadata is ready
             pendingVrMode = true;
             videoPlayer.load();
+            showLoadSpin('视频加载中…');
         }
 
         const videoUrlInput = document.getElementById('videoUrl');
@@ -1600,13 +1702,15 @@
                 hideError();
                 transcodeBtn.style.display = 'none';
                 // 同源 HLS 地址，走标准加载流程（会自动进入 VR 模式）
-                const displayName = (videoPlayer.dataset.remoteName || '网络视频') + '（转码 4K）';
+                const sourceDisplayName = videoPlayer.dataset.remoteName || '网络视频';
                 loadVideoURL(location.origin + data.playlist);
                 // 记录转码会话：原始地址 + 起始偏移，供进度条快进退重启转码
                 transcodeSrcUrl = remoteUrl;
+                transcodeDisplayName = sourceDisplayName;
+                videoPlayer.dataset.remoteName = sourceDisplayName;
                 hlsOffset = (typeof data.start === 'number' && isFinite(data.start)) ? data.start : 0;
                 fallbackDuration = (typeof data.duration === 'number' && isFinite(data.duration)) ? data.duration : null;
-                fileName.textContent = displayName;
+                fileName.textContent = sourceDisplayName + '（转码 4K）';
             } catch (e) {
                 showError('转码播放失败：' + e.message);
             } finally {
@@ -1730,8 +1834,7 @@
             if (!transcodeSrcUrl || transcodeRestarting) return;
             transcodeRestarting = true;
             ignoreMediaError = true;
-            seekLoadingText.textContent = '正在跳转到 ' + formatTime(t) + '，转码加载中…';
-            seekLoading.classList.add('active');
+            showLoadSpin('正在跳转到 ' + formatTime(t) + '，转码加载中…');
             const doFetch = () => fetch('/transcode', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1749,20 +1852,26 @@
                     throw new Error(data.error || ('HTTP ' + resp.status));
                 }
                 const src = transcodeSrcUrl;
-                const displayName = (videoPlayer.dataset.remoteName || '网络视频') + '（转码 4K）';
+                const sourceDisplayName = transcodeDisplayName || '网络视频';
+                const knownDuration = fallbackDuration;
                 loadVideoURL(location.origin + data.playlist); // 内部会重置转码会话状态
                 transcodeSrcUrl = src;
+                transcodeDisplayName = sourceDisplayName;
+                videoPlayer.dataset.remoteName = sourceDisplayName;
                 hlsOffset = (typeof data.start === 'number' && isFinite(data.start)) ? data.start : t;
                 fallbackDuration = (typeof data.duration === 'number' && isFinite(data.duration))
-                    ? data.duration : fallbackDuration;
-                fileName.textContent = displayName;
+                    ? data.duration : knownDuration;
+                fileName.textContent = sourceDisplayName + '（转码 4K）';
                 hideError();
+                // loadVideoURL 会把提示覆盖成「视频加载中…」，改回跳转文案；
+                // 首帧就绪（loadeddata/canplay）后由事件监听自动收起
+                showLoadSpin('正在跳转到 ' + formatTime(t) + '，转码加载中…');
             } catch (e) {
+                hideLoadSpin();
                 showError('跳转失败：' + e.message);
             } finally {
                 transcodeRestarting = false;
                 ignoreMediaError = false;
-                seekLoading.classList.remove('active');
             }
         }
 

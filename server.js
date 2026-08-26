@@ -46,6 +46,10 @@ const FFMPEG =
   [process.env.FFMPEG, "/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"].find(
     (p) => p && fs.existsSync(p)
   ) || "ffmpeg";
+const FFPROBE =
+  [process.env.FFPROBE, "/opt/homebrew/bin/ffprobe", "/usr/local/bin/ffprobe", "/usr/bin/ffprobe"].find(
+    (p) => p && fs.existsSync(p)
+  ) || "ffprobe";
 
 // macOS 用 VideoToolbox 硬编；Linux（无 GPU 直通）用 libx264 软编。
 // 110 服务器没有可用的硬件编码器：优先稳定实时软编，再根据实测调整画质。
@@ -58,7 +62,9 @@ const HLS_IDLE_MS = 2 * 60 * 1000;
 const HLS_MAX_MS = 2 * 60 * 60 * 1000;
 // 冷却只防恶意刷接口：快进重启转码也走 /transcode，不能定得太长
 const TRANSCODE_COOLDOWN_MS = 4 * 1000;
+const PROBE_COOLDOWN_MS = 2 * 1000;
 const transcodeStarts = new Map();
+const probeStarts = new Map();
 let hlsSession = null;
 
 function stopHlsSession(session = hlsSession) {
@@ -180,6 +186,51 @@ function startTranscode(target, ownerIp, res, start = 0) {
 
   res.once("close", () => {
     if (!res.writableEnded && !session.ready) stopHlsSession(session);
+  });
+}
+
+/* ffprobe 远程视频信息探测：只读容器/流头（配合 Range 秒级返回），
+ * 让前端在尝试播放前就知道编码是否可能不支持，避免长时间黑屏。 */
+function probeRemoteMedia(target, res) {
+  const proc = spawn(FFPROBE, [
+    "-v", "error",
+    "-rw_timeout", "15000000",
+    "-show_entries", "stream=codec_type,codec_name,width,height:format=format_name,duration,size",
+    "-of", "json",
+    target,
+  ]);
+  let out = "";
+  let err = "";
+  const killer = setTimeout(() => { try { proc.kill("SIGKILL"); } catch {} }, 25000);
+  proc.stdout.on("data", (d) => { out += d; });
+  proc.stderr.on("data", (d) => { err = (err + d.toString()).slice(-2048); });
+  const fail = (message) => {
+    if (res.writableEnded) return;
+    res.writeHead(502, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: message }));
+  };
+  proc.once("error", (e) => { clearTimeout(killer); fail("ffprobe 不可用：" + e.message); });
+  proc.once("close", (code) => {
+    clearTimeout(killer);
+    if (res.writableEnded) return;
+    if (code !== 0) return fail("探测失败：" + (err.trim().slice(-300) || `ffprobe exited ${code}`));
+    try {
+      const parsed = JSON.parse(out);
+      const streams = parsed.streams || [];
+      const v = streams.find((s) => s.codec_type === "video");
+      const a = streams.find((s) => s.codec_type === "audio");
+      const format = parsed.format || {};
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end(JSON.stringify({
+        video: v ? { codec: v.codec_name || "", width: v.width || 0, height: v.height || 0 } : null,
+        audio: a ? { codec: a.codec_name || "" } : null,
+        formatName: format.format_name || "",
+        duration: Number(format.duration) || null,
+        size: Number(format.size) || null,
+      }));
+    } catch {
+      fail("探测结果解析失败");
+    }
   });
 }
 
@@ -382,6 +433,43 @@ const server = http
         ready: Boolean(hlsSession && hlsSession.ready),
         encoder: IS_MAC ? "h264_videotoolbox" : "libx264",
       }));
+      return;
+    }
+    if (urlPath === "/probe") {
+      if (req.method !== "POST") {
+        res.writeHead(405, { "Allow": "POST" }).end("Method not allowed");
+        return;
+      }
+      const origin = req.headers.origin;
+      try {
+        if (!origin || new URL(origin).host !== req.headers.host) {
+          res.writeHead(403).end(JSON.stringify({ error: "Same-origin request required" }));
+          return;
+        }
+      } catch {
+        res.writeHead(403).end(JSON.stringify({ error: "Invalid Origin" }));
+        return;
+      }
+      const ip = clientIp(req);
+      const lastProbe = probeStarts.get(ip) || 0;
+      if (Date.now() - lastProbe < PROBE_COOLDOWN_MS) {
+        res.writeHead(429, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "操作过于频繁" }));
+        return;
+      }
+      let target;
+      try {
+        const body = await readJson(req);
+        target = typeof body.url === "string" ? body.url.trim() : "";
+        if (!target || target.length > 4096) throw new Error("Invalid video URL");
+        await resolveSafeTarget(new URL(target));
+      } catch (err) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: err.message }));
+        return;
+      }
+      probeStarts.set(ip, Date.now());
+      probeRemoteMedia(target, res);
       return;
     }
     if (urlPath.startsWith("/hls/")) {
