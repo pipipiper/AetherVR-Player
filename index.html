@@ -683,12 +683,12 @@
         @media (max-width: 640px) {
             /* top bar: compact single row + 灵动岛安全区 */
             .top-bar {
-                height: calc(64px + env(safe-area-inset-top));
-                padding: calc(env(safe-area-inset-top) + 8px) calc(10px + env(safe-area-inset-right)) 0 calc(10px + env(safe-area-inset-left));
+                height: calc(84px + env(safe-area-inset-top));
+                padding: calc(env(safe-area-inset-top) + 28px) calc(10px + env(safe-area-inset-right)) 0 calc(10px + env(safe-area-inset-left));
                 gap: 8px;
                 transition: transform .3s ease, opacity .25s ease;
             }
-            body.has-video .page-content { padding-top: calc(64px + env(safe-area-inset-top)); }
+            body.has-video .page-content { padding-top: calc(84px + env(safe-area-inset-top)); }
             .page-content { transition: padding-top .3s ease; }
 
             /* 播放时隐藏顶栏，画面铺满 */
