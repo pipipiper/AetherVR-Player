@@ -581,6 +581,8 @@
             font-family: inherit; transition: background .15s;
         }
         .url-play-btn:hover { background: #2459d8; border-color: #2459d8; color: #fff; }
+        .transcode-btn { margin-top: 14px; width: 100%; }
+        .transcode-btn:disabled { opacity: .6; cursor: wait; }
 
         /* ── file open button inside hero ──────────────────── */
         .file-input-label {
@@ -782,6 +784,7 @@
                 <p class="hero-hint">也可以直接把视频文件拖到这里</p>
                 <button id="heroClose" class="hero-close" style="display:none"><i class="fa-solid fa-xmark"></i>&nbsp; 返回播放</button>
                 <div class="error-message" id="errorMessage"></div>
+                <button id="transcodeBtn" class="url-play-btn transcode-btn" style="display:none"><i class="fa-solid fa-gears"></i>&nbsp; 服务器转码播放（实时转为 4K H.264）</button>
                 <input type="file" id="videoFile" accept="video/*">
             </div>
 
@@ -1299,6 +1302,8 @@
             // Hide drop zone and error
             dropZone.classList.remove('active');
             hideError();
+            document.getElementById('transcodeBtn').style.display = 'none';
+            delete videoPlayer.dataset.remoteUrl;
 
             // Create object URL for the video
             const videoURL = URL.createObjectURL(file);
@@ -1371,6 +1376,15 @@
             if (heroCloseBtn && videoPlayer.src) {
                 heroCloseBtn.style.display = 'inline-flex';
             }
+            // 编码不支持 + 源是远程链接 → 提供服务器实时转码播放入口
+            const transcodeBtn = document.getElementById('transcodeBtn');
+            if (transcodeBtn) {
+                const remoteUrl = videoPlayer.dataset.remoteUrl || '';
+                const canTranscode = err && err.code === 4
+                    && /^https?:\/\//.test(remoteUrl)
+                    && !remoteUrl.startsWith(location.origin);
+                transcodeBtn.style.display = canTranscode ? 'inline-block' : 'none';
+            }
         });
 
         // Network playback: route cross-origin URLs through the local proxy
@@ -1392,6 +1406,8 @@
 
             dropZone.classList.remove('active');
             hideError();
+            document.getElementById('transcodeBtn').style.display = 'none';
+            videoPlayer.dataset.remoteUrl = url;
 
             videoPlayer.src = playable;
             videoContainer.classList.add('active');
@@ -1403,6 +1419,7 @@
                 name = decodeURIComponent(new URL(url).pathname).split('/').filter(Boolean).pop() || name;
             } catch (e) {}
             fileName.textContent = name;
+            videoPlayer.dataset.remoteName = name;
             fileSize.textContent = '在线';
             fileType.textContent = '链接';
             fileInfo.classList.add('active');
@@ -1473,6 +1490,34 @@
         });
         heroClose.addEventListener('click', () => {
             dropZone.classList.remove('active');
+        });
+
+        // 服务器实时转码播放：8K HEVC → 4K H.264 HLS（iPhone Safari 原生支持）
+        const transcodeBtn = document.getElementById('transcodeBtn');
+        const transcodeLabel = transcodeBtn.innerHTML;
+        transcodeBtn.addEventListener('click', async () => {
+            const remoteUrl = videoPlayer.dataset.remoteUrl;
+            if (!remoteUrl) return;
+            transcodeBtn.disabled = true;
+            transcodeBtn.textContent = '正在启动转码（8K 实时转码约需十几秒）…';
+            try {
+                const resp = await fetch('/transcode?url=' + encodeURIComponent(remoteUrl));
+                const data = await resp.json();
+                if (!resp.ok || !data.playlist) {
+                    throw new Error(data.error || ('HTTP ' + resp.status));
+                }
+                hideError();
+                transcodeBtn.style.display = 'none';
+                // 同源 HLS 地址，走标准加载流程（会自动进入 VR 模式）
+                const displayName = (videoPlayer.dataset.remoteName || '网络视频') + '（转码 4K）';
+                loadVideoURL(location.origin + data.playlist);
+                fileName.textContent = displayName;
+            } catch (e) {
+                showError('转码播放失败：' + e.message);
+            } finally {
+                transcodeBtn.disabled = false;
+                transcodeBtn.innerHTML = transcodeLabel;
+            }
         });
 
         // Play/Pause button - works in both normal and VR mode
