@@ -683,12 +683,12 @@
         @media (max-width: 640px) {
             /* top bar: compact single row + 灵动岛安全区 */
             .top-bar {
-                height: calc(56px + env(safe-area-inset-top));
-                padding: env(safe-area-inset-top) calc(10px + env(safe-area-inset-right)) 0 calc(10px + env(safe-area-inset-left));
+                height: calc(64px + env(safe-area-inset-top));
+                padding: calc(env(safe-area-inset-top) + 8px) calc(10px + env(safe-area-inset-right)) 0 calc(10px + env(safe-area-inset-left));
                 gap: 8px;
                 transition: transform .3s ease, opacity .25s ease;
             }
-            body.has-video .page-content { padding-top: calc(56px + env(safe-area-inset-top)); }
+            body.has-video .page-content { padding-top: calc(64px + env(safe-area-inset-top)); }
             .page-content { transition: padding-top .3s ease; }
 
             /* 播放时隐藏顶栏，画面铺满 */
@@ -718,8 +718,9 @@
             .hero-url input { width: 100%; font-size: 16px; }  /* ≥16px 避免 iOS 聚焦自动放大页面 */
             .hero-url .url-play-btn { width: 100%; padding: 12px; }
 
-            /* vr hint badge */
-            .vr-info { top: 10px; left: 10px; padding: 6px 10px; font-size: 11px; }
+            /* vr hint badge: 播放时随顶栏一起隐藏 */
+            .vr-info { top: 10px; left: 10px; padding: 6px 10px; font-size: 11px; transition: opacity .3s ease; }
+            body.playing .vr-info { opacity: 0; pointer-events: none; }
 
             /* sbs floating card */
             .sbs-options { top: 66px; width: calc(100vw - 28px); padding: 10px 14px; }
@@ -885,6 +886,14 @@
 
         // Show drop zone initially
         dropZone.classList.add('active');
+
+        // 触屏设备：角标换成手势图标和触摸操作说明
+        if (window.matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window) {
+            const vrInfoIcon = vrInfo.querySelector('i');
+            if (vrInfoIcon) vrInfoIcon.className = 'fa-solid fa-hand-pointer';
+            const vrInfoHint = vrInfo.querySelector('.hint-text');
+            if (vrInfoHint) vrInfoHint.innerHTML = '&nbsp;单指拖动旋转 · 双指捏合缩放';
+        }
 
         // Format time helper
         function formatTime(seconds) {
@@ -1609,6 +1618,21 @@
                 vrInfoHideTimer = setTimeout(() => {
                     vrInfo.classList.add('compact');
                 }, 1000);
+            }
+        });
+
+        // 触屏设备没有 hover：点按角标展开提示，再点收起
+        vrInfo.addEventListener('click', () => {
+            if (vrInfo.classList.contains('compact')) {
+                vrInfo.classList.remove('compact');
+                if (vrInfoHideTimer) {
+                    clearTimeout(vrInfoHideTimer);
+                }
+                vrInfoHideTimer = setTimeout(() => {
+                    vrInfo.classList.add('compact');
+                }, 4000);
+            } else {
+                vrInfo.classList.add('compact');
             }
         });
 
