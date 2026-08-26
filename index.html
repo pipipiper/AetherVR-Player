@@ -880,7 +880,7 @@
                         <i class="fa-solid fa-folder-tree"></i>&nbsp; 打开文件夹
                     </label>
                 </div>
-                <p class="hero-hint">也可以直接把视频文件、文件夹或 .dpl 播放列表拖到这里</p>
+                <p class="hero-hint">也可以直接把视频文件或 .dpl 播放列表拖到这里</p>
                 <button id="heroClose" class="hero-close" style="display:none"><i class="fa-solid fa-xmark"></i>&nbsp; 返回播放</button>
                 <div class="hero-loading" id="heroLoading"><div class="seek-loading-spinner"></div><span id="heroLoadingText">正在检测…</span></div>
                 <div class="error-message" id="errorMessage"></div>
@@ -1133,8 +1133,8 @@
             const multi = playlist.length > 1;
             prevBtn.style.display = multi ? '' : 'none';
             nextBtn.style.display = multi ? '' : 'none';
-            prevBtn.disabled = playlistIndex <= 0;
-            nextBtn.disabled = playlistIndex < 0 || playlistIndex >= playlist.length - 1;
+            prevBtn.disabled = findPlayableIndex(playlistIndex, -1) < 0;
+            nextBtn.disabled = findPlayableIndex(playlistIndex, 1) < 0;
         }
 
         function setPlaylist(items, startIndex) {
@@ -1175,11 +1175,19 @@
                 loadVideoURL(item.url);
             }
         }
+        function findPlayableIndex(from, step) {
+            for (let i = from + step; i >= 0 && i < playlist.length; i += step) {
+                if (!playlist[i].missing) return i;
+            }
+            return -1;
+        }
         function playNext() {
-            if (playlistIndex >= 0 && playlistIndex < playlist.length - 1) playAt(playlistIndex + 1);
+            const next = findPlayableIndex(playlistIndex, 1);
+            if (next >= 0) playAt(next);
         }
         function playPrev() {
-            if (playlistIndex > 0) playAt(playlistIndex - 1);
+            const prev = findPlayableIndex(playlistIndex, -1);
+            if (prev >= 0) playAt(prev);
         }
 
         // 文件选择（多选 / 文件夹 / 拖放统一入口）
@@ -1681,6 +1689,10 @@
         // Load video file
         async function loadVideoFile(file) {
             if (!file) return;
+            urlLoadRequestId++;
+            if (activeProbeController) activeProbeController.abort();
+            activeProbeController = null;
+            hideHeroLoading();
 
             // Check if it's a video file (MIME type can be empty for some containers)
             const looksLikeVideo = file.type.startsWith('video/')
@@ -1819,13 +1831,21 @@
         videoPlayer.addEventListener('playing', hideLoadSpin);
         videoPlayer.addEventListener('pause', hideLoadSpin);
 
-        async function probeRemoteMedia(url) {
+        let urlLoadRequestId = 0;
+        let activeProbeController = null;
+        async function probeRemoteMedia(url, signal, allowRetry = true) {
             try {
                 const resp = await fetch('/probe', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url })
+                    body: JSON.stringify({ url }),
+                    signal
                 });
+                if (resp.status === 429 && allowRetry) {
+                    await new Promise((resolve) => setTimeout(resolve, 2100));
+                    if (signal.aborted) return null;
+                    return probeRemoteMedia(url, signal, false);
+                }
                 if (!resp.ok) return null;
                 return await resp.json();
             } catch (e) { return null; }
@@ -1858,6 +1878,9 @@
         }
 
         async function loadVideoURL(url) {
+            const requestId = ++urlLoadRequestId;
+            if (activeProbeController) activeProbeController.abort();
+            activeProbeController = null;
             const rawUrl = (url || '').trim();
             const playable = toPlayableURL(rawUrl);
             if (!playable) {
@@ -1869,8 +1892,12 @@
             // 不再让视频元素长时间黑屏干等 error 事件。
             const isRemoteUrl = /^https?:\/\//i.test(rawUrl) && !rawUrl.startsWith(location.origin);
             if (isRemoteUrl) {
+                const controller = new AbortController();
+                activeProbeController = controller;
                 showHeroLoading('正在检测视频编码信息…');
-                const probe = await probeRemoteMedia(rawUrl);
+                const probe = await probeRemoteMedia(rawUrl, controller.signal);
+                if (requestId !== urlLoadRequestId) return;
+                if (activeProbeController === controller) activeProbeController = null;
                 hideHeroLoading();
                 const reason = probeUnplayableReason(probe);
                 if (reason) {
@@ -2062,9 +2089,7 @@
             document.body.classList.remove('playing');
             scheduleChromeResize();
             // 播放列表自动连播下一集
-            if (playlistIndex >= 0 && playlistIndex < playlist.length - 1) {
-                playNext();
-            }
+            if (playlistIndex >= 0) playNext();
         });
 
         // 顶栏收起/展开的过渡结束后再重算渲染尺寸
