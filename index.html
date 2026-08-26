@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>VR 播放器 · 本地与在线 360°/SBS 视频</title>
     <meta name="description" content="VR 视频播放器：支持本地文件与在线直链，即点即播 360° 全景与 SBS 左右分屏视频，支持拖拽加载，无需上传。">
     <meta name="keywords" content="VR Player, Online VR Player, Online SBS VR Player, Side by side VR Player, 360 video player, SBS video player, local VR video player, VR video player">
@@ -483,7 +483,9 @@
 
         /* ── top bar: hidden until a video is loaded ───────── */
         .top-bar {
-            display: none; height: 60px;
+            display: none;
+            height: calc(60px + env(safe-area-inset-top));
+            padding: env(safe-area-inset-top) calc(20px + env(safe-area-inset-right)) 0 calc(20px + env(safe-area-inset-left));
             background: rgba(255,255,255,.85);
             backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
             border-bottom: 1px solid var(--border);
@@ -491,7 +493,7 @@
         body.has-video .top-bar { display: flex; }
         .container.has-video .top-bar { background: rgba(255,255,255,.85); }
         .page-content { padding-top: 0; }
-        body.has-video .page-content { padding-top: 60px; }
+        body.has-video .page-content { padding-top: calc(60px + env(safe-area-inset-top)); }
 
         /* ── view toggle ───────────────────────────────────── */
         .view-btn {
@@ -636,7 +638,9 @@
         /* ── controls: dark floating glass bar ─────────────── */
         .video-container { padding-bottom: 0; }
         .controls {
-            height: auto; margin: 0 14px 14px; padding: 10px 14px;
+            height: auto;
+            margin: 0 calc(14px + env(safe-area-inset-right)) calc(14px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left));
+            padding: 10px 14px;
             background: rgba(18,21,28,.78);
             backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
             border: 1px solid rgba(255,255,255,.09); border-radius: 16px;
@@ -671,9 +675,22 @@
 
         /* ── mobile (≤640px) ───────────────────────────────── */
         @media (max-width: 640px) {
-            /* top bar: compact single row */
-            .top-bar { height: 56px; padding: 0 10px; gap: 8px; }
-            body.has-video .page-content { padding-top: 56px; }
+            /* top bar: compact single row + 灵动岛安全区 */
+            .top-bar {
+                height: calc(56px + env(safe-area-inset-top));
+                padding: env(safe-area-inset-top) calc(10px + env(safe-area-inset-right)) 0 calc(10px + env(safe-area-inset-left));
+                gap: 8px;
+                transition: transform .3s ease, opacity .25s ease;
+            }
+            body.has-video .page-content { padding-top: calc(56px + env(safe-area-inset-top)); }
+            .page-content { transition: padding-top .3s ease; }
+
+            /* 播放时隐藏顶栏，画面铺满 */
+            body.playing .top-bar {
+                transform: translateY(-110%);
+                opacity: 0; pointer-events: none;
+            }
+            body.playing .page-content { padding-top: 0; }
             .top-bar .left  { flex: 1 1 auto; min-width: 0; }
             .top-bar .center, .top-bar .right { flex: 0 0 auto; }
             .file-info { gap: 0; font-size: 11px; }
@@ -704,9 +721,13 @@
             .sbs-options label { font-size: 12px; gap: 6px; }
 
             /* controls: two rows, big touch targets */
-            .controls { margin: 0 10px 10px; padding: 8px 10px; gap: 8px; border-radius: 14px; }
+            .controls {
+                margin: 0 calc(10px + env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) calc(10px + env(safe-area-inset-left));
+                padding: 8px 10px; gap: 8px; border-radius: 14px;
+            }
             .control-btn { width: 40px; height: 40px; }
-            .progress-container { width: 100%; order: -1; }
+            /* 进度条强制独占第一行（flex-basis:100% 才会换行，width 无效） */
+            .progress-container { flex: 1 1 100%; width: 100%; order: -1; padding: 10px 0; }
             .progress-bar { height: 8px; }
             .time-display { min-width: 0; font-size: 11px; }
             /* iOS 不允许 JS 调音量，隐藏无效滑杆 */
@@ -1414,11 +1435,33 @@
             if (isVrMode && videoTexture) {
                 videoTexture.needsUpdate = true;
             }
+            // 移动端播放时隐藏顶栏（CSS 媒体查询控制），隐藏后重算 VR 画布
+            document.body.classList.add('playing');
+            scheduleChromeResize();
         });
 
         videoPlayer.addEventListener('pause', () => {
             playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
+            document.body.classList.remove('playing');
+            scheduleChromeResize();
         });
+
+        videoPlayer.addEventListener('ended', () => {
+            document.body.classList.remove('playing');
+            scheduleChromeResize();
+        });
+
+        // 顶栏收起/展开的过渡结束后再重算渲染尺寸
+        let chromeResizeTimer = null;
+        function scheduleChromeResize() {
+            if (chromeResizeTimer) clearTimeout(chromeResizeTimer);
+            chromeResizeTimer = setTimeout(() => {
+                if (isVrMode && renderer) {
+                    const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
+                    resizeVRRenderer(!!isFullscreen);
+                }
+            }, 350);
+        }
 
         // Progress bar
         videoPlayer.addEventListener('timeupdate', () => {
@@ -1432,12 +1475,26 @@
             durationDisplay.textContent = formatTime(videoPlayer.duration);
         });
 
-        // Seek on progress bar click
-        progressBar.addEventListener('click', (e) => {
+        // Seek on progress bar click / touch
+        function seekFromClientX(clientX) {
             const rect = progressBar.getBoundingClientRect();
-            const pos = (e.clientX - rect.left) / rect.width;
-            videoPlayer.currentTime = pos * videoPlayer.duration;
-        });
+            const pos = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+            if (videoPlayer.duration) {
+                videoPlayer.currentTime = pos * videoPlayer.duration;
+            }
+        }
+        progressBar.addEventListener('click', (e) => seekFromClientX(e.clientX));
+
+        // 触摸：点按/拖动进度条直接 seek（监听容器以获得更大的触控区域）
+        const progressTouchArea = progressBar.parentElement;
+        progressTouchArea.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            seekFromClientX(e.touches[0].clientX);
+        }, { passive: false });
+        progressTouchArea.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            seekFromClientX(e.touches[0].clientX);
+        }, { passive: false });
 
         // Volume control
         volumeSlider.addEventListener('input', (e) => {
