@@ -1573,7 +1573,9 @@
                 if (e.pointerType === 'touch') return; // handled by touch events
                 if (e.button !== 0) return; // left button only
                 // Only allow drag to start from the canvas area, not from any UI chrome
-                if (e.target.closest('.controls, .top-bar, .vr-info')) return;
+                // （播放列表面板、SBS 卡片、大播放按钮等也必须排除，否则
+                //   setPointerCapture 会把随后的 click 事件劫持到画布上）
+                if (e.target.closest('.controls, .top-bar, .vr-info, .playlist-panel, .sbs-options, .big-play-btn, .seek-loading, button, a, input, select, label')) return;
                 isDragging = true;
                 vrCanvas.setPointerCapture(e.pointerId);
                 vrCanvas.classList.add('dragging');
