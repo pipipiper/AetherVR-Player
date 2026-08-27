@@ -1,6 +1,6 @@
 {
   "name": "aethervr-player",
-  "version": "1.2.7",
+  "version": "1.2.8",
   "private": true,
   "author": "pipipiper <80835169+pipipiper@users.noreply.github.com>",
   "description": "AetherVR Player：不用 VR 眼镜也能看 VR 视频。本地文件与在线直链即点即播，支持 360 全景与 SBS 分屏",
