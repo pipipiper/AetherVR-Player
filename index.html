@@ -129,9 +129,9 @@
         .top-bar .left, .top-bar .center, .top-bar .right {
             display: flex; align-items: center; gap: 10px;
         }
-        .top-bar .left  { flex: 0 1 380px; min-width: 0; }
+        .top-bar .left  { flex: 1 1 0; min-width: 0; }
         .top-bar .center { flex: 0 0 auto; justify-content: center; }
-        .top-bar .right { flex: 0 1 240px; justify-content: flex-end; }
+        .top-bar .right { flex: 1 1 0; justify-content: flex-end; }
 
         /* ── view toggle ─────────────────────────────────────── */
         .view-toggle { display: flex; gap: 0; align-items: center; }
@@ -510,13 +510,13 @@
         }
 
         /* ── file info ─────────────────────────────────────── */
-        .file-info { text-transform: none; letter-spacing: 0; font-size: 12px; max-width: 600px; }
+        .file-info { text-transform: none; letter-spacing: 0; font-size: 12px; max-width: none; width: 100%; }
         .file-info strong { color: var(--muted); font-weight: 500; }
         .file-info p { color: var(--text); max-width: 220px; }
-        .file-info p.fi-name { max-width: 380px; }
-        .file-info p.fi-size { max-width: 150px; flex: none; }
-        .file-info p.fi-type { max-width: 130px; flex: none; }
-        .top-bar .left { flex: 0 1 640px; }
+        /* 文件名占满左侧剩余宽度：左右两栏等宽保证模式切换始终居中 */
+        .file-info p.fi-name { flex: 1 1 auto; min-width: 0; max-width: none; }
+        .file-info p.fi-size { max-width: 170px; flex: none; }
+        .file-info p.fi-type { max-width: 150px; flex: none; }
         /* 悬停（鼠标）/ 点按（触屏）弹出全文卡片：独立于顶栏，不移动触发元素 */
         .file-info-pop {
             display: none; position: fixed; top: 62px; left: 14px; z-index: 40;
@@ -840,10 +840,12 @@
                 opacity: 0; pointer-events: none;
             }
             body.playing .page-content { padding-top: 0; }
-            .top-bar .left  { flex: 1 1 auto; min-width: 0; }
-            .top-bar .center, .top-bar .right { flex: 0 0 auto; }
+            .top-bar .left  { flex: 1 1 0; min-width: 0; }
+            .top-bar .center { flex: 0 0 auto; }
+            .top-bar .right { flex: 1 1 0; justify-content: flex-end; }
             .file-info { gap: 0; font-size: 11px; }
             .file-info p { max-width: 84px; }
+            .file-info p.fi-name { flex: none; max-width: 84px; }
             .file-info p:not(:first-child) { display: none; }
             .view-btn { padding: 7px 10px; font-size: 12px; white-space: nowrap; }
             .ghost-btn { padding: 8px 11px; white-space: nowrap; }
