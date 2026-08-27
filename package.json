@@ -2,13 +2,16 @@
   "name": "local-vr-player",
   "version": "1.0.0",
   "private": true,
+  "author": "pipipiper <80835169+pipipiper@users.noreply.github.com>",
   "description": "VR 视频播放器：本地文件与在线直链即点即播，支持 360 全景与 SBS 分屏",
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "node server.js",
     "start": "node server.js",
     "desktop": "electron .",
-    "dist": "electron-builder"
+    "dist": "electron-builder",
+    "dist:mac": "electron-builder --mac --universal --publish never",
+    "dist:win": "electron-builder --win --x64 --publish never"
   },
   "devDependencies": {
     "electron": "^37.0.0",
@@ -27,11 +30,34 @@
     ],
     "mac": {
       "category": "public.app-category.entertainment",
-      "icon": "build/icon.png"
+      "icon": "build/icon.png",
+      "artifactName": "VR-Player-${version}-${arch}.${ext}",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "universal"
+          ]
+        }
+      ]
     },
     "win": {
-      "target": "nsis",
-      "icon": "build/icon.ico"
+      "icon": "build/icon.ico",
+      "artifactName": "VR-Player-${version}-${arch}-Setup.${ext}",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
     }
   }
 }

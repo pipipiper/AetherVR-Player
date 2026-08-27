@@ -553,6 +553,11 @@
             content: ""; flex: 1; height: 1px; background: var(--border);
         }
         .hero-hint  { margin-top: 16px; font-size: 12px; color: #aab3c2; }
+        .pages-notice {
+            display: none; width: 100%; margin: 0; padding: 10px 12px;
+            border: 1px solid rgba(81, 153, 255, .35); border-radius: 10px;
+            color: #b9d5ff; background: rgba(55, 115, 210, .12); font-size: 13px;
+        }
         .hero-close {
             margin-top: 20px; display: none; align-items: center; gap: 6px;
             padding: 7px 16px; font-size: 12.5px; font-family: inherit;
@@ -896,11 +901,12 @@
                 <div class="hero-icon"><i class="fa-solid fa-vr-cardboard"></i></div>
                 <h2 class="hero-title">VR 播放器</h2>
                 <p class="hero-sub">本地文件与在线直链即点即播 · 支持 360° 全景与 SBS 分屏</p>
-                <div class="url-input-wrapper hero-url">
+                <div class="url-input-wrapper hero-url" id="onlineUrlSection">
                     <input type="url" id="videoUrl" placeholder="粘贴视频链接，回车播放…" spellcheck="false" autocomplete="off">
                     <button id="openUrlBtn" class="url-play-btn" title="播放链接"><i class="fa-solid fa-link"></i>&nbsp; 播放链接</button>
                 </div>
-                <div class="hero-divider"><span>或</span></div>
+                <div class="hero-divider" id="heroDivider"><span>或</span></div>
+                <p class="pages-notice" id="pagesNotice">GitHub Pages 静态版：支持本地文件、文件夹和 DPL 播放；在线代理与服务器转码请使用自托管完整版或桌面版。</p>
                 <div class="hero-file-row">
                     <label for="videoFile" class="file-input-label hero-file">
                         <i class="fa-solid fa-folder-open"></i>&nbsp; 打开本地文件
@@ -1129,6 +1135,7 @@
         let grantingIndex = -1;     // 正在为哪个条目做单独授权
         // ── Electron 桌面端能力（preload 注入 window.vrDesktop；网页版为 null）──
         const isDesktopApp = !!window.vrDesktop;
+        const isGitHubPages = location.hostname.endsWith('.github.io');
         let desktopDiskMap = null;  // dpl 原始路径 -> {exists, size}（桌面端磁盘检查缓存）
         const dplBtn = document.getElementById('dplBtn');
         const playlistPanel = document.getElementById('playlistPanel');
@@ -1144,12 +1151,19 @@
         const grantFileInput = document.getElementById('grantFileInput');
         const grantDirInput = document.getElementById('grantDirInput');
 
+        if (isGitHubPages) {
+            document.getElementById('onlineUrlSection').style.display = 'none';
+            document.getElementById('heroDivider').style.display = 'none';
+            document.getElementById('pagesNotice').style.display = 'block';
+            document.querySelector('.hero-sub').textContent = '本地视频无需上传 · 支持 360° 全景、SBS 分屏与 DPL 播放列表';
+        }
+
         const STATUS_BADGE = {
             ready: '本地', remote: '在线', unresolved: '未授权',
             missing: '未找到', conflict: '同名冲突', denied: '已取消',
         };
         function isPlayable(item) {
-            return item && (item.status === 'ready' || item.status === 'remote');
+            return item && (item.status === 'ready' || (item.status === 'remote' && !isGitHubPages));
         }
 
         function isVideoFileName(name) {
@@ -1322,6 +1336,13 @@
         function onItemClick(i) {
             const item = playlist[i];
             if (!item) return;
+            if (isGitHubPages && item.status === 'remote') {
+                playlistIndex = i;
+                renderPlaylist();
+                updatePlaylistButtons();
+                showPlaylistBanner('GitHub Pages 静态版无法代理或转码在线条目，请使用桌面版或自托管完整版。');
+                return;
+            }
             if (isPlayable(item)) {
                 playAt(i);
                 if (isMobileDevice) playlistPanel.classList.remove('active');
@@ -2276,6 +2297,12 @@
             if (activeProbeController) activeProbeController.abort();
             activeProbeController = null;
             const rawUrl = (url || '').trim();
+            if (isGitHubPages && /^https?:\/\//i.test(rawUrl)) {
+                hideLoadSpin();
+                showError('GitHub Pages 是纯静态托管，无法代理或转码在线视频。请使用桌面版或自托管完整版。');
+                dropZone.classList.add('active');
+                return;
+            }
             const playable = toPlayableURL(rawUrl);
             if (!playable) {
                 showError('请输入有效的 http(s) 视频链接。');

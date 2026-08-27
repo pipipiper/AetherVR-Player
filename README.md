@@ -52,6 +52,22 @@ npm run desktop    # 启动桌面窗口
 npm run dist       # 输出到 dist/（macOS 出 .dmg，Windows 出 NSIS 安装包）
 ```
 
+### 自动发版
+
+推送 `v*` 格式标签后，GitHub Actions 会自动：
+
+- 构建 macOS Universal（Intel x64 + Apple Silicon arm64）DMG/ZIP
+- 构建 Windows x64 NSIS 安装包
+- 创建同名 GitHub Release 并上传安装包
+- 将静态网页版发布到 GitHub Pages
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+GitHub Pages 只提供静态托管，因此该版本支持本地文件、文件夹、DPL 与 VR 播放，但不包含 `/proxy`、`/probe` 和 `/transcode` 后端；在线代理与服务器转码请使用自托管完整版或桌面版。
+
 > 桌面版内嵌同一个 `server.js`（仅监听 127.0.0.1 随机端口），代理、编码探测、服务器转码与网页版完全一致；本地文件通过 `--local-fs` 开启的 `/local` 接口流式读取，该开关仅桌面端启用。
 > Windows 播放 HEVC 需要系统安装「HEVC 视频扩展」；macOS 原生支持。
 
