@@ -65,6 +65,7 @@ node server.js --host 127.0.0.1 --port 7100
 | `AETHERVR_VAAPI_DEVICE` | `/dev/dri/renderD128` | VAAPI 渲染设备；服务用户必须对它有读写权限（通常加入 `render` 组） |
 | `AETHERVR_VAAPI_QP` | `18` | VAAPI H.264 恒定质量值（1–51，越低越清晰、码率越高）；不设置固定码率上限 |
 | `AETHERVR_TRANSCODE_THREADS` | ffmpeg 自动决定 | `libx264` 的线程数（1–256）；通常无需设置 |
+| `AETHERVR_HLS_LIST_SIZE` | `30` | 实时转码保留的 HLS 分片数（3–300，每片约 4 秒）；默认只占用约 2 分钟窗口，跳出窗口时自动从目标时间重启转码 |
 
 ### GitHub Pages 静态版
 
@@ -114,7 +115,7 @@ npm run dist       # 打包安装包到 dist/
 
 - **VR 渲染**：Three.js（已内置于 `vendor/`）把 `<video>` 画面贴到 360° 球体内部，相机随拖动旋转——这就是"不用眼镜看 VR"的全部秘密
 - **在线代理**：`server.js` 内置 `/proxy?url=<地址>`，转发 Range 头（进度条可拖）、自动跟随 302 跳转、修正 MIME；页面上的跨域链接自动改走代理，使用无感知
-- **服务器转码**：检测到设备解不动（如手机上的 8K HEVC）时，可一键由服务器 ffmpeg 转成 4K H.264 HLS 流；macOS 在编码器可用时自动用 VideoToolbox，Linux 可配置 VAAPI 实现硬件解码、缩放和编码，其他情况默认使用 libx264，空闲 2 分钟自动停止
+- **服务器转码**：检测到设备解不动（如手机上的 8K HEVC）时，可一键由服务器 ffmpeg 转成 4K H.264 HLS 流；macOS 在编码器可用时自动用 VideoToolbox，Linux 可配置 VAAPI 实现硬件解码、缩放和编码，其他情况默认使用 libx264。HLS 分片采用滚动窗口控制磁盘占用，切换视频、关闭页面或空闲 2 分钟会主动停止转码并清理临时文件
 - **桌面版**：内嵌同一个 `server.js`（仅监听 127.0.0.1），本地文件通过 `--local-fs` 开启的 `/local` 接口流式读取
 
 ## 已知限制

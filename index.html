@@ -1351,6 +1351,9 @@
         // HLS 的 duration 可能是 Infinity：用服务端 ffprobe 探测的时长兜底
         let fallbackDuration = null;
         function effectiveDuration() {
+            // 滚动 HLS 播放列表的 duration 只有当前窗口长度；转码播放时
+            // 服务端解析出的原片时长才是进度条应展示的全片长度。
+            if (transcodeSrcUrl && fallbackDuration && isFinite(fallbackDuration)) return fallbackDuration;
             const d = videoPlayer.duration;
             if (d && isFinite(d)) return d;
             return fallbackDuration;
@@ -1389,6 +1392,17 @@
         const appBaseUrl = new URL('.', location.href);
         function backendUrl(resource) {
             return new URL(String(resource || '').replace(/^\/+/, ''), appBaseUrl).href;
+        }
+        function isTranscodePlaylistUrl(rawUrl) {
+            try {
+                const candidate = new URL(rawUrl, location.href);
+                const hlsRoot = new URL('hls/', appBaseUrl);
+                return candidate.origin === hlsRoot.origin && candidate.pathname.startsWith(hlsRoot.pathname);
+            } catch { return false; }
+        }
+        function releaseRemoteTranscode() {
+            if (!transcodeSrcUrl || !backendAvailable) return;
+            fetch(backendUrl('transcode/stop'), { method: 'POST', keepalive: true }).catch(() => {});
         }
         // 默认按纯静态模式收敛功能；探测到 AetherVR 后端后再开放在线能力。
         // 不再依赖 github.io 域名，因此 Cloudflare Pages、Netlify 等同样正确。
@@ -1508,7 +1522,12 @@
             URL.revokeObjectURL(activeLocalObjectURL);
             activeLocalObjectURL = null;
         }
-        window.addEventListener('pagehide', releaseLocalObjectURL);
+        window.addEventListener('pagehide', () => {
+            releaseLocalObjectURL();
+            if (transcodeSrcUrl && backendAvailable) {
+                try { navigator.sendBeacon(backendUrl('transcode/stop')); } catch { /* 页面正在退出 */ }
+            }
+        });
 
         // ── 渲染 ──
         function renderPlaylist() {
@@ -3274,6 +3293,8 @@
                 return;
             }
 
+            releaseRemoteTranscode();
+
             // Hide drop zone and error
             dropZone.classList.remove('active');
             hideError();
@@ -3523,6 +3544,10 @@
                 showError('请输入有效的 http(s) 视频链接。');
                 return;
             }
+
+            // 切换到普通本地/远程源时立即释放旧转码；加载新的 HLS 会话时
+            // 不能停止，因为服务端已经用新会话替换了旧会话。
+            if (!isTranscodePlaylistUrl(rawUrl)) releaseRemoteTranscode();
 
             // 远程链接先做编码预探测：明显播不了就直接给转码入口，
             // 不再让视频元素长时间黑屏干等 error 事件。
@@ -3887,12 +3912,16 @@
                 return;
             }
             const local = t - hlsOffset;
+            let availStart = 0;
             let availEnd = 0;
             try {
                 const s = videoPlayer.seekable;
-                if (s.length) availEnd = s.end(s.length - 1);
+                if (s.length) {
+                    availStart = s.start(0);
+                    availEnd = s.end(s.length - 1);
+                }
             } catch (e) {}
-            if (local >= 0 && local <= Math.max(availEnd - 0.5, 0)) {
+            if (local >= availStart && local <= Math.max(availEnd - 0.5, availStart)) {
                 videoPlayer.currentTime = local;
             } else {
                 restartTranscodeAt(t);
