@@ -574,10 +574,14 @@
         }
         .hero-hint  { margin-top: 16px; font-size: 12px; color: #aab3c2; }
         .pages-notice {
-            display: none; width: 100%; margin: 0; padding: 10px 12px;
-            border: 1px solid rgba(81, 153, 255, .35); border-radius: 10px;
-            color: #b9d5ff; background: rgba(55, 115, 210, .12); font-size: 13px;
+            display: none; margin: 0 auto; padding: 9px 18px; max-width: 560px;
+            border: 1px solid #d8e6fd; border-radius: 12px;
+            color: #47648f; background: linear-gradient(180deg, #f7faff, #eef4fe);
+            font-size: 12.5px; line-height: 1.8; text-align: center;
+            box-shadow: 0 1px 3px rgba(70, 110, 180, .06);
         }
+        .pages-notice i { margin-right: 6px; color: #6b93d6; }
+        .pages-notice b { color: #33507e; font-weight: 600; }
         .hero-close {
             margin-top: 20px; display: none; align-items: center; gap: 6px;
             padding: 7px 16px; font-size: 12.5px; font-family: inherit;
@@ -1009,7 +1013,7 @@
                     <button id="openUrlBtn" class="url-play-btn" title="播放链接"><i class="fa-solid fa-link"></i>&nbsp; 播放链接</button>
                 </div>
                 <div class="hero-divider" id="heroDivider"><span>或</span></div>
-                <p class="pages-notice" id="pagesNotice">GitHub Pages 静态版：支持本地文件、文件夹和 DPL 播放；在线代理与服务器转码请使用自托管完整版或桌面版。</p>
+                <p class="pages-notice" id="pagesNotice"><i class="fa-solid fa-circle-info"></i><b>GitHub Pages 静态版</b> · 支持本地文件、文件夹和 DPL 播放<br>在线代理与服务器转码请使用自托管完整版或桌面版</p>
                 <div class="hero-file-row">
                     <label for="videoFile" class="file-input-label hero-file">
                         <i class="fa-solid fa-folder-open"></i>&nbsp; 打开本地文件
