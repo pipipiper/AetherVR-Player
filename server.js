@@ -53,7 +53,7 @@ const MIME = {
 const { spawn } = require("child_process");
 const os = require("os");
 
-const HLS_ROOT = path.join(os.tmpdir(), "vr-player-hls");
+const HLS_ROOT = path.join(os.tmpdir(), "aethervr-hls");
 const FFMPEG =
   [process.env.FFMPEG, "/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"].find(
     (p) => p && fs.existsSync(p)

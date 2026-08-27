@@ -1,10 +1,10 @@
-# VR 播放器
+# AetherVR Player
 
 **没有 VR 眼镜，也能看 VR 视频。**
 
-VR 视频本质上只是全景画面——这个项目把 VR / 360° / SBS 分屏视频直接搬进浏览器：用鼠标拖动（手机上用手指）旋转视角、滚轮或双指捏合缩放，像在现场一样"转头看"，全程不需要任何头显设备。
+VR 视频本质上只是全景画面——AetherVR Player 把 VR / 360° / SBS 分屏视频直接搬进浏览器：用鼠标拖动（手机上用手指）旋转视角、滚轮或双指捏合缩放，像在现场一样"转头看"，全程不需要任何头显设备。
 
-**在线体验 Demo：<https://pipipiper.github.io/vr-player/>**（纯静态版，打开即用，本地文件不上传）
+**在线体验 Demo：<https://pipipiper.github.io/AetherVR-Player/>**（纯静态版，打开即用，本地文件不上传）
 
 ## 为什么用它
 
@@ -31,11 +31,11 @@ npm run dev          # 或：node server.js
 
 ### GitHub Pages 静态版
 
-<https://pipipiper.github.io/vr-player/> 打开即用。Pages 只有静态托管，因此支持本地文件、文件夹、DPL 与 VR 播放，但不含代理 / 转码后端——在线视频与 8K 转码请用自托管完整版或桌面版。
+<https://pipipiper.github.io/AetherVR-Player/> 打开即用。Pages 只有静态托管，因此支持本地文件、文件夹、DPL 与 VR 播放，但不含代理 / 转码后端——在线视频与 8K 转码请用自托管完整版或桌面版。
 
 ### 桌面版（Windows / macOS）
 
-到 [Releases](https://github.com/pipipiper/vr-player/releases) 下载安装包（Windows 为 NSIS 安装包，macOS 为 Universal DMG，同时支持 Intel 和 Apple Silicon）。
+到 [Releases](https://github.com/pipipiper/AetherVR-Player/releases) 下载安装包（Windows 为 NSIS 安装包，macOS 为 Universal DMG，同时支持 Intel 和 Apple Silicon）。
 
 桌面版在网页版之上额外提供：
 

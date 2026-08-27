@@ -1,4 +1,4 @@
-/* VR 播放器 —— Electron 主进程（Windows / macOS）
+/* AetherVR Player —— Electron 主进程（Windows / macOS）
  *
  * 架构：主进程内嵌启动 server.js（随机空闲端口，仅监听 127.0.0.1，
  * 开启 --local-fs 本地文件流式接口），渲染层加载 http://127.0.0.1:<port>/，
@@ -59,8 +59,20 @@ async function start() {
   // ── 应用配置（保存目录、打开的页签）：存 userData 下的 JSON，
   //    与 localStorage 解耦——即使端口被占用退回随机端口，配置也不丢 ──
   const cfgFile = () => path.join(app.getPath('userData'), 'vr-player-config.json');
+  // 旧品牌「VR 播放器」的 userData 目录（改名后迁移配置用）
+  const legacyCfgFile = () => path.join(
+    process.platform === 'darwin'
+      ? path.join(app.getPath('home'), 'Library', 'Application Support', 'VR 播放器')
+      : app.getPath('appData'),
+    process.platform === 'darwin' ? 'vr-player-config.json' : path.join('VR 播放器', 'vr-player-config.json'));
   ipcMain.handle('cfg:read', () => {
-    try { return JSON.parse(fs.readFileSync(cfgFile(), 'utf8')); } catch { return {}; }
+    try { return JSON.parse(fs.readFileSync(cfgFile(), 'utf8')); } catch { /* 尝试旧目录 */ }
+    try {
+      const legacy = JSON.parse(fs.readFileSync(legacyCfgFile(), 'utf8'));
+      // 迁移到新目录，下次直接读新文件
+      try { fs.writeFileSync(cfgFile(), JSON.stringify(legacy)); } catch { /* 忽略 */ }
+      return legacy;
+    } catch { return {}; }
   });
   ipcMain.handle('cfg:write', (event, obj) => {
     try {
@@ -178,7 +190,7 @@ async function start() {
     minHeight: 600,
     backgroundColor: '#f4f5f7',
     autoHideMenuBar: true,
-    title: 'VR 播放器',
+    title: 'AetherVR Player',
     icon: path.join(__dirname, '..', 'build', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
