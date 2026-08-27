@@ -22,13 +22,16 @@
       "server.js",
       "favicon.svg",
       "vendor/**",
-      "electron/**"
+      "electron/**",
+      "build/icon.png"
     ],
     "mac": {
-      "category": "public.app-category.entertainment"
+      "category": "public.app-category.entertainment",
+      "icon": "build/icon.png"
     },
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "build/icon.ico"
     }
   }
 }

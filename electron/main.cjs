@@ -68,6 +68,7 @@ async function start() {
     backgroundColor: '#f4f5f7',
     autoHideMenuBar: true,
     title: 'VR 播放器',
+    icon: path.join(__dirname, '..', 'build', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
