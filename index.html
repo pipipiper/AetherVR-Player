@@ -485,10 +485,12 @@
             backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
             border-bottom: 1px solid var(--border);
         }
-        body.has-video .top-bar { display: flex; }
+        body.has-video .top-bar,
+        body.has-playlist .top-bar { display: flex; }
         .container.has-video .top-bar { background: rgba(255,255,255,.85); }
         .page-content { padding-top: 0; }
-        body.has-video .page-content { padding-top: calc(60px + env(safe-area-inset-top)); }
+        body.has-video .page-content,
+        body.has-playlist .page-content { padding-top: calc(60px + env(safe-area-inset-top)); }
 
         /* ── view toggle ───────────────────────────────────── */
         .view-btn {
@@ -829,7 +831,7 @@
                 gap: 8px;
                 transition: transform .3s ease, opacity .25s ease;
             }
-            body.has-video .page-content { padding-top: calc(84px + env(safe-area-inset-top)); }
+            body.has-video .page-content, body.has-playlist .page-content { padding-top: calc(84px + env(safe-area-inset-top)); }
             .page-content { transition: padding-top .3s ease; }
 
             /* 播放时隐藏顶栏，画面铺满 */
@@ -1312,6 +1314,8 @@
                 || (current.url && it.url && it.url === current.url)) : -1;
             renderPlaylist();
             updatePlaylistButtons();
+            // 有播放列表时始终显示顶栏：否则 dpl 全部条目不可播时没有任何回首页的入口
+            document.body.classList.toggle('has-playlist', items.length > 0);
             if (typeof startIndex === 'number' && isPlayable(items[startIndex])) {
                 playAt(startIndex);
             }
@@ -1326,6 +1330,7 @@
             renderPlaylist();
             updatePlaylistButtons();
             playlistPanel.classList.remove('active');
+            document.body.classList.remove('has-playlist');
         }
 
         // ── 播放与授权 ──
