@@ -29,6 +29,24 @@ npm run dev          # 或：node server.js
 
 然后浏览器打开 <http://localhost:7100/>。指定地址端口：`node server.js --host 127.0.0.1 --port 8080`。
 
+#### 反向代理与特殊来源端口
+
+通过 Caddy、Nginx 等反向代理对外提供服务时，建议让 Node 服务只监听回环地址，并显式启用可信代理模式：
+
+```bash
+node server.js --host 127.0.0.1 --port 7100 --trust-proxy
+```
+
+`--trust-proxy` 会使用反向代理传来的 `X-Forwarded-For` 识别客户端，用于转码会话归属和限流。只有当服务端口不直接暴露到公网、请求必须经过你控制的代理时才应启用。
+
+公网版默认只允许代理标准端口以及 `8443`。如需播放其他非标准端口的可信来源，可按 `域名:端口` 设置白名单：
+
+```bash
+AETHERVR_ALLOWED_HOSTPORT=media.example.com:19766,video.example.com:9443 node server.js --host 127.0.0.1 --port 7100 --trust-proxy
+```
+
+不要把内网地址加入公网服务的来源白名单；DNS 解析到回环、私网或保留地址的目标仍会被 SSRF 防护拒绝。
+
 ### GitHub Pages 静态版
 
 <https://pipipiper.github.io/AetherVR-Player/> 打开即用。Pages 只有静态托管，因此支持本地文件、文件夹、DPL 与 VR 播放，但不含代理 / 转码后端——在线视频与 8K 转码请用自托管完整版或桌面版。
