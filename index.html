@@ -2113,10 +2113,16 @@
             const err = videoPlayer.error;
             let hint = '无法播放此视频：浏览器报告了媒体错误。';
             if (err && err.code === 4) {
-                hint = '浏览器不支持该视频的编码或封装格式（常见于 MKV、HEVC/H.265、10-bit H.264 或 AC3/DTS 音频）。'
-                     + '手机端尤其注意：8K HEVC 视频超出手机硬解能力（iPhone 通常最高 4K），'
-                     + '请改用 4K / 1080p 的 H.264 版本。转换命令：'
-                     + 'ffmpeg -i input.mp4 -c:v libx264 -vf scale=4096:-2 -c:a aac output.mp4';
+                hint = '无法解码该视频（常见于 MKV 封装、HEVC/H.265、10-bit H.264 或 AC3/DTS 音频）。';
+                if (isPhoneDevice || isTabletDevice) {
+                    hint += '移动端硬解上限一般为 4K：8K HEVC 超出'
+                        + (isTabletDevice ? '平板' : '手机')
+                        + '硬解能力，请改用服务器转码播放，或换 4K / 1080p 的 H.264 版本。';
+                } else if (isDesktopApp && window.vrDesktop.platform === 'win32') {
+                    hint += 'Windows 播放 HEVC 需安装「HEVC 视频扩展」（微软商店），且显卡需支持该分辨率的硬解；安装后重启本应用再试。';
+                } else if (!isSafariBrowser && !hevcPlayable) {
+                    hint += '当前浏览器/系统缺少 HEVC 解码支持：Windows 请安装「HEVC 视频扩展」，macOS 请用 Safari 或最新版 Chrome。';
+                }
             } else if (err && err.code === 3) {
                 hint = '视频文件似乎已损坏或不完整。';
             } else if (err && err.code === 2) {
@@ -2159,6 +2165,22 @@
         const isMobileDevice = window.matchMedia('(pointer: coarse)').matches
             || /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
         const isSafariBrowser = /^((?!chrome|chromium|crios|fxios|android).)*safari/i.test(navigator.userAgent);
+        // 设备分级：手机 / 平板 / 桌面。硬解能力差异主要在移动端 vs 桌面端
+        const isPhoneDevice = /iPhone|iPod|Android/i.test(navigator.userAgent)
+            || (window.matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 600);
+        const isTabletDevice = !isPhoneDevice && isMobileDevice;
+        // 真实解码能力探测（比按浏览器名一刀切准确）：
+        // Chrome/Edge/Electron 在 Windows（装 HEVC 扩展）和 macOS 上都能硬解 HEVC
+        const capProbeVideo = document.createElement('video');
+        function canPlayWithCodecs(...codecStrings) {
+            return codecStrings.some((c) => {
+                try { return capProbeVideo.canPlayType(`video/mp4; codecs="${c}"`) !== ''; }
+                catch (e) { return false; }
+            });
+        }
+        const hevcPlayable = canPlayWithCodecs(
+            'hvc1.1.6.L150.90', 'hvc1.2.4.L150.B0', 'hev1.1.6.L150.90', 'hev1.2.4.L150.B0');
+        const ac3Playable = canPlayWithCodecs('ac-3', 'ec-3');
         const isIOSDevice = /iPhone|iPad|iPod/i.test(navigator.userAgent)
             || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
         // iPhone/iPad 从「文件」App 选择 SMB 网络位置的文件时，系统必须先把整个文件
@@ -2230,20 +2252,22 @@
             const w = p.video.width || 0, h = p.video.height || 0;
             if (fmt.includes('matroska') && isSafariBrowser) return 'MKV 封装格式';
             const isHevc = /(hevc|h265|h\.265)/.test(vcodec);
-            if (isHevc && !isSafariBrowser) {
-                return 'HEVC/H.265 编码';
-            }
+            // 移动端（手机/平板）先看硬解规格上限：8K HEVC 给出更具体的「超硬解」提示
             if (isHevc && isMobileDevice && (w > 4096 || h > 2160)) {
-                return '超过手机硬解能力的 ' + w + '×' + h + ' HEVC 视频';
+                return '超过' + (isTabletDevice ? '平板' : '手机') + '硬解能力的 ' + w + '×' + h + ' HEVC 视频';
+            }
+            // HEVC 是否可解看真实能力（canPlayType），不再按浏览器名一刀切
+            if (isHevc && !hevcPlayable) {
+                return 'HEVC/H.265 编码';
             }
             if (/(wmv|vc1|msmpeg4|mpeg2video|mpeg1video|theora|rv40|vp6)/.test(vcodec)) {
                 return vcodec.toUpperCase() + ' 编码';
             }
             if (isMobileDevice && (w > 4096 || h > 2160)) {
-                return '超过手机硬解能力的 ' + w + '×' + h + ' 分辨率';
+                return '超过' + (isTabletDevice ? '平板' : '手机') + '硬解能力的 ' + w + '×' + h + ' 分辨率';
             }
             if (/(dts|truehd)/.test(acodec)) return acodec.toUpperCase() + ' 音频编码';
-            if (/(ac3|eac3)/.test(acodec) && !isSafariBrowser) return acodec.toUpperCase() + ' 音频编码';
+            if (/(ac3|eac3)/.test(acodec) && !ac3Playable) return acodec.toUpperCase() + ' 音频编码';
             return null;
         }
 
