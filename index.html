@@ -888,6 +888,8 @@
         .pl-modal-btn:hover { border-color: var(--yellow); }
         .pl-modal-btn.primary { background: #2f6bff; border-color: #2f6bff; color: #fff; }
         .pl-modal-btn.primary:hover { background: #2459dd; }
+        .pl-modal-btn.danger { background: #d64545; border-color: #d64545; color: #fff; }
+        .pl-modal-btn.danger:hover { background: #bc3737; }
         .pl-modal textarea {
             width: 100%; box-sizing: border-box; height: 110px; resize: vertical;
             border: 1px solid var(--border-hi); border-radius: 9px; padding: 8px 10px;
@@ -1154,6 +1156,17 @@
                         <button class="pl-modal-btn" id="posModalCancel">取消</button>
                         <button class="pl-modal-btn" id="posModalStart">不记录，从头播放</button>
                         <button class="pl-modal-btn primary" id="posModalRecord">记录位置</button>
+                    </div>
+                </div>
+            </div>
+            <!-- 删除二次确认弹窗 -->
+            <div class="pl-modal-mask" id="confirmMask">
+                <div class="pl-modal">
+                    <h3 id="confirmTitle">确认删除</h3>
+                    <p class="pl-modal-desc" id="confirmDesc"></p>
+                    <div class="pl-modal-btns">
+                        <button class="pl-modal-btn" id="confirmCancel">取消</button>
+                        <button class="pl-modal-btn danger" id="confirmOk">删除</button>
                     </div>
                 </div>
             </div>
@@ -2061,8 +2074,10 @@
                 del.className = 'fav-del';
                 del.title = '删除该收藏';
                 del.innerHTML = '<i class="fa-solid fa-xmark"></i>';
-                del.addEventListener('click', (e) => {
+                del.addEventListener('click', async (e) => {
                     e.stopPropagation();
+                    const ok = await askConfirm('删除收藏', `将从收藏夹删除「${f.name}」。此操作不可撤销。`);
+                    if (!ok) return;
                     favorites.splice(i, 1);
                     saveFavs();
                     renderFavs();
@@ -2445,6 +2460,26 @@
         document.getElementById('posModalCancel').addEventListener('click', () => closePosModal(null));
         posModalMask.addEventListener('click', (e) => { if (e.target === posModalMask) closePosModal(null); });
 
+        // ── 通用二次确认弹窗（删除类操作专用）──
+        const confirmMask = document.getElementById('confirmMask');
+        let confirmResolver = null;
+        function askConfirm(title, desc, okText) {
+            return new Promise((resolve) => {
+                confirmResolver = resolve;
+                document.getElementById('confirmTitle').textContent = title;
+                document.getElementById('confirmDesc').textContent = desc;
+                document.getElementById('confirmOk').textContent = okText || '删除';
+                confirmMask.classList.add('active');
+            });
+        }
+        function closeConfirm(v) {
+            confirmMask.classList.remove('active');
+            if (confirmResolver) { confirmResolver(v); confirmResolver = null; }
+        }
+        document.getElementById('confirmOk').addEventListener('click', () => closeConfirm(true));
+        document.getElementById('confirmCancel').addEventListener('click', () => closeConfirm(false));
+        confirmMask.addEventListener('click', (e) => { if (e.target === confirmMask) closeConfirm(false); });
+
         // ── 当前正在播放的视频 → 可收藏/可入列的引用 ──
         function currentVideoRef() {
             if (!videoPlayer.currentSrc) return null;
@@ -2670,8 +2705,11 @@
             else arr.forEach((_, i) => selectedIdx.add(i));
             if (activeTab === 'favs') renderFavs(); else renderPlaylist();
         });
-        deleteSelBtn.addEventListener('click', () => {
+        deleteSelBtn.addEventListener('click', async () => {
             if (!selectedIdx.size) { showPlaylistBanner('请先勾选要删除的条目。'); return; }
+            const ok = await askConfirm('删除所选条目',
+                `将从${activeTab === 'favs' ? '收藏夹' : '当前播放列表'}删除勾选的 ${selectedIdx.size} 项${isDesktopApp ? '，并同步写回 dpl 文件' : ''}。此操作不可撤销。`);
+            if (!ok) return;
             if (activeTab === 'favs') {
                 const kept = favorites.filter((_, i) => !selectedIdx.has(i));
                 const removed = favorites.length - kept.length;
@@ -3519,7 +3557,14 @@
         // 播放列表工具栏：添加媒体目录 / 重新匹配 / 清空
         addDirBtn.addEventListener('click', (e) => { e.stopPropagation(); addMediaDirectory(); });
         rematchBtn.addEventListener('click', (e) => { e.stopPropagation(); rematchAll(); });
-        clearListBtn.addEventListener('click', (e) => { e.stopPropagation(); clearPlaylist(); });
+        clearListBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            if (!playlist.length) { showPlaylistBanner('播放列表已为空。'); return; }
+            const ok = await askConfirm('清空播放列表',
+                `将移除当前列表的全部 ${playlist.length} 个条目${isDesktopApp ? '，对应 dpl 文件也会被清空' : ''}。此操作不可撤销。`, '清空');
+            if (!ok) return;
+            clearPlaylist();
+        });
         // 单独授权回退：showOpenFilePicker 不可用时走隐藏 input
         grantFileInput.addEventListener('change', (e) => {
             const f = e.target.files && e.target.files[0];
