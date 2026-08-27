@@ -2308,14 +2308,35 @@
             document.querySelector('.container')?.classList.add('has-video');
 
             let name = '网络视频';
-            try {
-                name = decodeURIComponent(new URL(url).pathname).split('/').filter(Boolean).pop() || name;
-            } catch (e) {}
-            fileName.textContent = name;
-            videoPlayer.dataset.remoteName = name;
-            fileSize.textContent = '在线';
-            fileType.textContent = '链接';
-            fileInfo.classList.add('active');
+            const localMatch = rawUrl.match(/^\/local\?path=(.+)$/);
+            if (localMatch) {
+                // 桌面端本地磁盘文件：显示真实文件名 / 大小 / 类型
+                const p = safeDecode(localMatch[1]);
+                name = p.split(/[\\/]/).filter(Boolean).pop() || name;
+                fileName.textContent = name;
+                videoPlayer.dataset.remoteName = name;
+                const ext = (p.match(/\.([a-z0-9]+)$/i) || [])[1];
+                fileType.textContent = ext ? ext.toUpperCase() + ' 本地文件' : '本地文件';
+                fileSize.textContent = '读取中…';
+                fileInfo.classList.add('active');
+                // 大小经 HEAD 请求从 /local 的 Content-Length 读取
+                fetch(rawUrl, { method: 'HEAD' }).then((r) => {
+                    if (requestId !== urlLoadRequestId) return;
+                    const len = Number(r.headers.get('Content-Length'));
+                    fileSize.textContent = Number.isFinite(len) && len > 0 ? formatFileSize(len) : '本地';
+                }).catch(() => {
+                    if (requestId === urlLoadRequestId) fileSize.textContent = '本地';
+                });
+            } else {
+                try {
+                    name = decodeURIComponent(new URL(url).pathname).split('/').filter(Boolean).pop() || name;
+                } catch (e) {}
+                fileName.textContent = name;
+                videoPlayer.dataset.remoteName = name;
+                fileSize.textContent = '在线';
+                fileType.textContent = '链接';
+                fileInfo.classList.add('active');
+            }
 
             // VR/360 is the default view once metadata is ready
             pendingVrMode = true;
