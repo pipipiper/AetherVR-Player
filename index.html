@@ -1515,6 +1515,12 @@
             rematchBtn.disabled = !lastDplEntries;
         }
 
+        // 顶栏显示条件：当前列表非空，或桌面端仍存在任何播放列表页签（空页签也要能切回首页）
+        function updateHasPlaylist() {
+            const has = playlist.length > 0 || (isDesktopApp && playlists.length > 0);
+            document.body.classList.toggle('has-playlist', has);
+        }
+
         function setPlaylist(items, startIndex) {
             // 重新匹配（dpl + 后选目录）时尽量保留当前播放位置
             const current = playlistIndex >= 0 ? playlist[playlistIndex] : null;
@@ -1528,7 +1534,7 @@
             renderPlaylist();
             updatePlaylistButtons();
             // 有播放列表时始终显示顶栏：否则 dpl 全部条目不可播时没有任何回首页的入口
-            document.body.classList.toggle('has-playlist', items.length > 0);
+            updateHasPlaylist();
             persistPlaylist();
             if (typeof saveActivePlaylistFile === 'function') saveActivePlaylistFile();
             if (typeof startIndex === 'number' && isPlayable(items[startIndex])) {
@@ -1548,7 +1554,7 @@
             renderPlaylist();
             updatePlaylistButtons();
             playlistPanel.classList.remove('active');
-            document.body.classList.remove('has-playlist');
+            updateHasPlaylist();
             persistPlaylist();
             if (typeof saveActivePlaylistFile === 'function') saveActivePlaylistFile();
         }
@@ -2882,6 +2888,10 @@
 
         // Switch to normal view
         function switchToNormalView() {
+            if (!videoPlayer.src) {
+                showError('请先加载视频。');
+                return;
+            }
             isVrMode = false;
             videoPlayer.classList.remove('video-hidden');
             vrCanvas.classList.remove('active');
