@@ -147,6 +147,9 @@ const VIDEO_ENCODER_AVAILABLE = ffmpegHasEncoder(VIDEO_ENCODER_NAME) && vaapiDev
 const configuredThreads = Number(process.env.AETHERVR_TRANSCODE_THREADS || "");
 const TRANSCODE_THREADS = Number.isInteger(configuredThreads) && configuredThreads > 0 && configuredThreads <= 256
   ? String(configuredThreads) : null;
+const configuredVaapiQp = Number(process.env.AETHERVR_VAAPI_QP || "18");
+const VAAPI_QP = Number.isInteger(configuredVaapiQp) && configuredVaapiQp >= 1 && configuredVaapiQp <= 51
+  ? String(configuredVaapiQp) : "18";
 const VIDEO_INPUT_ACCEL = USE_VAAPI
   ? ["-hwaccel", "vaapi", "-hwaccel_device", VAAPI_DEVICE, "-hwaccel_output_format", "vaapi"]
   : [];
@@ -158,7 +161,7 @@ const VIDEO_ENCODER = VIDEO_ENCODER_NAME === "h264_videotoolbox"
   ? ["-c:v", "h264_videotoolbox", "-b:v", "12M"]
   : USE_VAAPI
     ? ["-c:v", "h264_vaapi", "-profile:v", "high", "-level:v", "5.2",
-        "-rc_mode", "CBR", "-b:v", "12M", "-maxrate", "12M", "-bufsize", "24M", "-bf", "0"]
+        "-rc_mode", "CQP", "-qp", VAAPI_QP, "-bf", "0"]
     : ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "21",
         ...(TRANSCODE_THREADS ? ["-threads", TRANSCODE_THREADS] : [])];
 
@@ -669,6 +672,7 @@ const requestHandler = async (req, res) => {
         encoder: VIDEO_ENCODER_NAME,
         hardware: USE_VAAPI || VIDEO_ENCODER_NAME === "h264_videotoolbox",
         device: USE_VAAPI ? VAAPI_DEVICE : null,
+        quality: USE_VAAPI ? { mode: "CQP", qp: Number(VAAPI_QP) } : null,
       }));
       return;
     }
