@@ -63,6 +63,7 @@ node server.js --host 127.0.0.1 --port 7100
 | `AETHERVR_ALLOWED_HOSTPORT` | 空 | 允许访问的非标准来源端口，逗号分隔的 `域名:端口` |
 | `AETHERVR_VIDEO_ENCODER` | `auto` | `auto`、`libx264`、`h264_videotoolbox` 或 `h264_vaapi`；Linux Intel/AMD 核显可显式选择 VAAPI |
 | `AETHERVR_VAAPI_DEVICE` | `/dev/dri/renderD128` | VAAPI 渲染设备；服务用户必须对它有读写权限（通常加入 `render` 组） |
+| `AETHERVR_VAAPI_QP` | `18` | VAAPI H.264 恒定质量值（1–51，越低越清晰、码率越高）；不设置固定码率上限 |
 | `AETHERVR_TRANSCODE_THREADS` | ffmpeg 自动决定 | `libx264` 的线程数（1–256）；通常无需设置 |
 
 ### GitHub Pages 静态版
