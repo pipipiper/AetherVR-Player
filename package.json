@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "node server.js",
     "start": "node server.js",
+    "test": "node --test",
     "desktop": "electron .",
     "dist": "electron-builder",
     "dist:mac": "electron-builder --mac --universal --publish never",
@@ -17,6 +18,9 @@
     "electron": "^37.0.0",
     "electron-builder": "^25.0.0"
   },
+  "engines": {
+    "node": ">=18"
+  },
   "build": {
     "appId": "cc.pipp.aethervr",
     "productName": "AetherVR Player",
@@ -24,6 +28,7 @@
       "index.html",
       "server.js",
       "favicon.svg",
+      "background-pic.jpg",
       "vendor/**",
       "electron/**",
       "build/icon.png",

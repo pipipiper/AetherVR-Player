@@ -1018,7 +1018,7 @@
                     <button id="openUrlBtn" class="url-play-btn" title="播放链接"><i class="fa-solid fa-link"></i>&nbsp; 播放链接</button>
                 </div>
                 <div class="hero-divider" id="heroDivider"><span>或</span></div>
-                <p class="pages-notice" id="pagesNotice"><i class="fa-solid fa-circle-info"></i><b>GitHub Pages 静态版</b> · 支持本地文件、文件夹和 DPL 播放<br>在线代理与服务器转码请使用自托管完整版或桌面版</p>
+                <p class="pages-notice" id="pagesNotice"><i class="fa-solid fa-circle-info"></i><b>静态托管模式</b> · 支持本地文件、文件夹和 DPL 播放<br>在线代理与服务器转码请使用自托管完整版或桌面版</p>
                 <div class="hero-file-row">
                     <label for="videoFile" class="file-input-label hero-file">
                         <i class="fa-solid fa-folder-open"></i>&nbsp; 打开本地文件
@@ -1385,7 +1385,16 @@
         let grantingItem = null;    // 正在授权的条目对象引用（数组重建后按索引会绑错，须按对象回写）
         // ── Electron 桌面端能力（preload 注入 window.vrDesktop；网页版为 null）──
         const isDesktopApp = !!window.vrDesktop;
-        const isGitHubPages = location.hostname.endsWith('.github.io');
+        // 所有后端地址都相对于页面所在目录，兼容根路径和反向代理子路径部署。
+        const appBaseUrl = new URL('.', location.href);
+        function backendUrl(resource) {
+            return new URL(String(resource || '').replace(/^\/+/, ''), appBaseUrl).href;
+        }
+        // 默认按纯静态模式收敛功能；探测到 AetherVR 后端后再开放在线能力。
+        // 不再依赖 github.io 域名，因此 Cloudflare Pages、Netlify 等同样正确。
+        let backendAvailable = false;
+        let probeAvailable = false;
+        let transcodeAvailable = false;
         let desktopDiskMap = null;  // dpl 原始路径 -> {exists, size}（桌面端磁盘检查缓存）
         const dplBtn = document.getElementById('dplBtn');
         const playlistPanel = document.getElementById('playlistPanel');
@@ -1401,19 +1410,44 @@
         const grantFileInput = document.getElementById('grantFileInput');
         const grantDirInput = document.getElementById('grantDirInput');
 
-        if (isGitHubPages) {
-            document.getElementById('onlineUrlSection').style.display = 'none';
-            document.getElementById('heroDivider').style.display = 'none';
-            document.getElementById('pagesNotice').style.display = 'block';
-            document.querySelector('.hero-sub').textContent = '本地视频无需上传 · 支持 360° 全景、SBS 分屏与 DPL 播放列表';
+        const heroSub = document.querySelector('.hero-sub');
+        const fullHeroSubText = heroSub.textContent;
+        function applyBackendAvailability(capabilities) {
+            backendAvailable = Boolean(capabilities && capabilities.backend === true);
+            probeAvailable = Boolean(backendAvailable && capabilities.probe === true);
+            transcodeAvailable = Boolean(backendAvailable && capabilities.transcode === true);
+            document.getElementById('onlineUrlSection').style.display = backendAvailable ? '' : 'none';
+            document.getElementById('heroDivider').style.display = backendAvailable ? '' : 'none';
+            document.getElementById('pagesNotice').style.display = backendAvailable ? 'none' : 'block';
+            heroSub.textContent = backendAvailable
+                ? fullHeroSubText
+                : '本地视频无需上传 · 支持 360° 全景、SBS 分屏与 DPL 播放列表';
         }
+        applyBackendAvailability(null);
+        (async () => {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 2500);
+            try {
+                const response = await fetch(backendUrl('api/capabilities'), {
+                    cache: 'no-store', signal: controller.signal,
+                });
+                const capabilities = response.ok ? await response.json() : null;
+                applyBackendAvailability(capabilities && capabilities.app === 'aethervr' ? capabilities : null);
+            } catch {
+                applyBackendAvailability(null);
+            } finally {
+                clearTimeout(timer);
+                renderPlaylist();
+                renderFavs();
+            }
+        })();
 
         const STATUS_BADGE = {
             ready: '本地', remote: '在线', unresolved: '未授权',
             missing: '未找到', conflict: '同名冲突', denied: '已取消',
         };
         function isPlayable(item) {
-            return item && (item.status === 'ready' || (item.status === 'remote' && !isGitHubPages));
+            return item && (item.status === 'ready' || (item.status === 'remote' && backendAvailable));
         }
 
         function isVideoFileName(name) {
@@ -1636,11 +1670,11 @@
         function onItemClick(i) {
             const item = playlist[i];
             if (!item) return;
-            if (isGitHubPages && item.status === 'remote') {
+            if (!backendAvailable && item.status === 'remote') {
                 playlistIndex = i;
                 renderPlaylist();
                 updatePlaylistButtons();
-                showPlaylistBanner('GitHub Pages 静态版无法代理或转码在线条目，请使用桌面版或自托管完整版。');
+                showPlaylistBanner('当前为静态托管模式，无法代理或转码在线条目，请使用桌面版或自托管完整版。');
                 return;
             }
             if (isPlayable(item)) {
@@ -3342,6 +3376,7 @@
             if (transcodeBtn) {
                 const remoteUrl = videoPlayer.dataset.remoteUrl || '';
                 const canTranscode = err && err.code === 4
+                    && transcodeAvailable
                     && /^https?:\/\//.test(remoteUrl)
                     && !remoteUrl.startsWith(location.origin);
                 transcodeBtn.style.display = canTranscode ? 'inline-block' : 'none';
@@ -3354,7 +3389,7 @@
                 const u = new URL(url, location.href);
                 if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
                 if (u.origin === location.origin) return u.href;
-                return '/proxy?url=' + encodeURIComponent(u.href);
+                return backendUrl('proxy?url=' + encodeURIComponent(u.href));
             } catch (e) { return null; }
         }
 
@@ -3423,8 +3458,9 @@
         let activeProbeController = null;
         let iosReadWatchdog = null;
         async function probeRemoteMedia(url, signal, allowRetry = true) {
+            if (!probeAvailable) return null;
             try {
-                const resp = await fetch('/probe', {
+                const resp = await fetch(backendUrl('probe'), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ url }),
@@ -3476,9 +3512,9 @@
             pendingSeekPosition = null;
             activeLocalFile = null;
             const rawUrl = (url || '').trim();
-            if (isGitHubPages && /^https?:\/\//i.test(rawUrl)) {
+            if (!backendAvailable && /^https?:\/\//i.test(rawUrl)) {
                 hideLoadSpin();
-                showError('GitHub Pages 是纯静态托管，无法代理或转码在线视频。请使用桌面版或自托管完整版。');
+                showError('当前为静态托管模式，无法代理或转码在线视频。请使用桌面版或自托管完整版。');
                 dropZone.classList.add('active');
                 return;
             }
@@ -3508,7 +3544,7 @@
                     return;
                 }
                 const reason = probeUnplayableReason(probe);
-                if (reason) {
+                if (reason && transcodeAvailable) {
                     hideLoadSpin(); // playAt 里可能已显示「加载中…」
                     let probeName = '网络视频';
                     try {
@@ -3709,7 +3745,7 @@
             transcodeBtn.disabled = true;
             transcodeBtn.textContent = '正在启动转码（8K 实时转码约需十几秒）…';
             try {
-                const resp = await fetch('/transcode', {
+                const resp = await fetch(backendUrl('transcode'), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ url: remoteUrl })
@@ -3722,7 +3758,7 @@
                 transcodeBtn.style.display = 'none';
                 // 同源 HLS 地址，走标准加载流程（会自动进入 VR 模式）
                 const sourceDisplayName = videoPlayer.dataset.remoteName || '网络视频';
-                loadVideoURL(location.origin + data.playlist);
+                loadVideoURL(backendUrl(data.playlist));
                 // 记录转码会话：原始地址 + 起始偏移，供进度条快进退重启转码
                 transcodeSrcUrl = remoteUrl;
                 transcodeDisplayName = sourceDisplayName;
@@ -3869,7 +3905,7 @@
             transcodeRestarting = true;
             ignoreMediaError = true;
             showLoadSpin('正在跳转到 ' + formatTime(t) + '，转码加载中…');
-            const doFetch = () => fetch('/transcode', {
+            const doFetch = () => fetch(backendUrl('transcode'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ url: transcodeSrcUrl, start: t })
@@ -3888,7 +3924,7 @@
                 const src = transcodeSrcUrl;
                 const sourceDisplayName = transcodeDisplayName || '网络视频';
                 const knownDuration = fallbackDuration;
-                loadVideoURL(location.origin + data.playlist); // 内部会重置转码会话状态
+                loadVideoURL(backendUrl(data.playlist)); // 内部会重置转码会话状态
                 transcodeSrcUrl = src;
                 transcodeDisplayName = sourceDisplayName;
                 videoPlayer.dataset.remoteName = sourceDisplayName;

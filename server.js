@@ -52,29 +52,96 @@ const MIME = {
   ".ts": "video/mp2t",
 };
 
+// 只公开播放器运行所需的静态资源。绝不能把整个源码目录当作 Web 根目录，
+// 否则从 Git checkout 启动时会暴露 .git/config、.env、服务端源码等文件。
+const PUBLIC_EXACT_PATHS = new Set(["/index.html", "/favicon.svg", "/background-pic.jpg"]);
+const REAL_PUBLIC_ROOT = fs.realpathSync(__dirname);
+const REAL_VENDOR_ROOT = path.join(REAL_PUBLIC_ROOT, "vendor");
+
+function publicFilePath(urlPath) {
+  const webPath = urlPath.replace(/\\/g, "/");
+  if (!PUBLIC_EXACT_PATHS.has(webPath) && !webPath.startsWith("/vendor/")) return null;
+  const candidate = path.resolve(__dirname, `.${webPath}`);
+  if (webPath.startsWith("/vendor/")
+      && candidate !== path.join(__dirname, "vendor")
+      && !candidate.startsWith(`${path.join(__dirname, "vendor")}${path.sep}`)) return null;
+  return candidate;
+}
+
 /* ── HLS 实时转码 ─────────────────────────────────────────────
  * 手机硬解不了 8K HEVC 时，由本机 ffmpeg 实时转成 4K H.264 HLS，
  * iPhone Safari 原生支持 HLS 播放与进度拖动。
  * 同时只保留一个转码会话（本机单用户场景）。 */
-const { spawn } = require("child_process");
+const { spawn, spawnSync } = require("child_process");
 const os = require("os");
 
-const HLS_ROOT = path.join(os.tmpdir(), "aethervr-hls");
-const FFMPEG =
-  [process.env.FFMPEG, "/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"].find(
-    (p) => p && fs.existsSync(p)
-  ) || "ffmpeg";
-const FFPROBE =
-  [process.env.FFPROBE, "/opt/homebrew/bin/ffprobe", "/usr/local/bin/ffprobe", "/usr/bin/ffprobe"].find(
-    (p) => p && fs.existsSync(p)
-  ) || "ffprobe";
+// 每个进程使用独立目录，避免多个实例互相删除 HLS 分片。
+const HLS_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "aethervr-hls-"));
 
-// macOS 用 VideoToolbox 硬编；Linux（无 GPU 直通）用 libx264 软编。
-// 110 服务器没有可用的硬件编码器：优先稳定实时软编，再根据实测调整画质。
-const IS_MAC = process.platform === "darwin";
-const VIDEO_ENCODER = IS_MAC
+function findOnPath(command) {
+  const dirs = (process.env.PATH || "").split(path.delimiter).filter(Boolean);
+  const hasExtension = Boolean(path.extname(command));
+  const extensions = process.platform === "win32" && !hasExtension
+    ? (process.env.PATHEXT || ".EXE;.CMD;.BAT;.COM").split(";")
+    : [""];
+  for (const dir of dirs) {
+    for (const ext of extensions) {
+      const candidate = path.join(dir, command + ext.toLowerCase());
+      const alternatives = ext && ext !== ext.toLowerCase() ? [candidate, path.join(dir, command + ext)] : [candidate];
+      for (const file of alternatives) {
+        try { fs.accessSync(file, fs.constants.X_OK); return file; } catch { /* 继续查找 */ }
+      }
+    }
+  }
+  return null;
+}
+
+function resolveExecutable(configured, command, commonPaths) {
+  if (configured) {
+    if (path.isAbsolute(configured) || configured.includes(path.sep)) return configured;
+    return findOnPath(configured) || configured;
+  }
+  return commonPaths.find((file) => fs.existsSync(file)) || findOnPath(command) || command;
+}
+
+const FFMPEG = resolveExecutable(process.env.FFMPEG, "ffmpeg", [
+  "/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg",
+]);
+const FFPROBE = resolveExecutable(process.env.FFPROBE, "ffprobe", [
+  "/opt/homebrew/bin/ffprobe", "/usr/local/bin/ffprobe", "/usr/bin/ffprobe",
+]);
+const FFMPEG_AVAILABLE = path.isAbsolute(FFMPEG) && fs.existsSync(FFMPEG);
+const FFPROBE_AVAILABLE = path.isAbsolute(FFPROBE) && fs.existsSync(FFPROBE);
+
+let ffmpegEncoders = null;
+function ffmpegHasEncoder(name) {
+  if (!FFMPEG_AVAILABLE) return false;
+  if (ffmpegEncoders === null) {
+    const result = spawnSync(FFMPEG, ["-hide_banner", "-encoders"], {
+      encoding: "utf8", timeout: 5000, windowsHide: true,
+    });
+    ffmpegEncoders = !result.error && result.status === 0 ? (result.stdout || "") : "";
+  }
+  return new RegExp(`\\b${name}\\b`).test(ffmpegEncoders);
+}
+
+const requestedEncoder = (process.env.AETHERVR_VIDEO_ENCODER || "auto").toLowerCase();
+const supportedEncoderChoices = new Set(["auto", "libx264", "h264_videotoolbox"]);
+if (!supportedEncoderChoices.has(requestedEncoder)) {
+  console.warn(`Unknown AETHERVR_VIDEO_ENCODER=${requestedEncoder}; falling back to auto`);
+}
+const encoderChoice = supportedEncoderChoices.has(requestedEncoder) ? requestedEncoder : "auto";
+const VIDEO_ENCODER_NAME = encoderChoice === "auto"
+  ? (process.platform === "darwin" && ffmpegHasEncoder("h264_videotoolbox") ? "h264_videotoolbox" : "libx264")
+  : encoderChoice;
+const VIDEO_ENCODER_AVAILABLE = ffmpegHasEncoder(VIDEO_ENCODER_NAME);
+const configuredThreads = Number(process.env.AETHERVR_TRANSCODE_THREADS || "");
+const TRANSCODE_THREADS = Number.isInteger(configuredThreads) && configuredThreads > 0 && configuredThreads <= 256
+  ? String(configuredThreads) : null;
+const VIDEO_ENCODER = VIDEO_ENCODER_NAME === "h264_videotoolbox"
   ? ["-c:v", "h264_videotoolbox", "-b:v", "12M"]
-  : ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "21", "-threads", "16"];
+  : ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "21",
+      ...(TRANSCODE_THREADS ? ["-threads", TRANSCODE_THREADS] : [])];
 
 const HLS_IDLE_MS = 2 * 60 * 1000;
 const HLS_MAX_MS = 2 * 60 * 60 * 1000;
@@ -100,16 +167,14 @@ function stopHlsSession(session = hlsSession) {
   if (hlsSession === session) hlsSession = null;
 }
 
-setInterval(() => {
+const hlsCleanupTimer = setInterval(() => {
   if (!hlsSession) return;
   const now = Date.now();
   if (now - hlsSession.lastAccess > HLS_IDLE_MS || now - hlsSession.startedAt > HLS_MAX_MS) {
     stopHlsSession(hlsSession);
   }
 }, 30000);
-
-// 启动时清理上次遗留的分片目录
-try { fs.rmSync(HLS_ROOT, { recursive: true, force: true }); } catch {}
+hlsCleanupTimer.unref?.();
 
 // FFmpeg 在打开输入后会打印 Duration；直接复用转码进程的信息，
 // 避免另启 ffprobe 重复读取远程大文件或占用签名链接的并发数。
@@ -278,7 +343,10 @@ function probeRemoteMedia(target, res) {
 
 process.on("SIGTERM", () => { stopHlsSession(); process.exit(0); });
 process.on("SIGINT", () => { stopHlsSession(); process.exit(0); });
-process.on("exit", () => stopHlsSession());
+process.on("exit", () => {
+  stopHlsSession();
+  try { fs.rmSync(HLS_ROOT, { recursive: true, force: true }); } catch {}
+});
 
 /* Same-origin video proxy: forwards Range headers, follows redirects.
  * Lets the player use remote URLs as WebGL textures (VR mode) even when
@@ -327,7 +395,7 @@ async function resolveSafeTarget(u) {
   if (u.username || u.password) throw new Error("Credentials in URLs are not allowed");
   if (!RELAX_LOCAL) {
     const allowedHostPort = ALLOWED_HOSTPORTS.includes(`${u.hostname.toLowerCase()}:${u.port}`);
-    if (u.port && !['80', '443', '8443'].includes(u.port) && !allowedHostPort) {
+    if (u.port && !['80', '443'].includes(u.port) && !allowedHostPort) {
       throw new Error("This source host and port are not allowed");
     }
     const addresses = await dns.lookup(u.hostname, { all: true, verbatim: true });
@@ -502,6 +570,11 @@ const requestHandler = async (req, res) => {
         res.writeHead(405, { "Allow": "POST" }).end("Method not allowed");
         return;
       }
+      if (!VIDEO_ENCODER_AVAILABLE) {
+        res.writeHead(503, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: `ffmpeg encoder ${VIDEO_ENCODER_NAME} is not available` }));
+        return;
+      }
       const origin = req.headers.origin;
       try {
         if (!origin || new URL(origin).host !== req.headers.host) {
@@ -547,19 +620,37 @@ const requestHandler = async (req, res) => {
       startTranscode(target, ip, res, start);
       return;
     }
+    if (urlPath === "/api/capabilities") {
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end(JSON.stringify({
+        app: "aethervr",
+        backend: true,
+        proxy: true,
+        probe: FFPROBE_AVAILABLE,
+        transcode: VIDEO_ENCODER_AVAILABLE,
+      }));
+      return;
+    }
     if (urlPath === "/transcode/status") {
       res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       res.end(JSON.stringify({
-        ffmpeg: fs.existsSync(FFMPEG),
+        ffmpeg: FFMPEG_AVAILABLE,
+        ffprobe: FFPROBE_AVAILABLE,
+        transcode: VIDEO_ENCODER_AVAILABLE,
         active: Boolean(hlsSession),
         ready: Boolean(hlsSession && hlsSession.ready),
-        encoder: IS_MAC ? "h264_videotoolbox" : "libx264",
+        encoder: VIDEO_ENCODER_NAME,
       }));
       return;
     }
     if (urlPath === "/probe") {
       if (req.method !== "POST") {
         res.writeHead(405, { "Allow": "POST" }).end("Method not allowed");
+        return;
+      }
+      if (!FFPROBE_AVAILABLE) {
+        res.writeHead(503, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "ffprobe is not available" }));
         return;
       }
       const origin = req.headers.origin;
@@ -690,26 +781,37 @@ const requestHandler = async (req, res) => {
       return;
     }
     if (urlPath === "/") urlPath = "/index.html";
-    const file = path.resolve(__dirname, `.${urlPath}`);
-    if (file !== __dirname && !file.startsWith(`${__dirname}${path.sep}`)) {
-      res.writeHead(403).end("Forbidden");
+    const file = publicFilePath(urlPath);
+    if (!file) {
+      res.writeHead(404).end("Not found");
       return;
     }
-    fs.readFile(file, (err, data) => {
-      if (err) {
+    fs.realpath(file, (realPathError, realFile) => {
+      const insidePublicRoot = !realPathError
+        && realFile.startsWith(`${REAL_PUBLIC_ROOT}${path.sep}`)
+        && (!urlPath.startsWith("/vendor/") || realFile.startsWith(`${REAL_VENDOR_ROOT}${path.sep}`));
+      if (!insidePublicRoot) {
         res.writeHead(404).end("Not found");
         return;
       }
-      // 桌面端：把 /local 访问令牌注入 index.html 的 "__LOCAL_TOKEN__" 占位符
-      // （只替换带引号的字面量，保留 window.__LOCAL_TOKEN__ 变量名本身）
-      if (LOCAL_FS && file === path.join(__dirname, "index.html")) {
-        data = Buffer.from(data.toString("utf8").split('"__LOCAL_TOKEN__"').join(JSON.stringify(LOCAL_TOKEN)));
-      }
-      res.writeHead(200, {
-        "Content-Type": MIME[path.extname(file).toLowerCase()] || "application/octet-stream",
-        "Cache-Control": "no-cache",
+      fs.readFile(realFile, (err, data) => {
+        if (err) {
+          res.writeHead(404).end("Not found");
+          return;
+        }
+        // 桌面端：把 /local 访问令牌注入 index.html 的 "__LOCAL_TOKEN__" 占位符
+        // （只替换带引号的字面量，保留 window.__LOCAL_TOKEN__ 变量名本身）
+        if (LOCAL_FS && urlPath === "/index.html") {
+          data = Buffer.from(data.toString("utf8").split('"__LOCAL_TOKEN__"').join(JSON.stringify(LOCAL_TOKEN)));
+        }
+        res.writeHead(200, {
+          "Content-Type": MIME[path.extname(realFile).toLowerCase()] || "application/octet-stream",
+          "Cache-Control": "no-cache",
+          "X-Content-Type-Options": "nosniff",
+        });
+        if (req.method === "HEAD") return res.end();
+        res.end(data);
       });
-      res.end(data);
     });
   };
 
@@ -735,6 +837,7 @@ function startServer({ host = "127.0.0.1", port = 7100, localFs = false, localTo
 
     const done = (ipv6Server = null) => {
       const actualPort = server.address().port;
+      PORT = actualPort;
       resolve({ server, host: HOST, port: actualPort, localToken: LOCAL_TOKEN, ipv6Server });
     };
 
