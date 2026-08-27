@@ -727,8 +727,8 @@
 
         /* ── 播放列表面板 ───────────────────────────────── */
         .playlist-panel {
-            position: absolute; top: 14px; right: 14px; z-index: 26;
-            width: 300px; max-width: 78vw; max-height: calc(100% - 120px);
+            position: fixed; top: 70px; right: 14px; z-index: 26;
+            width: 300px; max-width: 78vw; max-height: calc(100vh - 90px);
             display: none; flex-direction: column;
             background: rgba(18,21,28,.88);
             backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
@@ -977,22 +977,25 @@
                 <canvas id="vrCanvas"></canvas>
                 <button class="big-play-btn" id="bigPlayBtn" title="播放"><i class="fa-solid fa-play"></i></button>
                 <div class="seek-loading" id="seekLoading"><div class="seek-loading-spinner"></div><span id="seekLoadingText">转码加载中…</span></div>
-                <div class="playlist-panel" id="playlistPanel">
-                    <div class="playlist-head">
-                        <span id="playlistTitle">播放列表</span>
-                        <button class="playlist-close" id="playlistClose" title="关闭"><i class="fa-solid fa-xmark"></i></button>
-                    </div>
-                    <div class="playlist-tools">
-                        <button class="pl-tool-btn" id="addDirBtn" title="选择媒体文件夹，自动匹配未授权的本地条目"><i class="fa-solid fa-folder-plus"></i>&nbsp;添加媒体目录</button>
-                        <button class="pl-tool-btn" id="rematchBtn" title="用已授权的目录重新匹配所有未授权条目"><i class="fa-solid fa-arrows-rotate"></i>&nbsp;重新匹配</button>
-                        <button class="pl-tool-btn" id="clearListBtn" title="清空播放列表"><i class="fa-solid fa-trash-can"></i>&nbsp;清空</button>
-                    </div>
-                    <div class="playlist-summary" id="playlistSummary" style="display:none"></div>
-                    <ul class="playlist-items" id="playlistItems"></ul>
-                    <div class="playlist-foot">本地文件仅在浏览器内读取，不会上传服务器</div>
+            </div>
+            <!-- 播放列表面板放在 video-container 外（fixed 定位）：
+                 导入 dpl 后还没有视频加载时（全部待匹配），面板也必须可见 -->
+            <div class="playlist-panel" id="playlistPanel">
+                <div class="playlist-head">
+                    <span id="playlistTitle">播放列表</span>
+                    <button class="playlist-close" id="playlistClose" title="关闭"><i class="fa-solid fa-xmark"></i></button>
                 </div>
-                <input type="file" id="grantFileInput" accept="video/*" style="display:none">
-                <input type="file" id="grantDirInput" webkitdirectory multiple style="display:none">
+                <div class="playlist-tools">
+                    <button class="pl-tool-btn" id="addDirBtn" title="选择媒体文件夹，自动匹配未授权的本地条目"><i class="fa-solid fa-folder-plus"></i>&nbsp;添加媒体目录</button>
+                    <button class="pl-tool-btn" id="rematchBtn" title="用已授权的目录重新匹配所有未授权条目"><i class="fa-solid fa-arrows-rotate"></i>&nbsp;重新匹配</button>
+                    <button class="pl-tool-btn" id="clearListBtn" title="清空播放列表"><i class="fa-solid fa-trash-can"></i>&nbsp;清空</button>
+                </div>
+                <div class="playlist-summary" id="playlistSummary" style="display:none"></div>
+                <ul class="playlist-items" id="playlistItems"></ul>
+                <div class="playlist-foot">本地文件仅在浏览器内读取，不会上传服务器</div>
+            </div>
+            <input type="file" id="grantFileInput" accept="video/*" style="display:none">
+            <input type="file" id="grantDirInput" webkitdirectory multiple style="display:none">
             </div>
         </div>
     </div>
