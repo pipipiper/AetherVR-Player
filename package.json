@@ -1,6 +1,6 @@
 {
   "name": "local-vr-player",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "private": true,
   "author": "pipipiper <80835169+pipipiper@users.noreply.github.com>",
   "description": "VR 视频播放器：本地文件与在线直链即点即播，支持 360 全景与 SBS 分屏",
