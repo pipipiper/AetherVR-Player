@@ -744,7 +744,12 @@ function startServer({ host = "127.0.0.1", port = 7100, localFs = false, localTo
       server.listen(PORT, "127.0.0.1", () => {
         const actualPort = server.address().port;
         const ipv6Server = http.createServer(requestHandler);
-        ipv6Server.on("error", () => { /* ::1 不可用时仅 IPv4 loopback 已够用 */ });
+        // 部分系统禁用了 IPv6。此时不能一直等待 ::1 的 listen 回调：
+        // IPv4 loopback 已经可用，直接完成启动即可。
+        ipv6Server.once("error", (err) => {
+          console.warn(`IPv6 loopback unavailable (${err.code || err.message}); continuing on 127.0.0.1 only`);
+          done();
+        });
         ipv6Server.listen(actualPort, "::1", () => {
           console.log(`VR Player running at http://localhost:${actualPort}/ (loopback only: 127.0.0.1 & ::1)`);
           done(ipv6Server);
