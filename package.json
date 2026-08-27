@@ -1,9 +1,9 @@
 {
-  "name": "local-vr-player",
+  "name": "aethervr-player",
   "version": "1.2.4",
   "private": true,
   "author": "pipipiper <80835169+pipipiper@users.noreply.github.com>",
-  "description": "VR 视频播放器：本地文件与在线直链即点即播，支持 360 全景与 SBS 分屏",
+  "description": "AetherVR Player：不用 VR 眼镜也能看 VR 视频。本地文件与在线直链即点即播，支持 360 全景与 SBS 分屏",
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "node server.js",
@@ -18,8 +18,8 @@
     "electron-builder": "^25.0.0"
   },
   "build": {
-    "appId": "cc.pipp.vrplayer",
-    "productName": "VR 播放器",
+    "appId": "cc.pipp.aethervr",
+    "productName": "AetherVR Player",
     "files": [
       "index.html",
       "server.js",
@@ -31,7 +31,7 @@
     "mac": {
       "category": "public.app-category.entertainment",
       "icon": "build/icon.png",
-      "artifactName": "VR-Player-${version}-${arch}.${ext}",
+      "artifactName": "AetherVR-Player-${version}-${arch}.${ext}",
       "target": [
         {
           "target": "dmg",
@@ -49,7 +49,7 @@
     },
     "win": {
       "icon": "build/icon.ico",
-      "artifactName": "VR-Player-${version}-${arch}-Setup.${ext}",
+      "artifactName": "AetherVR-Player-${version}-${arch}-Setup.${ext}",
       "target": [
         {
           "target": "nsis",

@@ -44,11 +44,11 @@ def font(size):
             continue
     raise SystemExit("no CJK font found")
 
-f_title = font(96)
+f_title = font(72)
 f_sub = font(34)
 
 tx = 540
-d.text((tx, 200), "VR 播放器", font=f_title, fill=(255, 255, 255))
+d.text((tx, 200), "AetherVR Player", font=f_title, fill=(255, 255, 255))
 d.text((tx + 4, 345), "本地与在线 360° / SBS 视频", font=f_sub, fill=(219, 233, 255))
 d.text((tx + 4, 405), "即点即播 · 无需上传", font=f_sub, fill=(219, 233, 255))
 

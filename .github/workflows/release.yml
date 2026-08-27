@@ -79,4 +79,4 @@ jobs:
           --repo "${GITHUB_REPOSITORY}"
           --verify-tag
           --generate-notes
-          --title "VR 播放器 ${GITHUB_REF_NAME}"
+          --title "AetherVR Player ${GITHUB_REF_NAME}"
