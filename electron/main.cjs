@@ -80,9 +80,10 @@ async function start() {
     return r.filePaths[0];
   });
   // 列出目录下的 .dpl 文件：[{ name, path }]
-  ipcMain.handle('lib:list', (event, dir) => {
+  ipcMain.handle('lib:list', async (event, dir) => {
     try {
-      return fs.readdirSync(dir)
+      const files = await fs.promises.readdir(dir);
+      return files
         .filter((f) => /\.dpl$/i.test(f))
         .map((f) => ({ name: f.replace(/\.dpl$/i, ''), path: path.join(dir, f) }))
         .sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN', { numeric: true }));
@@ -91,10 +92,11 @@ async function start() {
     }
   });
   // 按路径读取 dpl：{ name, path, data(base64) }，失败返回 null
-  ipcMain.handle('lib:read', (event, p) => {
+  ipcMain.handle('lib:read', async (event, p) => {
     try {
+      const data = await fs.promises.readFile(p);
       return { name: path.basename(p).replace(/\.dpl$/i, ''), path: p,
-        data: fs.readFileSync(p).toString('base64') };
+        data: data.toString('base64') };
     } catch {
       return null;
     }
@@ -143,18 +145,29 @@ async function start() {
     });
   });
 
-  ipcMain.handle('fs:check', (event, paths) => {
+  // 异步 + 并发限制 + 单路径超时：Windows 下 SMB/网络盘路径 stat 可能卡住数秒，
+  // 同步调用会冻结整个主进程（所有 IPC 停摆、界面假死），此处绝不阻塞事件循环
+  ipcMain.handle('fs:check', async (event, paths) => {
     const out = {};
-    const list = (Array.isArray(paths) ? paths : []).slice(0, 5000);
-    for (const p of list) {
-      if (typeof p !== 'string' || !p) continue;
-      try {
-        const st = fs.statSync(p);
-        out[p] = { exists: st.isFile(), size: st.size };
-      } catch {
-        out[p] = { exists: false, size: 0 };
+    const list = (Array.isArray(paths) ? paths : []).slice(0, 5000)
+      .filter((p) => typeof p === 'string' && p);
+    const CONCURRENCY = 8, TIMEOUT_MS = 3000;
+    let idx = 0;
+    async function worker() {
+      while (idx < list.length) {
+        const p = list[idx++];
+        try {
+          const st = await Promise.race([
+            fs.promises.stat(p),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), TIMEOUT_MS)),
+          ]);
+          out[p] = { exists: st.isFile(), size: st.size };
+        } catch {
+          out[p] = { exists: false, size: 0 };
+        }
       }
     }
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, list.length) }, worker));
     return out;
   });
 

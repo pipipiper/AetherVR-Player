@@ -574,7 +574,7 @@
         }
         .hero-hint  { margin-top: 16px; font-size: 12px; color: #aab3c2; }
         .pages-notice {
-            display: none; margin: 0 auto; padding: 9px 18px; max-width: 560px;
+            display: none; margin: 0 auto 18px; padding: 9px 18px; max-width: 560px;
             border: 1px solid #d8e6fd; border-radius: 12px;
             color: #47648f; background: linear-gradient(180deg, #f7faff, #eef4fe);
             font-size: 12.5px; line-height: 1.8; text-align: center;
@@ -1829,7 +1829,8 @@
             };
             // 桌面端：dpl 里的绝对路径直接查磁盘，存在即可播（/local 流式读取）
             if (isDesktopApp) {
-                const rec = desktopDiskMap && desktopDiskMap[rawPath];
+                if (desktopDiskMap === null) return item; // 尚未做磁盘检查（启动恢复第一遍）：保持未解析
+                const rec = desktopDiskMap[rawPath];
                 if (rec && rec.exists) {
                     item.url = '/local?path=' + encodeURIComponent(rawPath);
                     item.status = 'ready';
@@ -2225,24 +2226,36 @@
                 if (Array.isArray(appCfg.tabs)) savedTabs = appCfg.tabs;
                 else { try { savedTabs = JSON.parse(localStorage.getItem(LIB_TABS_KEY)) || []; } catch { /* 忽略 */ } }
                 savedTabs.forEach((p) => { if (!candidates.includes(p)) candidates.push(p); });
+                // 第一遍：只读 dpl 立即上页签（磁盘检查慢，Windows 下 SMB 路径尤甚），
+                // 让顶栏/标签栏立刻出现，条目可播状态稍后后台刷新
                 for (const p of candidates) {
                     if (p === favsFilePath()) continue;
                     const rec = await window.vrDesktop.readDpl(p);
                     if (!rec) continue; // 文件已被移动/删除则跳过
                     let entries = [];
                     try { entries = parseDpl(decodeDplBase64(rec.data)); } catch { continue; }
-                    const items = await resolveDplEntries(entries);
-                    playlists.push({ id: uid(), name: rec.name, path: rec.path, items, entries });
+                    playlists.push({ id: uid(), name: rec.name, path: rec.path, items: entries.map(entryToItem), entries });
                 }
                 if (playlists.length) {
                     const pl = playlists[0];
                     activePlId = pl.id;
                     activeTab = 'playlist';
                     lastDplEntries = pl.entries;
-                    dplResolved = pl.items.every(isPlayable);
                     setPlaylist(pl.items); // 恢复但不自动播放、不弹面板
                 }
                 renderTabs();
+                // 第二遍：后台逐个列表做磁盘检查，解析完成即刷新对应列表
+                (async () => {
+                    for (const pl of playlists.slice()) {
+                        let items;
+                        try { items = await resolveDplEntries(pl.entries); } catch { continue; }
+                        pl.items = items;
+                        if (pl.id === activePlId) {
+                            dplResolved = items.every(isPlayable);
+                            setPlaylist(items);
+                        }
+                    }
+                })();
                 return;
             }
             loadFavs();
