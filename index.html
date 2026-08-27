@@ -813,6 +813,59 @@
             padding: 7px 12px; font-size: 10.5px; color: #707a8c; text-align: center;
             border-top: 1px solid rgba(255,255,255,.07);
         }
+
+        /* ── 播放列表 / 收藏夹 页签 ─────────────────────── */
+        .playlist-tabs { display: flex; gap: 4px; }
+        .pl-tab {
+            background: none; border: none; color: #9aa3b2; font-size: 13px; font-weight: 600;
+            padding: 2px 6px; cursor: pointer; border-radius: 6px;
+        }
+        .pl-tab.active { color: #fff; background: rgba(47,107,255,.35); }
+        .pl-tab:hover { color: #e8ecf3; }
+
+        /* ── 条目位置标记（起播跳转点）──────────────────── */
+        .pl-pos {
+            flex: none; font-size: 10px; padding: 2px 6px; border-radius: 6px;
+            background: rgba(150,105,255,.20); color: #c9a8ff;
+        }
+        /* ── 批量删除选择模式 ──────────────────────────── */
+        .pl-check { display: none; flex: none; accent-color: #2f6bff; width: 14px; height: 14px; }
+        .playlist-panel.selecting .pl-check { display: block; }
+        .playlist-panel.selecting .pl-index { display: none; }
+        .fav-del {
+            flex: none; background: none; border: none; color: #707a8c; cursor: pointer;
+            font-size: 13px; padding: 2px 5px; border-radius: 6px;
+        }
+        .fav-del:hover { color: #ff9a9a; background: rgba(255,92,92,.12); }
+
+        /* ── 位置记录 / 批量添加链接 弹窗 ─────────────── */
+        .pl-modal-mask {
+            display: none; position: fixed; inset: 0; z-index: 60;
+            background: rgba(10,14,22,.45); backdrop-filter: blur(3px);
+            align-items: center; justify-content: center;
+        }
+        .pl-modal-mask.active { display: flex; }
+        .pl-modal {
+            width: min(400px, 90vw); background: #fff; border-radius: 14px;
+            border: 1px solid rgba(0,0,0,.08); box-shadow: 0 18px 50px rgba(0,0,0,.25);
+            padding: 20px 22px 16px; color: var(--text);
+        }
+        .pl-modal h3 { margin: 0 0 6px; font-size: 15px; }
+        .pl-modal .pl-modal-desc { font-size: 12.5px; color: var(--muted); margin-bottom: 14px; line-height: 1.6; }
+        .pl-modal-btns { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+        .pl-modal-btn {
+            padding: 8px 14px; font-size: 13px; border-radius: 9px; cursor: pointer;
+            border: 1px solid var(--border-hi); background: #fff; color: var(--text);
+            font-family: inherit;
+        }
+        .pl-modal-btn:hover { border-color: var(--yellow); }
+        .pl-modal-btn.primary { background: #2f6bff; border-color: #2f6bff; color: #fff; }
+        .pl-modal-btn.primary:hover { background: #2459dd; }
+        .pl-modal textarea {
+            width: 100%; box-sizing: border-box; height: 110px; resize: vertical;
+            border: 1px solid var(--border-hi); border-radius: 9px; padding: 8px 10px;
+            font-size: 12px; font-family: 'JetBrains Mono', monospace; margin-bottom: 12px;
+        }
         .hero-file-row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
         .control-btn:disabled { opacity: .35; cursor: default; }
 
@@ -938,6 +991,9 @@
                     <button id="dplBtn" class="file-input-label hero-file" style="display:none" title="读取 PotPlayer 播放列表，自动在磁盘上定位视频文件">
                         <i class="fa-solid fa-list-check"></i>&nbsp; 打开 DPL 播放列表
                     </button>
+                    <button id="heroPlaylistBtn" class="file-input-label hero-file" style="display:none" title="管理播放列表与收藏夹，支持导入导出">
+                        <i class="fa-solid fa-list-ul"></i>&nbsp; 播放列表 / 收藏夹
+                    </button>
                 </div>
                 <p class="hero-hint">也可以直接把视频文件或 .dpl 播放列表拖到这里</p>
                 <button id="heroClose" class="hero-close" style="display:none"><i class="fa-solid fa-xmark"></i>&nbsp; 返回播放</button>
@@ -993,6 +1049,8 @@
                         <option value="0.25">0.25x</option>
                     </select>
                 </div>
+                <button class="control-btn" id="favBtn" title="收藏当前视频" style="display:none"><i class="fa-solid fa-star"></i></button>
+                <button class="control-btn" id="addToListBtn" title="把当前视频加入播放列表" style="display:none"><i class="fa-solid fa-square-plus"></i></button>
                 <button class="control-btn playlist-ctl" id="playlistBtn" title="播放列表" style="display:none"><i class="fa-solid fa-list-ul"></i></button>
                 <button class="control-btn" id="fullscreenBtn"><i class="fa-solid fa-expand"></i></button>
             </div>
@@ -1009,17 +1067,70 @@
                  导入 dpl 后还没有视频加载时（全部待匹配），面板也必须可见 -->
             <div class="playlist-panel" id="playlistPanel">
                 <div class="playlist-head">
+                    <div class="playlist-tabs" id="playlistTabs" style="display:none">
+                        <button class="pl-tab active" id="tabPlaylist">播放列表</button>
+                        <button class="pl-tab" id="tabFavs">收藏夹</button>
+                    </div>
                     <span id="playlistTitle">播放列表</span>
                     <button class="playlist-close" id="playlistClose" title="关闭"><i class="fa-solid fa-xmark"></i></button>
                 </div>
-                <div class="playlist-tools">
+                <div class="playlist-tools" id="playlistTools">
                     <button class="pl-tool-btn" id="addDirBtn" title="选择媒体文件夹，自动匹配未授权的本地条目"><i class="fa-solid fa-folder-plus"></i>&nbsp;添加媒体目录</button>
                     <button class="pl-tool-btn" id="rematchBtn" title="用已授权的目录重新匹配所有未授权条目"><i class="fa-solid fa-arrows-rotate"></i>&nbsp;重新匹配</button>
                     <button class="pl-tool-btn" id="clearListBtn" title="清空播放列表"><i class="fa-solid fa-trash-can"></i>&nbsp;清空</button>
                 </div>
+                <!-- 桌面端第二行工具：导入/导出/批量新增/批量删除 -->
+                <div class="playlist-tools" id="playlistTools2" style="display:none">
+                    <button class="pl-tool-btn" id="importListBtn" title="导入 DPL 播放列表文件"><i class="fa-solid fa-file-import"></i>&nbsp;导入</button>
+                    <button class="pl-tool-btn" id="exportListBtn" title="把当前列表导出为 DPL 文件（本地条目记录文件路径，在线条目记录链接，含起播位置）"><i class="fa-solid fa-file-export"></i>&nbsp;导出</button>
+                    <button class="pl-tool-btn" id="batchAddBtn" title="批量添加本地文件或在线链接"><i class="fa-solid fa-plus"></i>&nbsp;添加</button>
+                    <button class="pl-tool-btn" id="batchDelBtn" title="进入选择模式，勾选后批量删除"><i class="fa-solid fa-check-double"></i>&nbsp;删除</button>
+                </div>
+                <div class="playlist-tools" id="selectTools" style="display:none">
+                    <button class="pl-tool-btn" id="selectAllBtn"><i class="fa-solid fa-square-check"></i>&nbsp;全选</button>
+                    <button class="pl-tool-btn" id="deleteSelBtn"><i class="fa-solid fa-trash-can"></i>&nbsp;删除所选</button>
+                    <button class="pl-tool-btn" id="cancelSelectBtn"><i class="fa-solid fa-xmark"></i>&nbsp;取消</button>
+                </div>
                 <div class="playlist-summary" id="playlistSummary" style="display:none"></div>
                 <ul class="playlist-items" id="playlistItems"></ul>
+                <ul class="playlist-items" id="favItems" style="display:none"></ul>
                 <div class="playlist-foot">本地文件仅在浏览器内读取，不会上传服务器</div>
+            </div>
+            <!-- 位置记录确认弹窗（收藏 / 加入列表时） -->
+            <div class="pl-modal-mask" id="posModalMask">
+                <div class="pl-modal">
+                    <h3 id="posModalTitle">收藏当前视频</h3>
+                    <p class="pl-modal-desc" id="posModalDesc">是否记录当前播放位置？</p>
+                    <div class="pl-modal-btns">
+                        <button class="pl-modal-btn" id="posModalCancel">取消</button>
+                        <button class="pl-modal-btn" id="posModalStart">不记录，从头播放</button>
+                        <button class="pl-modal-btn primary" id="posModalRecord">记录位置</button>
+                    </div>
+                </div>
+            </div>
+            <!-- 批量添加在线链接弹窗 -->
+            <div class="pl-modal-mask" id="linksModalMask">
+                <div class="pl-modal">
+                    <h3>批量添加在线链接</h3>
+                    <p class="pl-modal-desc">每行一个 http(s) 视频链接。</p>
+                    <textarea id="linksText" placeholder="https://example.com/video1.mp4&#10;https://example.com/video2.mp4" spellcheck="false"></textarea>
+                    <div class="pl-modal-btns">
+                        <button class="pl-modal-btn" id="linksModalCancel">取消</button>
+                        <button class="pl-modal-btn primary" id="linksModalOk">添加到列表</button>
+                    </div>
+                </div>
+            </div>
+            <!-- 批量新增菜单 -->
+            <div class="pl-modal-mask" id="addMenuMask">
+                <div class="pl-modal">
+                    <h3>批量新增到播放列表</h3>
+                    <p class="pl-modal-desc">本地视频记录文件路径，在线视频记录播放链接。</p>
+                    <div class="pl-modal-btns">
+                        <button class="pl-modal-btn" id="addMenuCancel">取消</button>
+                        <button class="pl-modal-btn" id="addMenuLinks">在线链接</button>
+                        <button class="pl-modal-btn primary" id="addMenuLocal">本地文件</button>
+                    </div>
+                </div>
             </div>
             <input type="file" id="grantFileInput" accept="video/*" style="display:none">
             <input type="file" id="grantDirInput" webkitdirectory multiple style="display:none">
@@ -1113,6 +1224,15 @@
                 if (generation !== mediaLoadGeneration) return;
                 sbsOptions.classList.toggle('active', isSbsVideo);
                 consumePendingVr();
+                // 起播位置：dpl position 字段 / 收藏记录的位置，元数据就绪后一次性跳转
+                if (pendingSeekPosition != null) {
+                    const t = pendingSeekPosition;
+                    pendingSeekPosition = null;
+                    if (t > 0) {
+                        if (effectiveDuration()) seekToGlobal(t);
+                        else { try { videoPlayer.currentTime = t; } catch { /* 忽略 */ } }
+                    }
+                }
                 tryAutoplay();
             };
             ['loadedmetadata', 'loadeddata', 'canplay'].forEach((evt) => {
@@ -1254,21 +1374,50 @@
                 const li = document.createElement('li');
                 li.className = 'playlist-item st-' + item.status
                     + (i === playlistIndex ? ' playing' : '');
+                if (selecting) {
+                    const cb = document.createElement('input');
+                    cb.type = 'checkbox';
+                    cb.className = 'pl-check';
+                    cb.checked = selectedIdx.has(i);
+                    cb.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        if (cb.checked) selectedIdx.add(i); else selectedIdx.delete(i);
+                    });
+                    li.appendChild(cb);
+                }
                 const idx = document.createElement('span');
                 idx.className = 'pl-index';
                 idx.textContent = i + 1;
                 const name = document.createElement('span');
                 name.className = 'pl-name';
                 name.textContent = item.name;
+                li.append(idx, name);
+                // 起播位置标记：收藏/入列时选择了「记录位置」的条目
+                if (item.position > 0) {
+                    const pos = document.createElement('span');
+                    pos.className = 'pl-pos';
+                    pos.textContent = '▶ ' + formatTime(item.position);
+                    pos.title = '起播位置 ' + formatTime(item.position);
+                    li.appendChild(pos);
+                }
                 const tag = document.createElement('span');
                 tag.className = 'pl-badge';
                 tag.textContent = STATUS_BADGE[item.status] || item.status;
-                li.append(idx, name, tag);
+                li.appendChild(tag);
                 li.title = item.originalPath || item.name;
-                li.addEventListener('click', () => onItemClick(i)); // 所有条目都可点击
+                li.addEventListener('click', () => {
+                    // 选择模式下点击整行 = 切换勾选
+                    if (selecting) {
+                        if (selectedIdx.has(i)) selectedIdx.delete(i); else selectedIdx.add(i);
+                        renderPlaylist();
+                        return;
+                    }
+                    onItemClick(i);
+                });
                 playlistItems.appendChild(li);
             });
             playlistTitle.textContent = playlist.length ? `播放列表（${playlist.length}）` : '播放列表';
+            tabPlaylist.textContent = playlist.length ? `播放列表（${playlist.length}）` : '播放列表';
             updateSummary();
         }
 
@@ -1298,7 +1447,8 @@
 
         function updatePlaylistButtons() {
             const has = playlist.length > 0;
-            playlistBtn.style.display = has ? '' : 'none';
+            // 桌面端常显列表按钮：空列表时也能打开面板做导入/批量新增
+            playlistBtn.style.display = (has || isDesktopApp) ? '' : 'none';
             const multi = playlist.length > 1;
             prevBtn.style.display = multi ? '' : 'none';
             nextBtn.style.display = multi ? '' : 'none';
@@ -1318,6 +1468,7 @@
             updatePlaylistButtons();
             // 有播放列表时始终显示顶栏：否则 dpl 全部条目不可播时没有任何回首页的入口
             document.body.classList.toggle('has-playlist', items.length > 0);
+            persistPlaylist();
             if (typeof startIndex === 'number' && isPlayable(items[startIndex])) {
                 playAt(startIndex);
             }
@@ -1333,6 +1484,7 @@
             updatePlaylistButtons();
             playlistPanel.classList.remove('active');
             document.body.classList.remove('has-playlist');
+            persistPlaylist();
         }
 
         // ── 播放与授权 ──
@@ -1343,6 +1495,8 @@
                 showLoadSpin('加载中…'); // 远程条目先做编码预探测，期间盖住画面
                 loadVideoURL(item.url);
             }
+            // 条目带起播位置（dpl position 字段 / 收藏时记录）：元数据就绪后跳转
+            pendingSeekPosition = item.position > 0 ? item.position : null;
         }
         function playAt(i) {
             const item = playlist[i];
@@ -1573,19 +1727,21 @@
         function entryToItem(e) {
             const rawPath = e.file;
             const title = e.title;
+            // dpl 扩展字段：起播位置（秒）
+            const pos = e.position ? Math.max(0, parseFloat(e.position)) || 0 : 0;
             if (/^https?:\/\//i.test(rawPath)) {
                 return {
                     name: title || basenameOf(safeDecode(rawPath)),
                     originalPath: rawPath, normalizedPath: '',
                     url: rawPath, file: null, fileHandle: null,
-                    status: 'remote', error: '',
+                    status: 'remote', error: '', position: pos,
                 };
             }
             const item = {
                 name: title || basenameOf(safeDecode(rawPath)),
                 originalPath: rawPath, normalizedPath: normalizePath(rawPath),
                 url: '', file: null, fileHandle: null,
-                status: 'unresolved', error: '',
+                status: 'unresolved', error: '', position: pos,
             };
             // 桌面端：dpl 里的绝对路径直接查磁盘，存在即可播（/local 流式读取）
             if (isDesktopApp) {
@@ -1668,6 +1824,447 @@
         if (isDesktopApp && dplBtn) {
             dplBtn.style.display = '';
             dplBtn.addEventListener('click', openDplDesktop);
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        // 桌面端增强：播放列表管理 + 收藏夹（dpl 格式，含起播位置）
+        // ══════════════════════════════════════════════════════════════
+        // dpl 扩展字段：N*position*秒 —— 自定义起播位置，PotPlayer 会忽略未知字段
+        let pendingSeekPosition = null;  // 元数据就绪后要跳转的位置（秒）
+        let activeLocalFile = null;      // 正在播放的本地 File 对象（用于还原磁盘路径）
+
+        const FAV_KEY = 'vr-favorites-v1';
+        const PL_KEY = 'vr-playlist-v1';
+        let favorites = [];              // {name, target, kind:'local'|'online', position, addedAt}
+        let activeTab = 'playlist';      // 播放列表面板当前页签
+        let selecting = false;           // 批量删除选择模式
+        const selectedIdx = new Set();
+
+        const playlistTabs = document.getElementById('playlistTabs');
+        const tabPlaylist = document.getElementById('tabPlaylist');
+        const tabFavs = document.getElementById('tabFavs');
+        const playlistTools = document.getElementById('playlistTools');
+        const playlistTools2 = document.getElementById('playlistTools2');
+        const selectTools = document.getElementById('selectTools');
+        const favItems = document.getElementById('favItems');
+        const importListBtn = document.getElementById('importListBtn');
+        const exportListBtn = document.getElementById('exportListBtn');
+        const batchAddBtn = document.getElementById('batchAddBtn');
+        const batchDelBtn = document.getElementById('batchDelBtn');
+        const selectAllBtn = document.getElementById('selectAllBtn');
+        const deleteSelBtn = document.getElementById('deleteSelBtn');
+        const cancelSelectBtn = document.getElementById('cancelSelectBtn');
+        const favBtn = document.getElementById('favBtn');
+        const addToListBtn = document.getElementById('addToListBtn');
+
+        function b64encode(str) {
+            const bytes = new TextEncoder().encode(str);
+            let bin = '';
+            bytes.forEach((b) => { bin += String.fromCharCode(b); });
+            return btoa(bin);
+        }
+
+        // ── dpl 序列化（导出）：本地条目记文件路径，在线条目记链接 ──
+        function buildDpl(entries) {
+            const lines = ['DAUMPLAYLIST'];
+            entries.forEach((e, i) => {
+                const n = i + 1;
+                lines.push(`${n}*file*${e.file}`);
+                lines.push(`${n}*title*${(e.title || '').replace(/[\r\n*]/g, ' ')}`);
+                if (e.position > 0) lines.push(`${n}*position*${Math.round(e.position)}`);
+            });
+            return lines.join('\r\n');
+        }
+        // 播放列表条目 → dpl 条目（桌面端：本地用磁盘路径，在线用链接）
+        function itemToDplEntry(it) {
+            const isOnline = it.status === 'remote' || /^https?:\/\//i.test(it.originalPath || '');
+            // 文件选择器打开的本地文件只有 File 对象：桌面端还原真实磁盘路径，
+            // 否则持久化/导出后重启会变成「未找到」
+            let localTarget = it.originalPath;
+            if (isDesktopApp && it.file) {
+                const p = window.vrDesktop.pathForFile(it.file);
+                if (p) localTarget = p;
+            }
+            return {
+                file: isOnline ? (it.url || it.originalPath) : localTarget,
+                title: it.name,
+                position: it.position || 0,
+            };
+        }
+
+        // ── 收藏夹：localStorage 持久化 ──
+        function loadFavs() {
+            try { favorites = JSON.parse(localStorage.getItem(FAV_KEY)) || []; }
+            catch { favorites = []; }
+        }
+        function saveFavs() {
+            try { localStorage.setItem(FAV_KEY, JSON.stringify(favorites)); } catch { /* 存储满等异常忽略 */ }
+        }
+        function renderFavs() {
+            favItems.innerHTML = '';
+            favorites.forEach((f, i) => {
+                const li = document.createElement('li');
+                li.className = 'playlist-item st-' + (f.kind === 'online' ? 'remote' : 'ready');
+                const idx = document.createElement('span');
+                idx.className = 'pl-index';
+                idx.textContent = i + 1;
+                const name = document.createElement('span');
+                name.className = 'pl-name';
+                name.textContent = f.name;
+                li.append(idx, name);
+                if (f.position > 0) {
+                    const pos = document.createElement('span');
+                    pos.className = 'pl-pos';
+                    pos.textContent = '▶ ' + formatTime(f.position);
+                    pos.title = '起播位置 ' + formatTime(f.position);
+                    li.appendChild(pos);
+                }
+                const tag = document.createElement('span');
+                tag.className = 'pl-badge';
+                tag.textContent = f.kind === 'online' ? '在线' : '本地';
+                const del = document.createElement('button');
+                del.className = 'fav-del';
+                del.title = '删除该收藏';
+                del.innerHTML = '<i class="fa-solid fa-xmark"></i>';
+                del.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    favorites.splice(i, 1);
+                    saveFavs();
+                    renderFavs();
+                });
+                li.append(tag, del);
+                li.title = f.target;
+                li.addEventListener('click', () => playFav(i));
+                favItems.appendChild(li);
+            });
+            if (!favorites.length) {
+                const li = document.createElement('li');
+                li.className = 'playlist-item';
+                li.style.cursor = 'default';
+                const name = document.createElement('span');
+                name.className = 'pl-name';
+                name.textContent = '收藏夹为空：播放时点控制栏的 ★ 即可收藏';
+                name.style.color = '#707a8c';
+                li.appendChild(name);
+                favItems.appendChild(li);
+            }
+        }
+        async function playFav(i) {
+            const f = favorites[i];
+            if (!f) return;
+            if (f.kind === 'local') {
+                let rec = null;
+                try {
+                    const map = await window.vrDesktop.checkPaths([f.target]);
+                    rec = map && map[f.target];
+                } catch { /* 按不存在处理 */ }
+                if (!rec || !rec.exists) {
+                    showPlaylistBanner(`磁盘上找不到「${f.name}」（${f.target}），文件可能已移动或删除。`);
+                    switchTab('playlist');
+                    return;
+                }
+                playTarget(f.name, '/local?path=' + encodeURIComponent(f.target), f.position);
+            } else {
+                playTarget(f.name, f.target, f.position);
+            }
+            if (isMobileDevice) playlistPanel.classList.remove('active');
+        }
+        // 直接播放一个目标（收藏夹条目）：绕过播放列表状态
+        function playTarget(name, url, position) {
+            showLoadSpin('加载中…');
+            loadVideoURL(url);
+            pendingSeekPosition = position > 0 ? position : null;
+            fileName.textContent = name;
+        }
+
+        // ── 播放列表持久化（桌面端：重启后恢复列表，不自动播放）──
+        function persistPlaylist() {
+            if (!isDesktopApp) return;
+            try {
+                const data = playlist.map((it) => {
+                    const e = itemToDplEntry(it);
+                    return { name: it.name, target: e.file, position: e.position,
+                        kind: /^https?:\/\//i.test(e.file) ? 'online' : 'local' };
+                }).filter((e) => e.target);
+                localStorage.setItem(PL_KEY, JSON.stringify(data));
+            } catch { /* 忽略 */ }
+        }
+        async function restoreDesktopState() {
+            if (!isDesktopApp) return;
+            loadFavs();
+            renderFavs();
+            let saved = [];
+            try { saved = JSON.parse(localStorage.getItem(PL_KEY)) || []; } catch { /* 忽略 */ }
+            if (!saved.length) return;
+            lastDplEntries = saved.map((e) => ({ file: e.target, title: e.name, position: e.position || 0 }));
+            const localPaths = saved.filter((e) => !/^https?:\/\//i.test(e.target)).map((e) => e.target);
+            try {
+                desktopDiskMap = localPaths.length ? await window.vrDesktop.checkPaths(localPaths) : {};
+            } catch { desktopDiskMap = {}; }
+            const items = lastDplEntries.map(entryToItem);
+            dplResolved = items.every(isPlayable);
+            setPlaylist(items); // 不传 startIndex：恢复但不自动播放、不弹面板
+        }
+
+        // ── 页签切换 ──
+        function switchTab(tab) {
+            activeTab = tab;
+            tabPlaylist.classList.toggle('active', tab === 'playlist');
+            tabFavs.classList.toggle('active', tab === 'favs');
+            const isPl = tab === 'playlist';
+            playlistItems.style.display = isPl ? '' : 'none';
+            favItems.style.display = isPl ? 'none' : '';
+            playlistTools.style.display = isPl ? '' : 'none';
+            playlistTools2.style.display = isPl ? '' : 'none';
+            selectTools.style.display = 'none';
+            playlistSummary.style.display = isPl ? '' : 'none';
+            if (isPl) updateSummary();
+            if (!isPl) { exitSelectMode(); renderFavs(); }
+            // 收藏夹页签下批量按钮无意义
+            batchAddBtn.style.display = isPl ? '' : 'none';
+            batchDelBtn.style.display = isPl ? '' : 'none';
+        }
+        tabPlaylist.addEventListener('click', () => switchTab('playlist'));
+        tabFavs.addEventListener('click', () => switchTab('favs'));
+
+        // ── 位置记录确认弹窗 ──
+        const posModalMask = document.getElementById('posModalMask');
+        const posModalTitle = document.getElementById('posModalTitle');
+        const posModalDesc = document.getElementById('posModalDesc');
+        let posModalResolver = null;
+        function askPosition(title, name, seconds) {
+            return new Promise((resolve) => {
+                posModalResolver = resolve;
+                posModalTitle.textContent = title;
+                posModalDesc.textContent = seconds > 1
+                    ? `「${name}」当前播放到 ${formatTime(seconds)}。记录后，下次从该位置继续播放。`
+                    : `「${name}」刚开始播放，是否仍要记录位置？`;
+                document.getElementById('posModalRecord').textContent
+                    = seconds > 1 ? `记录位置 ${formatTime(seconds)}` : '记录位置';
+                posModalMask.classList.add('active');
+            });
+        }
+        function closePosModal(v) {
+            posModalMask.classList.remove('active');
+            if (posModalResolver) { posModalResolver(v); posModalResolver = null; }
+        }
+        document.getElementById('posModalRecord').addEventListener('click', () => closePosModal('record'));
+        document.getElementById('posModalStart').addEventListener('click', () => closePosModal('start'));
+        document.getElementById('posModalCancel').addEventListener('click', () => closePosModal(null));
+        posModalMask.addEventListener('click', (e) => { if (e.target === posModalMask) closePosModal(null); });
+
+        // ── 当前正在播放的视频 → 可收藏/可入列的引用 ──
+        function currentVideoRef() {
+            if (!videoPlayer.currentSrc) return null;
+            // 转码会话：记录原始远程链接而非 HLS 地址
+            if (transcodeSrcUrl) {
+                return { name: transcodeDisplayName || '网络视频', target: transcodeSrcUrl, kind: 'online' };
+            }
+            const src = videoPlayer.dataset.remoteUrl || '';
+            const m = src.match(/^\/local\?path=(.+)$/);
+            if (m) return { name: fileName.textContent || '本地视频', target: safeDecode(m[1]), kind: 'local' };
+            if (/^https?:\/\//i.test(src) && !src.startsWith(location.origin)) {
+                return { name: videoPlayer.dataset.remoteName || fileName.textContent || '网络视频', target: src, kind: 'online' };
+            }
+            // 用户手动打开的本地文件：桌面端用 webUtils 还原磁盘路径
+            if (activeLocalFile && isDesktopApp) {
+                const p = window.vrDesktop.pathForFile(activeLocalFile);
+                if (p) return { name: activeLocalFile.name, target: p, kind: 'local' };
+            }
+            return null;
+        }
+
+        // ── 收藏当前视频 / 加入播放列表（都询问是否记录位置）──
+        favBtn.addEventListener('click', async () => {
+            const ref = currentVideoRef();
+            if (!ref) {
+                showPlaylistBanner('当前没有可收藏的视频（需为有路径的本地视频或在线链接）。');
+                playlistPanel.classList.add('active');
+                return;
+            }
+            const t = Math.floor(effectiveCurrentTime());
+            const choice = await askPosition('收藏当前视频', ref.name, t);
+            if (choice === null) return;
+            // 同一目标已收藏则更新位置，不重复添加
+            const exist = favorites.findIndex((f) => f.target === ref.target);
+            const entry = { ...ref, position: choice === 'record' ? t : 0, addedAt: Date.now() };
+            if (exist >= 0) favorites.splice(exist, 1, entry); else favorites.push(entry);
+            saveFavs();
+            renderFavs();
+            playlistPanel.classList.add('active');
+            switchTab('favs');
+        });
+        addToListBtn.addEventListener('click', async () => {
+            const ref = currentVideoRef();
+            if (!ref) {
+                showPlaylistBanner('当前没有可加入列表的视频（需为有路径的本地视频或在线链接）。');
+                playlistPanel.classList.add('active');
+                return;
+            }
+            const t = Math.floor(effectiveCurrentTime());
+            const choice = await askPosition('加入播放列表', ref.name, t);
+            if (choice === null) return;
+            const item = refToPlaylistItem(ref, choice === 'record' ? t : 0);
+            const list = playlist.concat(item);
+            setPlaylist(list);
+            // 加入的正是当前正在播放的视频：播放中标记直接指向新条目
+            playlistIndex = list.length - 1;
+            renderPlaylist();
+            updatePlaylistButtons();
+            playlistPanel.classList.add('active');
+            switchTab('playlist');
+        });
+        // 引用 → 播放列表条目（桌面端：本地直接 ready，在线 remote）
+        function refToPlaylistItem(ref, position) {
+            if (ref.kind === 'online') {
+                return { name: ref.name, originalPath: ref.target, normalizedPath: '',
+                    url: ref.target, file: null, fileHandle: null,
+                    status: 'remote', error: '', position: position || 0 };
+            }
+            return { name: ref.name, originalPath: ref.target, normalizedPath: normalizePath(ref.target),
+                url: '/local?path=' + encodeURIComponent(ref.target), file: null, fileHandle: null,
+                status: 'ready', error: '', position: position || 0 };
+        }
+
+        // ── 导入 / 导出 ──
+        importListBtn.addEventListener('click', async () => {
+            if (activeTab === 'favs') {
+                let r;
+                try { r = await window.vrDesktop.openDpl(); } catch (e) { showPlaylistBanner('读取失败：' + e.message); return; }
+                if (!r) return;
+                let entries;
+                try { entries = parseDpl(decodeDplBase64(r.data)); } catch (e) { showPlaylistBanner('解析失败：' + e.message); return; }
+                favorites = entries.map((e) => ({
+                    name: e.title || basenameOf(safeDecode(e.file)),
+                    target: e.file,
+                    kind: /^https?:\/\//i.test(e.file) ? 'online' : 'local',
+                    position: e.position ? Math.max(0, parseFloat(e.position)) || 0 : 0,
+                    addedAt: Date.now(),
+                }));
+                saveFavs();
+                renderFavs();
+                return;
+            }
+            openDplDesktop();
+        });
+        exportListBtn.addEventListener('click', async () => {
+            let dplText, defaultName;
+            if (activeTab === 'favs') {
+                if (!favorites.length) { showPlaylistBanner('收藏夹为空，无可导出内容。'); switchTab('playlist'); return; }
+                dplText = buildDpl(favorites.map((f) => ({ file: f.target, title: f.name, position: f.position })));
+                defaultName = '收藏夹.dpl';
+            } else {
+                if (!playlist.length) { showPlaylistBanner('播放列表为空，无可导出内容。'); return; }
+                dplText = buildDpl(playlist.map(itemToDplEntry));
+                defaultName = '播放列表.dpl';
+            }
+            try {
+                const savedTo = await window.vrDesktop.saveDpl(defaultName, b64encode(dplText));
+                if (savedTo) showPlaylistBanner('已导出到 ' + savedTo);
+            } catch (e) {
+                showPlaylistBanner('导出失败：' + e.message);
+            }
+        });
+
+        // ── 批量新增 ──
+        const addMenuMask = document.getElementById('addMenuMask');
+        const linksModalMask = document.getElementById('linksModalMask');
+        batchAddBtn.addEventListener('click', () => addMenuMask.classList.add('active'));
+        document.getElementById('addMenuCancel').addEventListener('click', () => addMenuMask.classList.remove('active'));
+        addMenuMask.addEventListener('click', (e) => { if (e.target === addMenuMask) addMenuMask.classList.remove('active'); });
+        document.getElementById('addMenuLocal').addEventListener('click', async () => {
+            addMenuMask.classList.remove('active');
+            let picked = [];
+            try { picked = await window.vrDesktop.pickVideos() || []; } catch (e) { showPlaylistBanner('选择文件失败：' + e.message); return; }
+            if (!picked.length) return;
+            const newItems = picked.map((p) => ({
+                name: p.name, originalPath: p.path, normalizedPath: normalizePath(p.path),
+                url: '/local?path=' + encodeURIComponent(p.path), file: null, fileHandle: null,
+                status: 'ready', error: '', position: 0,
+            }));
+            setPlaylist(playlist.concat(newItems));
+            showPlaylistBanner(`已添加 ${newItems.length} 个本地文件。`);
+        });
+        document.getElementById('addMenuLinks').addEventListener('click', () => {
+            addMenuMask.classList.remove('active');
+            document.getElementById('linksText').value = '';
+            linksModalMask.classList.add('active');
+        });
+        document.getElementById('linksModalCancel').addEventListener('click', () => linksModalMask.classList.remove('active'));
+        linksModalMask.addEventListener('click', (e) => { if (e.target === linksModalMask) linksModalMask.classList.remove('active'); });
+        document.getElementById('linksModalOk').addEventListener('click', () => {
+            const lines = document.getElementById('linksText').value.split(/\r?\n/)
+                .map((s) => s.trim()).filter((s) => /^https?:\/\//i.test(s));
+            linksModalMask.classList.remove('active');
+            if (!lines.length) { showPlaylistBanner('没有识别到有效的 http(s) 链接。'); return; }
+            const newItems = lines.map((u) => ({
+                name: basenameOf(safeDecode(u)), originalPath: u, normalizedPath: '',
+                url: u, file: null, fileHandle: null, status: 'remote', error: '', position: 0,
+            }));
+            setPlaylist(playlist.concat(newItems));
+            showPlaylistBanner(`已添加 ${newItems.length} 个在线链接。`);
+        });
+
+        // ── 批量删除（选择模式）──
+        function enterSelectMode() {
+            selecting = true;
+            selectedIdx.clear();
+            playlistPanel.classList.add('selecting');
+            playlistTools.style.display = 'none';
+            playlistTools2.style.display = 'none';
+            selectTools.style.display = '';
+            renderPlaylist();
+        }
+        function exitSelectMode() {
+            if (!selecting) return;
+            selecting = false;
+            selectedIdx.clear();
+            playlistPanel.classList.remove('selecting');
+            if (activeTab === 'playlist') {
+                playlistTools.style.display = '';
+                playlistTools2.style.display = '';
+            }
+            selectTools.style.display = 'none';
+            renderPlaylist();
+        }
+        batchDelBtn.addEventListener('click', () => {
+            if (!playlist.length) { showPlaylistBanner('播放列表为空。'); return; }
+            enterSelectMode();
+        });
+        cancelSelectBtn.addEventListener('click', exitSelectMode);
+        selectAllBtn.addEventListener('click', () => {
+            if (selectedIdx.size === playlist.length) selectedIdx.clear();
+            else playlist.forEach((_, i) => selectedIdx.add(i));
+            renderPlaylist();
+        });
+        deleteSelBtn.addEventListener('click', () => {
+            if (!selectedIdx.size) { showPlaylistBanner('请先勾选要删除的条目。'); return; }
+            const kept = playlist.filter((_, i) => !selectedIdx.has(i));
+            const removed = playlist.length - kept.length;
+            exitSelectMode();
+            if (kept.length) {
+                setPlaylist(kept);
+            } else {
+                clearPlaylist();
+            }
+            showPlaylistBanner(`已删除 ${removed} 项。`);
+        });
+
+        // 桌面端启用增强 UI 并恢复上次状态
+        if (isDesktopApp) {
+            playlistTabs.style.display = '';
+            playlistTools2.style.display = '';
+            playlistTitle.style.display = 'none';
+            favBtn.style.display = '';
+            addToListBtn.style.display = '';
+            // 首页提供列表面板入口：无视频时控制条不可见
+            const heroPlaylistBtn = document.getElementById('heroPlaylistBtn');
+            heroPlaylistBtn.style.display = '';
+            heroPlaylistBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                playlistPanel.classList.add('active');
+            });
+            restoreDesktopState();
         }
 
         // 触屏设备：角标换成手势图标和触摸操作说明
@@ -2107,6 +2704,8 @@
 
             // Create object URL for the video
             releaseLocalObjectURL();
+            pendingSeekPosition = null;
+            activeLocalFile = file;
             const videoURL = URL.createObjectURL(file);
             activeLocalObjectURL = videoURL;
             const generation = ++mediaLoadGeneration;
@@ -2320,6 +2919,9 @@
             const requestId = ++urlLoadRequestId;
             if (activeProbeController) activeProbeController.abort();
             activeProbeController = null;
+            // 在首个 await 之前重置，调用方（playResolved/playTarget）会在同步返回后设置新的起播位置
+            pendingSeekPosition = null;
+            activeLocalFile = null;
             const rawUrl = (url || '').trim();
             if (isGitHubPages && /^https?:\/\//i.test(rawUrl)) {
                 hideLoadSpin();
