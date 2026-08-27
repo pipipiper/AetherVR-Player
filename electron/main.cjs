@@ -53,7 +53,50 @@ async function start() {
     });
     if (r.canceled || !r.filePaths.length) return null;
     const file = r.filePaths[0];
-    return { name: path.basename(file), data: fs.readFileSync(file).toString('base64') };
+    return { name: path.basename(file), path: file, data: fs.readFileSync(file).toString('base64') };
+  });
+
+  // ── 播放列表库：播放列表与收藏夹以 dpl 文件形式存放在用户选择的目录 ──
+  // 选择保存目录
+  ipcMain.handle('lib:pickDir', async () => {
+    const r = await dialog.showOpenDialog(mainWindow, {
+      title: '选择播放列表保存位置',
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    if (r.canceled || !r.filePaths.length) return null;
+    return r.filePaths[0];
+  });
+  // 列出目录下的 .dpl 文件：[{ name, path }]
+  ipcMain.handle('lib:list', (event, dir) => {
+    try {
+      return fs.readdirSync(dir)
+        .filter((f) => /\.dpl$/i.test(f))
+        .map((f) => ({ name: f.replace(/\.dpl$/i, ''), path: path.join(dir, f) }))
+        .sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN', { numeric: true }));
+    } catch {
+      return [];
+    }
+  });
+  // 按路径读取 dpl：{ name, path, data(base64) }，失败返回 null
+  ipcMain.handle('lib:read', (event, p) => {
+    try {
+      return { name: path.basename(p).replace(/\.dpl$/i, ''), path: p,
+        data: fs.readFileSync(p).toString('base64') };
+    } catch {
+      return null;
+    }
+  });
+  // 按路径写入 dpl（不存在则创建）：成功返回 true
+  ipcMain.handle('lib:write', (event, payload) => {
+    try {
+      const { path: p, data } = payload || {};
+      if (!p) return false;
+      fs.mkdirSync(path.dirname(p), { recursive: true });
+      fs.writeFileSync(p, Buffer.from(String(data || ''), 'base64'));
+      return true;
+    } catch {
+      return false;
+    }
   });
 
   // 导出 dpl：系统保存对话框 + 写文件，返回保存路径（取消返回 null）

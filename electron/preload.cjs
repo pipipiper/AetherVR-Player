@@ -7,6 +7,11 @@ contextBridge.exposeInMainWorld('vrDesktop', {
   saveDpl: (name, data) => ipcRenderer.invoke('dpl:save', { name, data }),
   pickVideos: () => ipcRenderer.invoke('files:pick'),
   checkPaths: (paths) => ipcRenderer.invoke('fs:check', paths),
+  // 播放列表库
+  pickLibDir: () => ipcRenderer.invoke('lib:pickDir'),
+  listDpls: (dir) => ipcRenderer.invoke('lib:list', dir),
+  readDpl: (p) => ipcRenderer.invoke('lib:read', p),
+  writeDpl: (p, data) => ipcRenderer.invoke('lib:write', { path: p, data }),
   // File 对象 → 磁盘绝对路径（Electron webUtils；拿不到时返回空串）
   pathForFile: (file) => {
     try { return webUtils.getPathForFile(file) || ''; } catch { return ''; }
