@@ -45,6 +45,32 @@ test("server exposes only public assets and generic capabilities", async (t) => 
   assert.equal(parsed.app, "aethervr");
   assert.equal(parsed.backend, true);
 
+  const status = await request(running.port, "/transcode/status");
+  assert.equal(status.status, 200);
+  const statusBody = JSON.parse(status.body);
+  assert.deepEqual(statusBody.hls, {
+    mode: "rolling",
+    segmentSeconds: 4,
+    listSize: 30,
+    windowSeconds: 120,
+  });
+
+  const stopOrigin = `http://127.0.0.1:${running.port}`;
+  const stop = await request(running.port, "/transcode/stop", {
+    method: "POST",
+    headers: { Origin: stopOrigin },
+  });
+  assert.equal(stop.status, 204);
+
+  const crossOriginStop = await request(running.port, "/transcode/stop", {
+    method: "POST",
+    headers: { Origin: "https://attacker.example" },
+  });
+  assert.equal(crossOriginStop.status, 403);
+
+  const getStop = await request(running.port, "/transcode/stop");
+  assert.equal(getStop.status, 405);
+
   const source = JSON.stringify({ url: "https://example.com:8443/video.mp4" });
   const blockedPort = await request(running.port, "/probe", {
     method: "POST",

@@ -167,6 +167,11 @@ const VIDEO_ENCODER = VIDEO_ENCODER_NAME === "h264_videotoolbox"
 
 const HLS_IDLE_MS = 2 * 60 * 1000;
 const HLS_MAX_MS = 2 * 60 * 60 * 1000;
+const HLS_SEGMENT_SECONDS = 4;
+const configuredHlsListSize = Number(process.env.AETHERVR_HLS_LIST_SIZE || "30");
+const HLS_LIST_SIZE = Number.isInteger(configuredHlsListSize)
+  && configuredHlsListSize >= 3 && configuredHlsListSize <= 300
+  ? configuredHlsListSize : 30;
 // 冷却只防恶意刷接口：快进重启转码也走 /transcode，不能定得太长
 const TRANSCODE_COOLDOWN_MS = 4 * 1000;
 const PROBE_COOLDOWN_MS = 2 * 1000;
@@ -236,10 +241,12 @@ function startTranscode(target, ownerIp, res, start = 0) {
     "-c:a", "aac", "-b:a", "192k", "-ac", "2", "-ar", "48000",
     "-max_muxing_queue_size", "2048",
     "-f", "hls",
-    "-hls_time", "4",
-    "-hls_list_size", "0",
-    "-hls_playlist_type", "event",
-    "-hls_flags", "independent_segments",
+    "-hls_time", String(HLS_SEGMENT_SECONDS),
+    // 只保留最近一段播放窗口。进度条跳出窗口时，前端会从目标时间
+    // 重启转码，因此不需要把整部影片的分片一直堆在系统盘。
+    "-hls_list_size", String(HLS_LIST_SIZE),
+    "-hls_delete_threshold", "2",
+    "-hls_flags", "delete_segments+independent_segments",
     "-hls_segment_filename", path.join(dir, "segment-%06d.ts"),
     path.join(dir, "index.m3u8"),
   ]);
@@ -595,6 +602,31 @@ const requestHandler = async (req, res) => {
       res.writeHead(400).end("Bad URL encoding");
       return;
     }
+    if (urlPath === "/transcode/stop") {
+      if (req.method !== "POST") {
+        res.writeHead(405, { "Allow": "POST" }).end("Method not allowed");
+        return;
+      }
+      const origin = req.headers.origin;
+      try {
+        if (!origin || new URL(origin).host !== req.headers.host) {
+          res.writeHead(403).end(JSON.stringify({ error: "Same-origin request required" }));
+          return;
+        }
+      } catch {
+        res.writeHead(403).end(JSON.stringify({ error: "Invalid Origin" }));
+        return;
+      }
+      const ip = clientIp(req);
+      if (hlsSession && hlsSession.ownerIp !== ip) {
+        res.writeHead(409, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Cannot stop another user's transcode" }));
+        return;
+      }
+      stopHlsSession();
+      res.writeHead(204, { "Cache-Control": "no-store" }).end();
+      return;
+    }
     if (urlPath === "/transcode") {
       if (req.method !== "POST") {
         res.writeHead(405, { "Allow": "POST" }).end("Method not allowed");
@@ -673,6 +705,12 @@ const requestHandler = async (req, res) => {
         hardware: USE_VAAPI || VIDEO_ENCODER_NAME === "h264_videotoolbox",
         device: USE_VAAPI ? VAAPI_DEVICE : null,
         quality: USE_VAAPI ? { mode: "CQP", qp: Number(VAAPI_QP) } : null,
+        hls: {
+          mode: "rolling",
+          segmentSeconds: HLS_SEGMENT_SECONDS,
+          listSize: HLS_LIST_SIZE,
+          windowSeconds: HLS_SEGMENT_SECONDS * HLS_LIST_SIZE,
+        },
       }));
       return;
     }
