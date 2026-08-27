@@ -61,7 +61,8 @@ node server.js --host 127.0.0.1 --port 7100
 | --- | --- | --- |
 | `FFMPEG` / `FFPROBE` | 自动查找 | 可执行文件名或绝对路径 |
 | `AETHERVR_ALLOWED_HOSTPORT` | 空 | 允许访问的非标准来源端口，逗号分隔的 `域名:端口` |
-| `AETHERVR_VIDEO_ENCODER` | `auto` | `auto`、`libx264` 或 `h264_videotoolbox`；自动模式仅在可用的 macOS 上选择 VideoToolbox |
+| `AETHERVR_VIDEO_ENCODER` | `auto` | `auto`、`libx264`、`h264_videotoolbox` 或 `h264_vaapi`；Linux Intel/AMD 核显可显式选择 VAAPI |
+| `AETHERVR_VAAPI_DEVICE` | `/dev/dri/renderD128` | VAAPI 渲染设备；服务用户必须对它有读写权限（通常加入 `render` 组） |
 | `AETHERVR_TRANSCODE_THREADS` | ffmpeg 自动决定 | `libx264` 的线程数（1–256）；通常无需设置 |
 
 ### GitHub Pages 静态版
@@ -112,7 +113,7 @@ npm run dist       # 打包安装包到 dist/
 
 - **VR 渲染**：Three.js（已内置于 `vendor/`）把 `<video>` 画面贴到 360° 球体内部，相机随拖动旋转——这就是"不用眼镜看 VR"的全部秘密
 - **在线代理**：`server.js` 内置 `/proxy?url=<地址>`，转发 Range 头（进度条可拖）、自动跟随 302 跳转、修正 MIME；页面上的跨域链接自动改走代理，使用无感知
-- **服务器转码**：检测到设备解不动（如手机上的 8K HEVC）时，可一键由服务器 ffmpeg 转成 4K H.264 HLS 流；macOS 在编码器可用时自动用 VideoToolbox 硬加速，其他系统默认使用 libx264，空闲 2 分钟自动停止
+- **服务器转码**：检测到设备解不动（如手机上的 8K HEVC）时，可一键由服务器 ffmpeg 转成 4K H.264 HLS 流；macOS 在编码器可用时自动用 VideoToolbox，Linux 可配置 VAAPI 实现硬件解码、缩放和编码，其他情况默认使用 libx264，空闲 2 分钟自动停止
 - **桌面版**：内嵌同一个 `server.js`（仅监听 127.0.0.1），本地文件通过 `--local-fs` 开启的 `/local` 接口流式读取
 
 ## 已知限制

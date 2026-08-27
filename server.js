@@ -126,7 +126,7 @@ function ffmpegHasEncoder(name) {
 }
 
 const requestedEncoder = (process.env.AETHERVR_VIDEO_ENCODER || "auto").toLowerCase();
-const supportedEncoderChoices = new Set(["auto", "libx264", "h264_videotoolbox"]);
+const supportedEncoderChoices = new Set(["auto", "libx264", "h264_videotoolbox", "h264_vaapi"]);
 if (!supportedEncoderChoices.has(requestedEncoder)) {
   console.warn(`Unknown AETHERVR_VIDEO_ENCODER=${requestedEncoder}; falling back to auto`);
 }
@@ -134,14 +134,33 @@ const encoderChoice = supportedEncoderChoices.has(requestedEncoder) ? requestedE
 const VIDEO_ENCODER_NAME = encoderChoice === "auto"
   ? (process.platform === "darwin" && ffmpegHasEncoder("h264_videotoolbox") ? "h264_videotoolbox" : "libx264")
   : encoderChoice;
-const VIDEO_ENCODER_AVAILABLE = ffmpegHasEncoder(VIDEO_ENCODER_NAME);
+const VAAPI_DEVICE = process.env.AETHERVR_VAAPI_DEVICE || "/dev/dri/renderD128";
+const USE_VAAPI = VIDEO_ENCODER_NAME === "h264_vaapi";
+let vaapiDeviceAvailable = !USE_VAAPI;
+if (USE_VAAPI) {
+  try {
+    fs.accessSync(VAAPI_DEVICE, fs.constants.R_OK | fs.constants.W_OK);
+    vaapiDeviceAvailable = true;
+  } catch { vaapiDeviceAvailable = false; }
+}
+const VIDEO_ENCODER_AVAILABLE = ffmpegHasEncoder(VIDEO_ENCODER_NAME) && vaapiDeviceAvailable;
 const configuredThreads = Number(process.env.AETHERVR_TRANSCODE_THREADS || "");
 const TRANSCODE_THREADS = Number.isInteger(configuredThreads) && configuredThreads > 0 && configuredThreads <= 256
   ? String(configuredThreads) : null;
+const VIDEO_INPUT_ACCEL = USE_VAAPI
+  ? ["-hwaccel", "vaapi", "-hwaccel_device", VAAPI_DEVICE, "-hwaccel_output_format", "vaapi"]
+  : [];
+const VIDEO_FILTER = USE_VAAPI
+  ? "scale_vaapi=w='min(3840,iw)':h=-2:format=nv12"
+  : "scale=w='min(3840,iw)':h=-2:flags=bicubic,format=yuv420p";
+const VIDEO_PIXEL_FORMAT = USE_VAAPI ? [] : ["-pix_fmt", "yuv420p"];
 const VIDEO_ENCODER = VIDEO_ENCODER_NAME === "h264_videotoolbox"
   ? ["-c:v", "h264_videotoolbox", "-b:v", "12M"]
-  : ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "21",
-      ...(TRANSCODE_THREADS ? ["-threads", TRANSCODE_THREADS] : [])];
+  : USE_VAAPI
+    ? ["-c:v", "h264_vaapi", "-profile:v", "high", "-level:v", "5.2",
+        "-rc_mode", "CBR", "-b:v", "12M", "-maxrate", "12M", "-bufsize", "24M", "-bf", "0"]
+    : ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "21",
+        ...(TRANSCODE_THREADS ? ["-threads", TRANSCODE_THREADS] : [])];
 
 const HLS_IDLE_MS = 2 * 60 * 1000;
 const HLS_MAX_MS = 2 * 60 * 60 * 1000;
@@ -204,11 +223,12 @@ function startTranscode(target, ownerIp, res, start = 0) {
     // 从指定时间点开始转码（快进重启）。-ss 放在 -i 前走 HTTP Range 快速
     // 定位，重编码下输出帧精确；输出时间轴从 0 开始，前端自行加偏移显示。
     ...(start > 0 ? ["-ss", start.toFixed(3)] : []),
+    ...VIDEO_INPUT_ACCEL,
     "-i", proxyInput,
     "-map", "0:v:0", "-map", "0:a:0?",
     ...VIDEO_ENCODER,
-    "-vf", "scale=w='min(3840,iw)':h=-2:flags=bicubic,format=yuv420p",
-    "-pix_fmt", "yuv420p",
+    "-vf", VIDEO_FILTER,
+    ...VIDEO_PIXEL_FORMAT,
     "-force_key_frames", "expr:gte(t,n_forced*4)",
     "-c:a", "aac", "-b:a", "192k", "-ac", "2", "-ar", "48000",
     "-max_muxing_queue_size", "2048",
@@ -234,7 +254,7 @@ function startTranscode(target, ownerIp, res, start = 0) {
   hlsSession = session;
   proc.stderr.on("data", (d) => {
     const text = d.toString();
-    session.error = (session.error + text).slice(-4096);
+    session.error = (session.error + text).slice(-16384);
     if (session.duration === null) {
       session.durationProbe = (session.durationProbe + text).slice(-32768);
       session.duration = parseFfmpegDuration(session.durationProbe);
@@ -274,9 +294,16 @@ function startTranscode(target, ownerIp, res, start = 0) {
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ playlist: `/hls/${id}/index.m3u8`, duration: session.duration, start }));
       } else {
+        const diagnostic = session.error
+          .split(/\r?\n/)
+          .filter((line) => !line.includes("/proxy?url="))
+          .filter((line) => /(error|failed|invalid|unsupported|vaapi|encoder|device|conversion)/i.test(line))
+          .slice(-12)
+          .join("\n")
+          .slice(-1800);
         stopHlsSession(session);
         res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "转码启动失败：" + session.error.slice(-500) }));
+        res.end(JSON.stringify({ error: "转码启动失败：" + (diagnostic || session.error.slice(-1000)) }));
       }
     }
   }, 500);
@@ -640,6 +667,8 @@ const requestHandler = async (req, res) => {
         active: Boolean(hlsSession),
         ready: Boolean(hlsSession && hlsSession.ready),
         encoder: VIDEO_ENCODER_NAME,
+        hardware: USE_VAAPI || VIDEO_ENCODER_NAME === "h264_videotoolbox",
+        device: USE_VAAPI ? VAAPI_DEVICE : null,
       }));
       return;
     }
