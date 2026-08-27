@@ -37,6 +37,24 @@ node server.js
 
 然后在浏览器打开 <http://localhost:7100/>。
 
+### 桌面版（Electron，Windows / macOS）
+
+桌面版在网页版全部能力之上，额外提供 **DPL 播放列表直读**：dpl 里的本地绝对路径由系统直接查磁盘，存在即可流式播放（支持拖动进度），不需要在浏览器里逐个授权。
+
+```bash
+npm install        # 首次，安装 electron
+npm run desktop    # 启动桌面窗口
+```
+
+打包安装包（需本机已装 Node）：
+
+```bash
+npm run dist       # 输出到 dist/（macOS 出 .dmg，Windows 出 NSIS 安装包）
+```
+
+> 桌面版内嵌同一个 `server.js`（仅监听 127.0.0.1 随机端口），代理、编码探测、服务器转码与网页版完全一致；本地文件通过 `--local-fs` 开启的 `/local` 接口流式读取，该开关仅桌面端启用。
+> Windows 播放 HEVC 需要系统安装「HEVC 视频扩展」；macOS 原生支持。
+
 指定地址和端口：
 
 ```bash

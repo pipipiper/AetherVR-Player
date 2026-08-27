@@ -892,7 +892,7 @@
         </div>
 
         <div class="page-content">
-            <div class="drop-zone hero" id="dropZone">
+            <div class="drop-zone hero active" id="dropZone">
                 <div class="hero-icon"><i class="fa-solid fa-vr-cardboard"></i></div>
                 <h2 class="hero-title">VR 播放器</h2>
                 <p class="hero-sub">本地文件与在线直链即点即播 · 支持 360° 全景与 SBS 分屏</p>
@@ -908,6 +908,9 @@
                     <label for="folderInput" class="file-input-label hero-file" id="folderLabel" title="读取整个文件夹，自动排除 50MB 以下的小文件">
                         <i class="fa-solid fa-folder-tree"></i>&nbsp; 打开文件夹
                     </label>
+                    <button id="dplBtn" class="file-input-label hero-file" style="display:none" title="读取 PotPlayer 播放列表，自动在磁盘上定位视频文件">
+                        <i class="fa-solid fa-list-check"></i>&nbsp; 打开 DPL 播放列表
+                    </button>
                 </div>
                 <p class="hero-hint">也可以直接把视频文件或 .dpl 播放列表拖到这里</p>
                 <button id="heroClose" class="hero-close" style="display:none"><i class="fa-solid fa-xmark"></i>&nbsp; 返回播放</button>
@@ -1121,6 +1124,10 @@
         const filePool = new Map();
         let activeLocalObjectURL = null;
         let grantingIndex = -1;     // 正在为哪个条目做单独授权
+        // ── Electron 桌面端能力（preload 注入 window.vrDesktop；网页版为 null）──
+        const isDesktopApp = !!window.vrDesktop;
+        let desktopDiskMap = null;  // dpl 原始路径 -> {exists, size}（桌面端磁盘检查缓存）
+        const dplBtn = document.getElementById('dplBtn');
         const playlistPanel = document.getElementById('playlistPanel');
         const playlistItems = document.getElementById('playlistItems');
         const playlistTitle = document.getElementById('playlistTitle');
@@ -1315,6 +1322,22 @@
             if (isPlayable(item)) {
                 playAt(i);
                 if (isMobileDevice) playlistPanel.classList.remove('active');
+            } else if (isDesktopApp && !item.url) {
+                // 桌面端：点击时实时重查磁盘（文件可能刚挂载/拷入）
+                playlistIndex = i;
+                renderPlaylist();
+                updatePlaylistButtons();
+                window.vrDesktop.checkPaths([item.originalPath]).then((map) => {
+                    const rec = map && map[item.originalPath];
+                    if (rec && rec.exists) {
+                        item.url = '/local?path=' + encodeURIComponent(item.originalPath);
+                        item.status = 'ready';
+                        item.error = '';
+                        playAt(i);
+                    } else {
+                        showPlaylistBanner(`磁盘上找不到「${item.originalPath}」，请确认文件是否存在、盘符/路径是否变化。`);
+                    }
+                });
             } else {
                 playlistIndex = i;
                 renderPlaylist();
@@ -1516,6 +1539,18 @@
                 url: '', file: null, fileHandle: null,
                 status: 'unresolved', error: '',
             };
+            // 桌面端：dpl 里的绝对路径直接查磁盘，存在即可播（/local 流式读取）
+            if (isDesktopApp) {
+                const rec = desktopDiskMap && desktopDiskMap[rawPath];
+                if (rec && rec.exists) {
+                    item.url = '/local?path=' + encodeURIComponent(rawPath);
+                    item.status = 'ready';
+                } else {
+                    item.status = 'missing';
+                    item.error = '磁盘上找不到该文件';
+                }
+                return item;
+            }
             applyMatchToItem(item);
             return item;
         }
@@ -1531,6 +1566,60 @@
             if (first >= 0 && (autoplay || (playlistIndex === -1 && !videoPlayer.currentSrc))) {
                 playAt(first);
             }
+        }
+
+        // ── Electron 桌面端：DPL 播放列表直读 ────────────────────
+        // dpl 里的绝对路径由主进程查磁盘，存在即经 /local 流式播放（带 Range 可拖动）
+        function decodeDplBase64(b64) {
+            const bin = atob(b64);
+            const buf = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+            try {
+                return new TextDecoder('utf-8', { fatal: true }).decode(buf);
+            } catch (e) {
+                return new TextDecoder('gbk').decode(buf);
+            }
+        }
+        async function openDplDesktop() {
+            let r;
+            try {
+                r = await window.vrDesktop.openDpl();
+            } catch (e) {
+                showError('读取播放列表失败：' + e.message);
+                return;
+            }
+            if (!r) return; // 用户取消
+            let entries;
+            try {
+                entries = parseDpl(decodeDplBase64(r.data));
+            } catch (e) {
+                showError('播放列表解析失败：' + e.message);
+                return;
+            }
+            if (!entries.length) {
+                showError('播放列表为空或格式无法识别。');
+                return;
+            }
+            // 与 importDpl 保持一致：取消旧的远程探测
+            urlLoadRequestId++;
+            if (activeProbeController) { activeProbeController.abort(); activeProbeController = null; }
+            hideHeroLoading();
+            lastDplEntries = entries;
+            const localPaths = entries
+                .filter((e) => !/^https?:\/\//i.test(e.file))
+                .map((e) => e.file);
+            try {
+                desktopDiskMap = localPaths.length
+                    ? await window.vrDesktop.checkPaths(localPaths)
+                    : {};
+            } catch (e) {
+                desktopDiskMap = {};
+            }
+            applyDpl(true);
+        }
+        if (isDesktopApp && dplBtn) {
+            dplBtn.style.display = '';
+            dplBtn.addEventListener('click', openDplDesktop);
         }
 
         // 触屏设备：角标换成手势图标和触摸操作说明

@@ -10,3 +10,7 @@ test.mkv
 test_hevc.mp4
 preview.png
 original-site.png
+
+# Electron 打包产物
+dist/
+out/

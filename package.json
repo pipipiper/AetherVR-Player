@@ -3,8 +3,32 @@
   "version": "1.0.0",
   "private": true,
   "description": "VR 视频播放器：本地文件与在线直链即点即播，支持 360 全景与 SBS 分屏",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "node server.js",
-    "start": "node server.js"
+    "start": "node server.js",
+    "desktop": "electron .",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^37.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "cc.pipp.vrplayer",
+    "productName": "VR 播放器",
+    "files": [
+      "index.html",
+      "server.js",
+      "favicon.svg",
+      "vendor/**",
+      "electron/**"
+    ],
+    "mac": {
+      "category": "public.app-category.entertainment"
+    },
+    "win": {
+      "target": "nsis"
+    }
   }
 }

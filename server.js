@@ -20,6 +20,18 @@ function arg(name, fallback) {
 const HOST = arg("host", "127.0.0.1");
 const PORT = Number(arg("port", 7100));
 
+/* --local-fs（仅 Electron 桌面端传入）：开放 /local 与 /local-check，
+ * 允许页面按绝对路径流式读取本机磁盘文件（带 Range，可拖动进度）。
+ * 网页部署时绝不带此开关。 */
+const LOCAL_FS = args.includes("--local-fs");
+const VIDEO_MIME = {
+  ".mp4": "video/mp4", ".m4v": "video/mp4", ".webm": "video/webm",
+  ".ogv": "video/ogg", ".ogg": "video/ogg", ".mov": "video/quicktime",
+  ".mkv": "video/x-matroska", ".avi": "video/x-msvideo", ".ts": "video/mp2t",
+  ".m2ts": "video/mp2t", ".flv": "video/x-flv", ".wmv": "video/x-ms-wmv",
+  ".3gp": "video/3gpp",
+};
+
 const MIME = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -516,6 +528,82 @@ const server = http
         return;
       }
       proxyVideo(target, req, res, 0);
+      return;
+    }
+    // ── 本地磁盘文件（仅 --local-fs，即 Electron 桌面端）──
+    if (LOCAL_FS && urlPath === "/local-check") {
+      if (req.method !== "POST") {
+        res.writeHead(405, { "Allow": "POST" }).end("Method not allowed");
+        return;
+      }
+      let body;
+      try {
+        body = await readJson(req, 1024 * 1024);
+      } catch (err) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: err.message }));
+        return;
+      }
+      const paths = Array.isArray(body.paths) ? body.paths.slice(0, 5000) : [];
+      const results = {};
+      for (const p of paths) {
+        if (typeof p !== "string" || !p) continue;
+        try {
+          const st = fs.statSync(p);
+          results[p] = { exists: st.isFile(), size: st.size };
+        } catch {
+          results[p] = { exists: false, size: 0 };
+        }
+      }
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end(JSON.stringify({ results }));
+      return;
+    }
+    if (LOCAL_FS && urlPath === "/local") {
+      const target = new URL(req.url, "http://local").searchParams.get("path") || "";
+      let stat;
+      try {
+        stat = fs.statSync(target);
+        if (!stat.isFile()) throw new Error("not a file");
+      } catch {
+        res.writeHead(404).end("Not found");
+        return;
+      }
+      const type = VIDEO_MIME[path.extname(target).toLowerCase()] || "application/octet-stream";
+      const base = {
+        "Content-Type": type,
+        "Accept-Ranges": "bytes",
+        "Cache-Control": "no-cache",
+      };
+      const range = req.headers.range;
+      if (range) {
+        const m = /^bytes=(\d*)-(\d*)$/.exec(range);
+        let start = NaN;
+        let end = stat.size - 1;
+        if (m) {
+          if (m[1]) {
+            start = parseInt(m[1], 10);
+            if (m[2]) end = Math.min(parseInt(m[2], 10), stat.size - 1);
+          } else if (m[2]) {
+            start = Math.max(0, stat.size - parseInt(m[2], 10));
+          }
+        }
+        if (!Number.isFinite(start) || start > end || start >= stat.size) {
+          res.writeHead(416, { "Content-Range": `bytes */${stat.size}` }).end();
+          return;
+        }
+        res.writeHead(206, {
+          ...base,
+          "Content-Range": `bytes ${start}-${end}/${stat.size}`,
+          "Content-Length": end - start + 1,
+        });
+        if (req.method === "HEAD") return res.end();
+        fs.createReadStream(target, { start, end }).on("error", () => res.destroy()).pipe(res);
+      } else {
+        res.writeHead(200, { ...base, "Content-Length": stat.size });
+        if (req.method === "HEAD") return res.end();
+        fs.createReadStream(target).on("error", () => res.destroy()).pipe(res);
+      }
       return;
     }
     if (urlPath === "/") urlPath = "/index.html";
