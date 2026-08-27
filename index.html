@@ -511,6 +511,8 @@
 
         /* ── file info ─────────────────────────────────────── */
         .file-info { text-transform: none; letter-spacing: 0; font-size: 12px; max-width: none; width: 100%; }
+        /* 未加载视频时整条隐藏，不显示空的「文件: 大小: 类型:」标签 */
+        .file-info:not(.active) { display: none; }
         .file-info strong { color: var(--muted); font-weight: 500; }
         .file-info p { color: var(--text); max-width: 220px; }
         /* 文件名占满左侧剩余宽度：左右两栏等宽保证模式切换始终居中 */
@@ -839,6 +841,7 @@
             font-size: 13px; padding: 3px 6px; border-radius: 6px;
         }
         .pl-tab-action:hover { color: #fff; background: rgba(255,255,255,.10); }
+        .playlist-head-actions { display: flex; gap: 2px; flex: none; align-items: center; }
 
         /* ── 条目位置标记（起播跳转点）──────────────────── */
         .pl-pos {
@@ -1097,6 +1100,9 @@
                         <!-- 收藏夹固定在最左侧 -->
                         <button class="pl-tab" id="tabFavs" title="收藏夹"><i class="fa-solid fa-star"></i><span class="pl-tab-name">收藏夹</span></button>
                         <span id="plTabList" style="display:contents"></span>
+                    </div>
+                    <!-- 新建/打开按钮钉在滚动区外，页签再多也点得到 -->
+                    <div class="playlist-head-actions" id="playlistHeadActions" style="display:none">
                         <button class="pl-tab-action" id="tabNewList" title="新建播放列表"><i class="fa-solid fa-plus"></i></button>
                         <button class="pl-tab-action" id="tabOpenList" title="打开播放列表（.dpl 文件）"><i class="fa-solid fa-folder-open"></i></button>
                     </div>
@@ -2103,12 +2109,17 @@
             return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
         }
         // 记录打开过的页签文件路径：重启后库目录外的外部列表也能恢复
+        let appCfg = {}; // 主进程配置（userData/vr-player-config.json）
+        async function saveCfg() {
+            if (!isDesktopApp) return;
+            try { await window.vrDesktop.writeCfg(appCfg); } catch { /* 忽略 */ }
+        }
         function saveTabsState() {
             if (!isDesktopApp) return;
-            try {
-                localStorage.setItem(LIB_TABS_KEY,
-                    JSON.stringify(playlists.filter((p) => p.path).map((p) => p.path)));
-            } catch { /* 忽略 */ }
+            const tabs = playlists.filter((p) => p.path).map((p) => p.path);
+            try { localStorage.setItem(LIB_TABS_KEY, JSON.stringify(tabs)); } catch { /* 忽略 */ }
+            appCfg.tabs = tabs;
+            saveCfg();
         }
         function renderTabs() {
             plTabList.innerHTML = '';
@@ -2179,7 +2190,12 @@
         // ── 启动恢复：有库目录从 dpl 文件加载；否则退回 localStorage（旧版数据）──
         async function restoreDesktopState() {
             if (!isDesktopApp) return;
-            libraryDir = localStorage.getItem(LIB_DIR_KEY) || '';
+            // 配置存 userData（与端口无关）；localStorage 仅作旧版迁移来源
+            let cfg = {};
+            try { cfg = await window.vrDesktop.readCfg() || {}; } catch { /* 忽略 */ }
+            appCfg = cfg;
+            libraryDir = appCfg.libraryDir || localStorage.getItem(LIB_DIR_KEY) || '';
+            if (libraryDir && !appCfg.libraryDir) { appCfg.libraryDir = libraryDir; saveCfg(); }
             if (libraryDir) {
                 // 收藏夹：优先读 收藏夹.dpl，文件不存在则迁移旧 localStorage 数据
                 const favRec = await window.vrDesktop.readDpl(favsFilePath());
@@ -2196,7 +2212,8 @@
                 const files = await window.vrDesktop.listDpls(libraryDir);
                 const candidates = files.map((f) => f.path);
                 let savedTabs = [];
-                try { savedTabs = JSON.parse(localStorage.getItem(LIB_TABS_KEY)) || []; } catch { /* 忽略 */ }
+                if (Array.isArray(appCfg.tabs)) savedTabs = appCfg.tabs;
+                else { try { savedTabs = JSON.parse(localStorage.getItem(LIB_TABS_KEY)) || []; } catch { /* 忽略 */ } }
                 savedTabs.forEach((p) => { if (!candidates.includes(p)) candidates.push(p); });
                 for (const p of candidates) {
                     if (p === favsFilePath()) continue;
@@ -2269,6 +2286,14 @@
         }
         tabFavs.addEventListener('click', () => switchTab('favs'));
 
+        // 页签溢出时：纵向滚轮转为横向滚动，且新建/打开按钮固定在滚动区外
+        const playlistHeadActions = document.getElementById('playlistHeadActions');
+        playlistTabs.addEventListener('wheel', (e) => {
+            if (e.deltaY === 0) return;
+            e.preventDefault();
+            playlistTabs.scrollLeft += e.deltaY;
+        }, { passive: false });
+
         // ── 首次进入：选择播放列表/收藏夹的本地保存目录 ──
         const libDirMask = document.getElementById('libDirMask');
         const libDirPath = document.getElementById('libDirPath');
@@ -2286,6 +2311,8 @@
             if (!dir) return;
             libraryDir = dir;
             try { localStorage.setItem(LIB_DIR_KEY, dir); } catch { /* 忽略 */ }
+            appCfg.libraryDir = dir;
+            saveCfg();
             libDirPath.textContent = dir;
             libDirPath.style.display = '';
             libDirMask.classList.remove('active');
@@ -2573,6 +2600,7 @@
         // 桌面端启用增强 UI 并恢复上次状态
         if (isDesktopApp) {
             playlistTabs.style.display = '';
+            playlistHeadActions.style.display = '';
             playlistTools2.style.display = '';
             playlistTitle.style.display = 'none';
             favBtn.style.display = '';

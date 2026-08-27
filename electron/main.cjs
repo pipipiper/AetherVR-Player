@@ -56,6 +56,19 @@ async function start() {
     return { name: path.basename(file), path: file, data: fs.readFileSync(file).toString('base64') };
   });
 
+  // ── 应用配置（保存目录、打开的页签）：存 userData 下的 JSON，
+  //    与 localStorage 解耦——即使端口被占用退回随机端口，配置也不丢 ──
+  const cfgFile = () => path.join(app.getPath('userData'), 'vr-player-config.json');
+  ipcMain.handle('cfg:read', () => {
+    try { return JSON.parse(fs.readFileSync(cfgFile(), 'utf8')); } catch { return {}; }
+  });
+  ipcMain.handle('cfg:write', (event, obj) => {
+    try {
+      fs.writeFileSync(cfgFile(), JSON.stringify(obj && typeof obj === 'object' ? obj : {}));
+      return true;
+    } catch { return false; }
+  });
+
   // ── 播放列表库：播放列表与收藏夹以 dpl 文件形式存放在用户选择的目录 ──
   // 选择保存目录
   ipcMain.handle('lib:pickDir', async () => {
