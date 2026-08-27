@@ -12,18 +12,24 @@ const crypto = require("crypto");
 const args = process.argv.slice(2);
 function arg(name, fallback) {
   const i = args.findIndex((a) => a === `--${name}` || a === name);
-  if (i !== -1 && args[i + 1]) return args[i + 1];
+  // 值以 '-' 开头说明是下一个开关（如 `--port --local-fs`），不能当作参数值
+  if (i !== -1 && args[i + 1] && !args[i + 1].startsWith("-")) return args[i + 1];
   const eq = args.find((a) => a.startsWith(`--${name}=`));
   if (eq) return eq.split("=")[1];
   return fallback;
 }
-const HOST = arg("host", "127.0.0.1");
-const PORT = Number(arg("port", 7100));
 
-/* --local-fs（仅 Electron 桌面端传入）：开放 /local 与 /local-check，
+/* 运行配置：由 startServer() 设置（CLI 在文件底部解析 argv 后调用）。
+ * --local-fs（仅 Electron 桌面端传入）：开放 /local 接口，
  * 允许页面按绝对路径流式读取本机磁盘文件（带 Range，可拖动进度）。
  * 网页部署时绝不带此开关。 */
-const LOCAL_FS = args.includes("--local-fs");
+let HOST = "127.0.0.1";
+let PORT = 7100;
+let LOCAL_FS = false;
+// /local 接口的访问令牌：--local-fs 下必校验，未显式传入时启动时随机生成
+let LOCAL_TOKEN = "";
+// 仅 --trust-proxy 时才信任 X-Forwarded-For（限流/会话归属按客户端 IP）
+let TRUST_PROXY = false;
 const VIDEO_MIME = {
   ".mp4": "video/mp4", ".m4v": "video/mp4", ".webm": "video/webm",
   ".ogv": "video/ogg", ".ogg": "video/ogg", ".mov": "video/quicktime",
@@ -77,6 +83,11 @@ const TRANSCODE_COOLDOWN_MS = 4 * 1000;
 const PROBE_COOLDOWN_MS = 2 * 1000;
 const transcodeStarts = new Map();
 const probeStarts = new Map();
+// 限流 Map 按 IP 累积、只增不减：每次写入前顺带清理 10 分钟前的旧条目
+function sweepStaleEntries(map) {
+  const cutoff = Date.now() - 10 * 60 * 1000;
+  for (const [key, ts] of map) if (ts < cutoff) map.delete(key);
+}
 let hlsSession = null;
 
 function stopHlsSession(session = hlsSession) {
@@ -178,6 +189,11 @@ function startTranscode(target, ownerIp, res, start = 0) {
   const playlist = path.join(dir, "index.m3u8");
   const started = Date.now();
   session.startTimer = setInterval(() => {
+    if (res.writableEnded) {
+      clearInterval(session.startTimer);
+      session.startTimer = null;
+      return;
+    }
     let segReady = false;
     try {
       segReady =
@@ -269,6 +285,12 @@ process.on("exit", () => stopHlsSession());
  * the remote server sends no CORS headers. */
 function isBlockedAddress(address) {
   const value = address.toLowerCase().split("%")[0];
+  // 十六进制 IPv4-mapped IPv6（::ffff:7f00:1 ≡ 127.0.0.1）：先归一化为点分 IPv4 再递归
+  const mappedHex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(value);
+  if (mappedHex) {
+    const n = (parseInt(mappedHex[1], 16) << 16) | parseInt(mappedHex[2], 16);
+    return isBlockedAddress(`${(n >>> 24) & 255}.${(n >>> 16) & 255}.${(n >>> 8) & 255}.${n & 255}`);
+  }
   if (value.startsWith("::ffff:")) return isBlockedAddress(value.slice(7));
   const version = net.isIP(value);
   if (version === 4) {
@@ -286,21 +308,26 @@ function isBlockedAddress(address) {
     return value === "::" || value === "::1"
       || value.startsWith("fc") || value.startsWith("fd")
       || /^fe[89ab]/.test(value) || value.startsWith("ff")
-      || value.startsWith("2001:db8:");
+      || value.startsWith("2001:db8:")
+      || value.startsWith("64:ff9b:1:");
   }
   return true;
 }
 
 // --local-fs（Electron 桌面端）同时放开内网/非标端口限制：
 // 桌面端常用于播放局域网 OpenList / NAS / SMB 转链，SSRF 防护只针对公网部署。
-const RELAX_LOCAL = LOCAL_FS;
+let RELAX_LOCAL = false;
+
+// 非标端口例外（逗号分隔的 host:port）：AETHERVR_ALLOWED_HOSTPORT=host1:port1,host2:port2
+const ALLOWED_HOSTPORTS = (process.env.AETHERVR_ALLOWED_HOSTPORT || "")
+  .split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
 
 async function resolveSafeTarget(u) {
   if (!['http:', 'https:'].includes(u.protocol)) throw new Error("Only http(s) URLs allowed");
   if (u.username || u.password) throw new Error("Credentials in URLs are not allowed");
   if (!RELAX_LOCAL) {
-    const isOlPippMedia = u.hostname.toLowerCase() === "ol.pipp.cc" && u.port === "19766";
-    if (u.port && !['80', '443', '8443'].includes(u.port) && !isOlPippMedia) {
+    const allowedHostPort = ALLOWED_HOSTPORTS.includes(`${u.hostname.toLowerCase()}:${u.port}`);
+    if (u.port && !['80', '443', '8443'].includes(u.port) && !allowedHostPort) {
       throw new Error("This source host and port are not allowed");
     }
     const addresses = await dns.lookup(u.hostname, { all: true, verbatim: true });
@@ -440,9 +467,11 @@ async function proxyVideo(target, req, res, redirects = 0) {  let u;
 }
 
 function clientIp(req) {
-  const forwarded = req.headers["x-forwarded-for"];
-  return (Array.isArray(forwarded) ? forwarded[0] : forwarded || req.socket.remoteAddress || "")
-    .split(",")[0].trim();
+  if (TRUST_PROXY) {
+    const forwarded = req.headers["x-forwarded-for"];
+    if (forwarded) return (Array.isArray(forwarded) ? forwarded[0] : forwarded).split(",")[0].trim();
+  }
+  return req.socket.remoteAddress || "";
 }
 
 function readJson(req, limit = 8192) {
@@ -460,8 +489,7 @@ function readJson(req, limit = 8192) {
   });
 }
 
-const server = http
-  .createServer(async (req, res) => {
+const requestHandler = async (req, res) => {
     let urlPath;
     try {
       urlPath = decodeURIComponent(req.url.split("?")[0]);
@@ -514,6 +542,7 @@ const server = http
         res.end(JSON.stringify({ error: err.message }));
         return;
       }
+      sweepStaleEntries(transcodeStarts);
       transcodeStarts.set(ip, Date.now());
       startTranscode(target, ip, res, start);
       return;
@@ -561,6 +590,7 @@ const server = http
         res.end(JSON.stringify({ error: err.message }));
         return;
       }
+      sweepStaleEntries(probeStarts);
       probeStarts.set(ip, Date.now());
       // 先预检上游返回的是不是视频（OpenList 路径错误/签名过期会返回 JSON/HTML），
       // 不是视频时直接给出具体原因，而不是让 ffprobe/播放器报误导性错误
@@ -606,40 +636,17 @@ const server = http
       proxyVideo(target, req, res, 0);
       return;
     }
-    // ── 本地磁盘文件（仅 --local-fs，即 Electron 桌面端）──
-    if (LOCAL_FS && urlPath === "/local-check") {
-      if (req.method !== "POST") {
-        res.writeHead(405, { "Allow": "POST" }).end("Method not allowed");
-        return;
-      }
-      let body;
-      try {
-        body = await readJson(req, 1024 * 1024);
-      } catch (err) {
-        res.writeHead(400, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: err.message }));
-        return;
-      }
-      const paths = Array.isArray(body.paths) ? body.paths.slice(0, 5000) : [];
-      const results = {};
-      for (const p of paths) {
-        if (typeof p !== "string" || !p) continue;
-        try {
-          const st = fs.statSync(p);
-          results[p] = { exists: st.isFile(), size: st.size };
-        } catch {
-          results[p] = { exists: false, size: 0 };
-        }
-      }
-      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
-      res.end(JSON.stringify({ results }));
-      return;
-    }
+    // ── 本地磁盘文件（仅 --local-fs，即 Electron 桌面端；需携带访问令牌）──
     if (LOCAL_FS && urlPath === "/local") {
-      const target = new URL(req.url, "http://local").searchParams.get("path") || "";
+      const sp = new URL(req.url, "http://local").searchParams;
+      if (sp.get("token") !== LOCAL_TOKEN) {
+        res.writeHead(403).end("Forbidden");
+        return;
+      }
+      const target = sp.get("path") || "";
       let stat;
       try {
-        stat = fs.statSync(target);
+        stat = await fs.promises.stat(target);
         if (!stat.isFile()) throw new Error("not a file");
       } catch {
         res.writeHead(404).end("Not found");
@@ -693,23 +700,87 @@ const server = http
         res.writeHead(404).end("Not found");
         return;
       }
+      // 桌面端：把 /local 访问令牌注入 index.html 的 "__LOCAL_TOKEN__" 占位符
+      // （只替换带引号的字面量，保留 window.__LOCAL_TOKEN__ 变量名本身）
+      if (LOCAL_FS && file === path.join(__dirname, "index.html")) {
+        data = Buffer.from(data.toString("utf8").split('"__LOCAL_TOKEN__"').join(JSON.stringify(LOCAL_TOKEN)));
+      }
       res.writeHead(200, {
         "Content-Type": MIME[path.extname(file).toLowerCase()] || "application/octet-stream",
         "Cache-Control": "no-cache",
       });
       res.end(data);
     });
-  });
+  };
 
-// "localhost" may resolve to ::1 only, which would make the server unreachable
-// via http://127.0.0.1:<port>/. Bind to the unspecified address (dual-stack)
-// in that case so both IPv4 and IPv6 loopback work.
-if (HOST === "localhost" || HOST === "::1") {
-  server.listen(PORT, () => {
-    console.log(`VR Player running at http://localhost:${PORT}/ (also via 127.0.0.1)`);
+function isLoopbackHost(host) {
+  if (host === "localhost" || host === "::1") return true;
+  return net.isIP(host) === 4 && host.split(".")[0] === "127";
+}
+
+/* 启动 HTTP 服务。resolve { server, host, port, localToken, ipv6Server? }；
+ * listen 失败（如端口被占）时 reject，由调用方决定报错还是换端口重试。 */
+function startServer({ host = "127.0.0.1", port = 7100, localFs = false, localToken = "", trustProxy = false } = {}) {
+  return new Promise((resolve, reject) => {
+    HOST = host;
+    PORT = port;
+    LOCAL_FS = localFs;
+    LOCAL_TOKEN = localToken;
+    TRUST_PROXY = trustProxy;
+    RELAX_LOCAL = LOCAL_FS;
+    if (LOCAL_FS && !LOCAL_TOKEN) LOCAL_TOKEN = crypto.randomBytes(16).toString("hex");
+
+    const server = http.createServer(requestHandler);
+    server.once("error", reject);
+
+    const done = (ipv6Server = null) => {
+      const actualPort = server.address().port;
+      resolve({ server, host: HOST, port: actualPort, localToken: LOCAL_TOKEN, ipv6Server });
+    };
+
+    // "localhost" may resolve to ::1 only. Never bind the unspecified address
+    // (all interfaces) here: listen on both loopbacks instead, sharing one handler.
+    if (HOST === "localhost" || HOST === "::1") {
+      server.listen(PORT, "127.0.0.1", () => {
+        const actualPort = server.address().port;
+        const ipv6Server = http.createServer(requestHandler);
+        ipv6Server.on("error", () => { /* ::1 不可用时仅 IPv4 loopback 已够用 */ });
+        ipv6Server.listen(actualPort, "::1", () => {
+          console.log(`VR Player running at http://localhost:${actualPort}/ (loopback only: 127.0.0.1 & ::1)`);
+          done(ipv6Server);
+        });
+      });
+    } else {
+      if (LOCAL_FS && !isLoopbackHost(HOST)) {
+        console.warn("⚠️  WARNING: --local-fs is active on a non-loopback host — " +
+          "the token-protected /local endpoint is reachable from the network. " +
+          "Do NOT expose this server to untrusted networks.");
+      }
+      server.listen(PORT, HOST, () => {
+        console.log(`VR Player running at http://${HOST}:${server.address().port}/`);
+        done();
+      });
+    }
   });
-} else {
-  server.listen(PORT, HOST, () => {
-    console.log(`VR Player running at http://${HOST}:${PORT}/`);
+}
+
+module.exports = { startServer };
+
+if (require.main === module) {
+  const cliHost = arg("host", "127.0.0.1");
+  const cliPort = Number(arg("port", 7100));
+  if (!Number.isInteger(cliPort) || cliPort < 1 || cliPort > 65535) {
+    console.error(`Error: --port must be an integer between 1 and 65535 (got "${arg("port", "")}")`);
+    process.exit(1);
+  }
+  startServer({
+    host: cliHost,
+    port: cliPort,
+    localFs: args.includes("--local-fs"),
+    localToken: arg("local-token", ""),
+    trustProxy: args.includes("--trust-proxy"),
+  }).catch((err) => {
+    console.error(`Server failed to start on ${cliHost}:${cliPort}: ${err.message}`);
+    process.exit(1);
   });
 }

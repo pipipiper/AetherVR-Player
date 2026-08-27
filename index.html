@@ -1225,6 +1225,18 @@
     </div>
 
     <script>
+        // 桌面端 /local 鉴权 token：server 在 local-fs 模式 serve 本页时替换占位符，
+        // 未替换时保持字面量（网页版不走 /local，无副作用）
+        window.__LOCAL_TOKEN__ = "__LOCAL_TOKEN__";
+
+        // 拼 /local URL：token 非空时带上（桌面端鉴权）
+        function localUrl(path) {
+            const token = window.__LOCAL_TOKEN__;
+            let url = '/local?path=' + encodeURIComponent(path);
+            if (token) url += '&token=' + encodeURIComponent(token);
+            return url;
+        }
+
         const videoFileInput = document.getElementById('videoFile');
         const videoPlayer = document.getElementById('videoPlayer');
         const videoContainer = document.getElementById('videoContainer');
@@ -1269,6 +1281,8 @@
         let fullscreenVrFov = fullscreenFov;
         let normalVrSize = null;
         let vrInfoHideTimer = null;
+        let vrLoopRunning = false;    // 全局只跑一条 VR 渲染循环
+        let sbsTextureCleanup = null; // 当前 SBS 纹理的清理句柄
 
         // Show drop zone initially
         dropZone.classList.add('active');
@@ -1302,9 +1316,17 @@
         // iOS HLS 上 loadedmetadata / loadeddata / canplay 的顺序不固定。
         // 在 load() 之前就注册全部触发器，并用 generation 防止旧片源事件串到新片源。
         function armMediaReadyTriggers(generation) {
-            const onReady = async () => {
+            const onReady = async (e) => {
                 if (generation !== mediaLoadGeneration || mediaReadyGeneration === generation) return;
-                if (videoPlayer.readyState < 1 || !videoPlayer.videoWidth) return;
+                if (videoPlayer.readyState < 1 || !videoPlayer.videoWidth) {
+                    // 无视频流（如纯音频文件）：once 监听已被本次事件消耗，
+                    // 重新武装其余事件，避免后续就绪事件无人接收
+                    const fired = e && e.type;
+                    ['loadedmetadata', 'loadeddata', 'canplay'].forEach((evt) => {
+                        if (evt !== fired) videoPlayer.addEventListener(evt, onReady, { once: true });
+                    });
+                    return;
+                }
                 mediaReadyGeneration = generation;
                 isSbsVideo = await detectSBSVideo(videoPlayer);
                 if (generation !== mediaLoadGeneration) return;
@@ -1360,6 +1382,7 @@
         const filePool = new Map();
         let activeLocalObjectURL = null;
         let grantingIndex = -1;     // 正在为哪个条目做单独授权
+        let grantingItem = null;    // 正在授权的条目对象引用（数组重建后按索引会绑错，须按对象回写）
         // ── Electron 桌面端能力（preload 注入 window.vrDesktop；网页版为 null）──
         const isDesktopApp = !!window.vrDesktop;
         const isGitHubPages = location.hostname.endsWith('.github.io');
@@ -1631,7 +1654,7 @@
                 window.vrDesktop.checkPaths([item.originalPath]).then((map) => {
                     const rec = map && map[item.originalPath];
                     if (rec && rec.exists) {
-                        item.url = '/local?path=' + encodeURIComponent(item.originalPath);
+                        item.url = localUrl(item.originalPath);
                         item.status = 'ready';
                         item.error = '';
                         playAt(i);
@@ -1658,7 +1681,9 @@
         async function requestFileForItem(i) {
             const item = playlist[i];
             if (!item) return;
+            // input 回退路径取消选择时没有任何事件，进入时强制复位，避免残留状态绑错条目
             grantingIndex = i;
+            grantingItem = item;
             if (window.showOpenFilePicker) {
                 try {
                     const [handle] = await window.showOpenFilePicker({
@@ -1675,13 +1700,16 @@
                     // 用户取消：条目保留，状态不变，不影响其他条目
                 }
                 grantingIndex = -1;
+                grantingItem = null;
             } else {
                 grantFileInput.value = '';
                 grantFileInput.click();
             }
         }
         function bindFileToItem(i, file, handle) {
-            const item = playlist[i];
+            // 异步选择文件期间 setPlaylist() 可能已重建数组：按保存的对象引用回写，
+            // 此时 playlist[i] 可能已是别的条目
+            const item = grantingItem || playlist[i];
             if (!item) return;
             // 校验：文件名须与条目一致（已统一大小写、URL 编码与斜杠差异）
             const want = (item.normalizedPath || normalizePath(item.originalPath)).split('/').pop();
@@ -1697,7 +1725,8 @@
             // 单文件选择器只给了文件名，没有可信的目录相对路径。不要把它加入
             // 全局自动匹配池，否则 DPL 中其他目录下的同名文件可能被错误绑定。
             dplResolved = playlist.every(isPlayable);
-            playAt(i);
+            const idx = playlist.indexOf(item);
+            playAt(idx >= 0 ? idx : i);
         }
 
         // 添加媒体目录：优先 showDirectoryPicker 递归枚举，回退 webkitdirectory
@@ -1855,7 +1884,7 @@
                 if (desktopDiskMap === null) return item; // 尚未做磁盘检查（启动恢复第一遍）：保持未解析
                 const rec = desktopDiskMap[rawPath];
                 if (rec && rec.exists) {
-                    item.url = '/local?path=' + encodeURIComponent(rawPath);
+                    item.url = localUrl(rawPath);
                     item.status = 'ready';
                 } else {
                     item.status = 'missing';
@@ -2121,7 +2150,7 @@
                     switchTab('playlist');
                     return;
                 }
-                playTarget(f.name, '/local?path=' + encodeURIComponent(f.target), f.position);
+                playTarget(f.name, localUrl(f.target), f.position);
             } else {
                 playTarget(f.name, f.target, f.position);
             }
@@ -2488,7 +2517,7 @@
                 return { name: transcodeDisplayName || '网络视频', target: transcodeSrcUrl, kind: 'online' };
             }
             const src = videoPlayer.dataset.remoteUrl || '';
-            const m = src.match(/^\/local\?path=(.+)$/);
+            const m = src.match(/^\/local\?path=([^&]+)/);
             if (m) return { name: fileName.textContent || '本地视频', target: safeDecode(m[1]), kind: 'local' };
             if (/^https?:\/\//i.test(src) && !src.startsWith(location.origin)) {
                 return { name: videoPlayer.dataset.remoteName || fileName.textContent || '网络视频', target: src, kind: 'online' };
@@ -2555,7 +2584,7 @@
                     status: 'remote', error: '', position: position || 0 };
             }
             return { name: ref.name, originalPath: ref.target, normalizedPath: normalizePath(ref.target),
-                url: '/local?path=' + encodeURIComponent(ref.target), file: null, fileHandle: null,
+                url: localUrl(ref.target), file: null, fileHandle: null,
                 status: 'ready', error: '', position: position || 0 };
         }
 
@@ -2624,7 +2653,7 @@
             ensureActivePlaylist();
             const newItems = picked.map((p) => ({
                 name: p.name, originalPath: p.path, normalizedPath: normalizePath(p.path),
-                url: '/local?path=' + encodeURIComponent(p.path), file: null, fileHandle: null,
+                url: localUrl(p.path), file: null, fileHandle: null,
                 status: 'ready', error: '', position: 0,
             }));
             setPlaylist(playlist.concat(newItems));
@@ -2765,17 +2794,22 @@
         // Format time helper
         function formatTime(seconds) {
             if (!isFinite(seconds)) return '--:--';
-            const mins = Math.floor(seconds / 60);
             const secs = Math.floor(seconds % 60);
-            return `${mins}:${secs.toString().padStart(2, '0')}`;
+            const totalMins = Math.floor(seconds / 60);
+            const hours = Math.floor(totalMins / 60);
+            if (hours > 0) {
+                const mins = totalMins % 60;
+                return `${hours}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+            }
+            return `${totalMins}:${secs.toString().padStart(2, '0')}`;
         }
 
         // Format file size helper
         function formatFileSize(bytes) {
-            if (bytes === 0) return '0 Bytes';
+            if (bytes <= 0) return '0 Bytes';
             const k = 1024;
-            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
             return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
         }
 
@@ -2876,6 +2910,7 @@
 
             const halfWidth = video.videoWidth / 2;
             let animationFrameId = null;
+            let disposed = false;
 
             function draw() {
                 if (video.readyState >= 2) {
@@ -2899,6 +2934,7 @@
 
             // Update function
             const updateTexture = () => {
+                if (disposed) return;
                 if (isVrMode && video.readyState >= 2) {
                     draw();
                     texture.needsUpdate = true;
@@ -2910,13 +2946,14 @@
 
             // Start updating when video plays
             const startUpdate = () => {
+                if (disposed) return;
                 if (animationFrameId) cancelAnimationFrame(animationFrameId);
                 updateTexture();
             };
 
             video.addEventListener('play', startUpdate);
             video.addEventListener('seeked', draw);
-            
+
             // Initial draw
             if (video.readyState >= 2) {
                 draw();
@@ -2926,25 +2963,59 @@
                 startUpdate();
             }
 
-            return texture;
+            // 返回清理句柄：换视频/切 SBS 模式/重进 VR 前必须先 dispose，
+            // 否则监听器和 RAF 循环会无限叠加
+            return {
+                texture,
+                dispose() {
+                    disposed = true;
+                    if (animationFrameId) cancelAnimationFrame(animationFrameId);
+                    video.removeEventListener('play', startUpdate);
+                    video.removeEventListener('seeked', draw);
+                    texture.dispose();
+                },
+            };
+        }
+
+        // 统一换球面纹理：mode 为 null 用普通 videoTexture，否则创建 SBS 纹理。
+        // 创建新 SBS 纹理前会先 dispose 上一套（监听器 + RAF + CanvasTexture）。
+        function applySphereTexture(mode) {
+            if (sbsTextureCleanup) { sbsTextureCleanup(); sbsTextureCleanup = null; }
+            if (mode) {
+                const h = createSBSTexture(videoPlayer, mode);
+                sbsTextureCleanup = h.dispose;
+                sphere.material.map = h.texture;
+            } else {
+                if (sphere.material.map && sphere.material.map !== videoTexture) sphere.material.map.dispose();
+                sphere.material.map = videoTexture;
+            }
+            sphere.material.needsUpdate = true;
         }
 
         // Update VR view
         function updateVRView() {
-            if (!isVrMode || !renderer) return;
+            if (!isVrMode || !renderer) { vrLoopRunning = false; return; } // 退出 VR 即真正终止循环
 
             // Update camera rotation
             camera.rotation.order = 'YXZ';
             camera.rotation.y = rotation.y;
             camera.rotation.x = rotation.x;
 
-            // Update video texture
-            if (videoTexture) {
+            // Update video texture（仅播放中且当前绑的是 videoTexture 时需要；
+            // 暂停时重传整帧纹理是纯浪费，SBS 模式下绑的是 CanvasTexture 属无效操作）
+            if (videoTexture && !videoPlayer.paused && sphere && sphere.material.map === videoTexture) {
                 videoTexture.needsUpdate = true;
             }
 
             renderer.render(scene, camera);
             requestAnimationFrame(updateVRView);
+        }
+
+        // 启动 VR 渲染循环：全局只跑一条，重复进入 VR 不再叠加
+        function startVrLoop() {
+            if (vrLoopRunning) return;
+            vrLoopRunning = true;
+            updateVRView();
         }
 
         function enterVRView() {
@@ -2967,24 +3038,12 @@
                 fullscreenVrFov = fullscreenFov;
                 const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
                 resizeVRRenderer(!!isFullscreen);
-                // Update texture based on SBS mode
-                if (isSbsVideo && sphere) {
-                    const newTexture = createSBSTexture(videoPlayer, sbsMode);
-                    if (sphere.material.map && sphere.material.map !== videoTexture) {
-                        sphere.material.map.dispose();
-                    }
-                    sphere.material.map = newTexture;
-                    sphere.material.needsUpdate = true;
-                } else if (sphere) {
-                    // Use regular video texture for non-SBS videos
-                    if (sphere.material.map && sphere.material.map !== videoTexture) {
-                        sphere.material.map.dispose();
-                    }
-                    sphere.material.map = videoTexture;
-                    sphere.material.needsUpdate = true;
+                // Update texture based on SBS mode（applySphereTexture 内部会先 dispose 旧 SBS 纹理）
+                if (sphere) {
+                    applySphereTexture(isSbsVideo ? sbsMode : null);
                 }
 
-                updateVRView();
+                startVrLoop();
             });
 
             if (vrInfoHideTimer) {
@@ -3245,6 +3304,9 @@
         videoPlayer.addEventListener('error', () => {
             if (ignoreMediaError) return; // 转码快进切换流期间，旧流断开属预期
             if (!videoPlayer.currentSrc) return;
+            // 兜底清理待进入 VR / 待 seek 状态，避免 once 监听已消耗后永远卡住
+            pendingVrMode = false;
+            pendingSeekPosition = null;
             const err = videoPlayer.error;
             let hint = '无法播放此视频：浏览器报告了媒体错误。';
             if (err && err.code === 4) {
@@ -3484,7 +3546,7 @@
             document.querySelector('.container')?.classList.add('has-video');
 
             let name = '网络视频';
-            const localMatch = rawUrl.match(/^\/local\?path=(.+)$/);
+            const localMatch = rawUrl.match(/^\/local\?path=([^&]+)/);
             if (localMatch) {
                 // 桌面端本地磁盘文件：显示真实文件名 / 大小 / 类型
                 const p = safeDecode(localMatch[1]);
@@ -3570,6 +3632,7 @@
             const f = e.target.files && e.target.files[0];
             if (f && grantingIndex >= 0) bindFileToItem(grantingIndex, f, null);
             grantingIndex = -1;
+            grantingItem = null;
             e.target.value = '';
         });
         // 添加媒体目录回退：showDirectoryPicker 不可用时走 webkitdirectory
@@ -3894,9 +3957,7 @@
             radio.addEventListener('change', (e) => {
                 sbsMode = e.target.value;
                 if (isVrMode && isSbsVideo && sphere) {
-                    const newTexture = createSBSTexture(videoPlayer, sbsMode);
-                    sphere.material.map = newTexture;
-                    sphere.material.needsUpdate = true;
+                    applySphereTexture(sbsMode);
                 }
             });
         });

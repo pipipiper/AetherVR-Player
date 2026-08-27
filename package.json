@@ -26,7 +26,8 @@
       "favicon.svg",
       "vendor/**",
       "electron/**",
-      "build/icon.png"
+      "build/icon.png",
+      "LICENSE"
     ],
     "mac": {
       "category": "public.app-category.entertainment",

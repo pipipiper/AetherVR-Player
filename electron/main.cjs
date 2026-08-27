@@ -10,9 +10,11 @@
  *   - platform           process.platform
  */
 const { app, BrowserWindow, dialog, ipcMain } = require('electron');
+const crypto = require('crypto');
 const fs = require('fs');
 const net = require('net');
 const path = require('path');
+const { startServer } = require(path.join(__dirname, '..', 'server.js'));
 
 function findFreePort() {
   return new Promise((resolve, reject) => {
@@ -28,22 +30,26 @@ function findFreePort() {
 // localStorage 按源（http://127.0.0.1:<port>）隔离：端口必须固定，
 // 否则每次启动都是新源，收藏夹/播放列表持久化会丢。被占用时才退回随机端口。
 const PREFERRED_PORT = 17395;
-function canListen(port) {
-  return new Promise((resolve) => {
-    const srv = net.createServer();
-    srv.on('error', () => resolve(false));
-    srv.listen(port, '127.0.0.1', () => srv.close(() => resolve(true)));
-  });
-}
 
 let mainWindow = null;
 
 async function start() {
-  const port = (await canListen(PREFERRED_PORT)) ? PREFERRED_PORT : await findFreePort();
-  // server.js 从 process.argv 解析 --host/--port/--local-fs，require 即启动监听
-  process.argv = [process.execPath, 'server.js',
-    '--host', '127.0.0.1', '--port', String(port), '--local-fs'];
-  require(path.join(__dirname, '..', 'server.js'));
+  // /local 接口访问令牌：每次启动随机生成，随 index.html 注入页面
+  const localToken = crypto.randomBytes(16).toString('hex');
+  // 先尝试固定端口；listen 失败（被占用/竞态）则退回随机空闲端口
+  let port = PREFERRED_PORT;
+  try {
+    await startServer({ host: '127.0.0.1', port, localFs: true, localToken });
+  } catch {
+    port = await findFreePort();
+    try {
+      await startServer({ host: '127.0.0.1', port, localFs: true, localToken });
+    } catch (err) {
+      dialog.showErrorBox('AetherVR Player', `内嵌服务器启动失败：${err.message}`);
+      app.quit();
+      return;
+    }
+  }
 
   ipcMain.handle('dpl:open', async () => {
     const r = await dialog.showOpenDialog(mainWindow, {
@@ -198,8 +204,26 @@ async function start() {
       nodeIntegration: false,
     },
   });
+  // 导航防护：禁止弹新窗口，页面跳转限制在内嵌服务器同源
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    let same = false;
+    try { same = new URL(url).origin === `http://127.0.0.1:${port}`; } catch { /* 非法 URL 一律拦截 */ }
+    if (!same) event.preventDefault();
+  });
   mainWindow.loadURL(`http://127.0.0.1:${port}/`);
 }
 
-app.whenReady().then(start);
+// 单实例：第二个实例直接退出并聚焦已有窗口
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+  app.whenReady().then(start);
+}
 app.on('window-all-closed', () => app.quit());
