@@ -857,6 +857,7 @@
         /* ── 批量删除选择模式 ──────────────────────────── */
         .pl-check { display: none; flex: none; accent-color: #2f6bff; width: 14px; height: 14px; }
         .playlist-panel.selecting .pl-check { display: block; }
+        .playlist-panel.selecting .fav-del { display: none; }
         .playlist-panel.selecting .pl-index { display: none; }
         .fav-del {
             flex: none; background: none; border: none; color: #707a8c; cursor: pointer;
@@ -1126,6 +1127,13 @@
                     <button class="pl-tool-btn" id="exportListBtn" title="把当前列表导出为 DPL 文件（本地条目记录文件路径，在线条目记录链接，含起播位置）"><i class="fa-solid fa-file-export"></i>&nbsp;导出</button>
                     <button class="pl-tool-btn" id="batchAddBtn" title="批量添加本地文件或在线链接"><i class="fa-solid fa-plus"></i>&nbsp;添加</button>
                     <button class="pl-tool-btn" id="batchDelBtn" title="进入选择模式，勾选后批量删除"><i class="fa-solid fa-check-double"></i>&nbsp;删除</button>
+                </div>
+                <!-- 收藏夹工具行（桌面端）：与播放列表同样的 导入/导出/添加/删除 -->
+                <div class="playlist-tools" id="favTools" style="display:none">
+                    <button class="pl-tool-btn" id="favImportBtn" title="导入 DPL 文件到收藏夹"><i class="fa-solid fa-file-import"></i>&nbsp;导入</button>
+                    <button class="pl-tool-btn" id="favExportBtn" title="把收藏夹导出为 DPL 文件（含起播位置）"><i class="fa-solid fa-file-export"></i>&nbsp;导出</button>
+                    <button class="pl-tool-btn" id="favAddBtn" title="批量添加本地文件或在线链接到收藏夹"><i class="fa-solid fa-plus"></i>&nbsp;添加</button>
+                    <button class="pl-tool-btn" id="favDelBtn" title="进入选择模式，勾选后批量删除收藏"><i class="fa-solid fa-check-double"></i>&nbsp;删除</button>
                 </div>
                 <div class="playlist-tools" id="selectTools" style="display:none">
                     <button class="pl-tool-btn" id="selectAllBtn"><i class="fa-solid fa-square-check"></i>&nbsp;全选</button>
@@ -1935,6 +1943,7 @@
         const playlistTools = document.getElementById('playlistTools');
         const playlistTools2 = document.getElementById('playlistTools2');
         const selectTools = document.getElementById('selectTools');
+        const favTools = document.getElementById('favTools');
         const favItems = document.getElementById('favItems');
         const importListBtn = document.getElementById('importListBtn');
         const exportListBtn = document.getElementById('exportListBtn');
@@ -2020,6 +2029,17 @@
             favorites.forEach((f, i) => {
                 const li = document.createElement('li');
                 li.className = 'playlist-item st-' + (f.kind === 'online' ? 'remote' : 'ready');
+                if (selecting) {
+                    const cb = document.createElement('input');
+                    cb.type = 'checkbox';
+                    cb.className = 'pl-check';
+                    cb.checked = selectedIdx.has(i);
+                    cb.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        if (cb.checked) selectedIdx.add(i); else selectedIdx.delete(i);
+                    });
+                    li.appendChild(cb);
+                }
                 const idx = document.createElement('span');
                 idx.className = 'pl-index';
                 idx.textContent = i + 1;
@@ -2049,7 +2069,15 @@
                 });
                 li.append(tag, del);
                 li.title = f.target;
-                li.addEventListener('click', () => playFav(i));
+                li.addEventListener('click', () => {
+                    // 选择模式下点击整行 = 切换勾选
+                    if (selecting) {
+                        if (selectedIdx.has(i)) selectedIdx.delete(i); else selectedIdx.add(i);
+                        renderFavs();
+                        return;
+                    }
+                    playFav(i);
+                });
                 favItems.appendChild(li);
             });
             if (!favorites.length) {
@@ -2301,6 +2329,7 @@
             favItems.style.display = isPl ? 'none' : '';
             playlistTools.style.display = isPl ? '' : 'none';
             playlistTools2.style.display = isPl ? '' : 'none';
+            favTools.style.display = (!isPl && isDesktopApp) ? '' : 'none';
             selectTools.style.display = 'none';
             playlistSummary.style.display = isPl ? '' : 'none';
             if (isPl) updateSummary();
@@ -2547,6 +2576,16 @@
             let picked = [];
             try { picked = await window.vrDesktop.pickVideos() || []; } catch (e) { showPlaylistBanner('选择文件失败：' + e.message); return; }
             if (!picked.length) return;
+            if (activeTab === 'favs') {
+                // 收藏夹页签下：本地多选直接进收藏夹
+                favorites = favorites.concat(picked.map((p) => ({
+                    name: p.name, target: p.path, kind: 'local', position: 0, addedAt: Date.now(),
+                })));
+                saveFavs();
+                renderFavs();
+                showPlaylistBanner(`已收藏 ${picked.length} 个本地文件。`);
+                return;
+            }
             ensureActivePlaylist();
             const newItems = picked.map((p) => ({
                 name: p.name, originalPath: p.path, normalizedPath: normalizePath(p.path),
@@ -2568,6 +2607,16 @@
                 .map((s) => s.trim()).filter((s) => /^https?:\/\//i.test(s));
             linksModalMask.classList.remove('active');
             if (!lines.length) { showPlaylistBanner('没有识别到有效的 http(s) 链接。'); return; }
+            if (activeTab === 'favs') {
+                // 收藏夹页签下：链接直接进收藏夹
+                favorites = favorites.concat(lines.map((u) => ({
+                    name: basenameOf(safeDecode(u)), target: u, kind: 'online', position: 0, addedAt: Date.now(),
+                })));
+                saveFavs();
+                renderFavs();
+                showPlaylistBanner(`已收藏 ${lines.length} 个在线链接。`);
+                return;
+            }
             ensureActivePlaylist();
             const newItems = lines.map((u) => ({
                 name: basenameOf(safeDecode(u)), originalPath: u, normalizedPath: '',
@@ -2584,8 +2633,9 @@
             playlistPanel.classList.add('selecting');
             playlistTools.style.display = 'none';
             playlistTools2.style.display = 'none';
+            favTools.style.display = 'none';
             selectTools.style.display = '';
-            renderPlaylist();
+            if (activeTab === 'favs') renderFavs(); else renderPlaylist();
         }
         function exitSelectMode() {
             if (!selecting) return;
@@ -2595,22 +2645,43 @@
             if (activeTab === 'playlist') {
                 playlistTools.style.display = '';
                 playlistTools2.style.display = '';
+            } else if (isDesktopApp) {
+                favTools.style.display = '';
             }
             selectTools.style.display = 'none';
-            renderPlaylist();
+            if (activeTab === 'favs') renderFavs(); else renderPlaylist();
         }
         batchDelBtn.addEventListener('click', () => {
             if (!playlist.length) { showPlaylistBanner('播放列表为空。'); return; }
             enterSelectMode();
         });
+        // 收藏夹工具行：导入/导出复用现有按钮（内部按当前页签分支），添加/删除走同一套交互
+        document.getElementById('favImportBtn').addEventListener('click', () => importListBtn.click());
+        document.getElementById('favExportBtn').addEventListener('click', () => exportListBtn.click());
+        document.getElementById('favAddBtn').addEventListener('click', () => addMenuMask.classList.add('active'));
+        document.getElementById('favDelBtn').addEventListener('click', () => {
+            if (!favorites.length) { showPlaylistBanner('收藏夹为空。'); return; }
+            enterSelectMode();
+        });
         cancelSelectBtn.addEventListener('click', exitSelectMode);
         selectAllBtn.addEventListener('click', () => {
-            if (selectedIdx.size === playlist.length) selectedIdx.clear();
-            else playlist.forEach((_, i) => selectedIdx.add(i));
-            renderPlaylist();
+            const arr = activeTab === 'favs' ? favorites : playlist;
+            if (selectedIdx.size === arr.length) selectedIdx.clear();
+            else arr.forEach((_, i) => selectedIdx.add(i));
+            if (activeTab === 'favs') renderFavs(); else renderPlaylist();
         });
         deleteSelBtn.addEventListener('click', () => {
             if (!selectedIdx.size) { showPlaylistBanner('请先勾选要删除的条目。'); return; }
+            if (activeTab === 'favs') {
+                const kept = favorites.filter((_, i) => !selectedIdx.has(i));
+                const removed = favorites.length - kept.length;
+                favorites = kept;
+                exitSelectMode();
+                saveFavs();
+                renderFavs();
+                showPlaylistBanner(`已删除 ${removed} 项收藏。`);
+                return;
+            }
             const kept = playlist.filter((_, i) => !selectedIdx.has(i));
             const removed = playlist.length - kept.length;
             exitSelectMode();
@@ -2630,6 +2701,9 @@
             playlistTitle.style.display = 'none';
             favBtn.style.display = '';
             addToListBtn.style.display = '';
+            // 桌面端按 dpl 绝对路径直接查磁盘，不需要网页版的目录授权/重新匹配
+            addDirBtn.style.display = 'none';
+            rematchBtn.style.display = 'none';
             // 首页提供列表面板入口：无视频时控制条不可见
             const heroPlaylistBtn = document.getElementById('heroPlaylistBtn');
             heroPlaylistBtn.style.display = '';
