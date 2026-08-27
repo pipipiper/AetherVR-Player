@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """生成 og:image 分享图（1200×630）：蓝色渐变底 + VR 眼镜图标 + 中文标题。"""
+import os
+from pathlib import Path
+
 from PIL import Image, ImageDraw, ImageFont
+
+ROOT = Path(__file__).resolve().parents[1]
 
 W, H = 1200, 630
 C1 = (77, 132, 255)   # #4d84ff
@@ -33,16 +38,24 @@ for lx in (gx + 105, gx + gw - 105):
 
 # ── 文字 ──
 def font(size):
-    for path in (
+    configured = os.environ.get("AETHERVR_FONT")
+    candidates = (
+        configured,
         "/System/Library/Fonts/PingFang.ttc",
         "/System/Library/Fonts/STHeiti Light.ttc",
         "/System/Library/Fonts/Hiragino Sans GB.ttc",
-    ):
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+        str(Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts" / "msyh.ttc"),
+        str(Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts" / "simhei.ttf"),
+    )
+    for font_path in filter(None, candidates):
         try:
-            return ImageFont.truetype(path, size, index=0)
+            return ImageFont.truetype(font_path, size, index=0)
         except Exception:
             continue
-    raise SystemExit("no CJK font found")
+    raise SystemExit("no CJK font found; set AETHERVR_FONT to a compatible .ttf/.ttc file")
 
 f_title = font(72)
 f_sub = font(34)
@@ -52,5 +65,6 @@ d.text((tx, 200), "AetherVR Player", font=f_title, fill=(255, 255, 255))
 d.text((tx + 4, 345), "本地与在线 360° / SBS 视频", font=f_sub, fill=(219, 233, 255))
 d.text((tx + 4, 405), "即点即播 · 无需上传", font=f_sub, fill=(219, 233, 255))
 
-img.save("background-pic.jpg", quality=88)
-print("saved background-pic.jpg", img.size)
+output = ROOT / "background-pic.jpg"
+img.save(output, quality=88)
+print("saved", output, img.size)

@@ -21,7 +21,7 @@ VR 视频本质上只是全景画面——AetherVR Player 把 VR / 360° / SBS �
 
 ### 网页版（自托管完整版）
 
-只需要本机装有 Node.js：
+只需要本机装有 Node.js 18 或更高版本：
 
 ```bash
 npm run dev          # 或：node server.js
@@ -39,13 +39,30 @@ node server.js --host 127.0.0.1 --port 7100 --trust-proxy
 
 `--trust-proxy` 会使用反向代理传来的 `X-Forwarded-For` 识别客户端，用于转码会话归属和限流。只有当服务端口不直接暴露到公网、请求必须经过你控制的代理时才应启用。
 
-公网版默认只允许代理标准端口以及 `8443`。如需播放其他非标准端口的可信来源，可按 `域名:端口` 设置白名单：
+公网版默认只允许代理 HTTP/HTTPS 标准端口 `80`、`443`。如需播放其他非标准端口的可信来源，可按 `域名:端口` 设置部署环境自己的白名单：
 
 ```bash
 AETHERVR_ALLOWED_HOSTPORT=media.example.com:19766,video.example.com:9443 node server.js --host 127.0.0.1 --port 7100 --trust-proxy
 ```
 
 不要把内网地址加入公网服务的来源白名单；DNS 解析到回环、私网或保留地址的目标仍会被 SSRF 防护拒绝。
+
+转码与媒体预检需要系统安装 `ffmpeg` 和 `ffprobe`。程序会先从 `PATH` 查找，也可显式指定路径；编码器和线程数均可按部署机器能力配置：
+
+```bash
+FFMPEG=/usr/local/bin/ffmpeg \
+FFPROBE=/usr/local/bin/ffprobe \
+AETHERVR_VIDEO_ENCODER=libx264 \
+AETHERVR_TRANSCODE_THREADS=8 \
+node server.js --host 127.0.0.1 --port 7100
+```
+
+| 环境变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `FFMPEG` / `FFPROBE` | 自动查找 | 可执行文件名或绝对路径 |
+| `AETHERVR_ALLOWED_HOSTPORT` | 空 | 允许访问的非标准来源端口，逗号分隔的 `域名:端口` |
+| `AETHERVR_VIDEO_ENCODER` | `auto` | `auto`、`libx264` 或 `h264_videotoolbox`；自动模式仅在可用的 macOS 上选择 VideoToolbox |
+| `AETHERVR_TRANSCODE_THREADS` | ffmpeg 自动决定 | `libx264` 的线程数（1–256）；通常无需设置 |
 
 ### GitHub Pages 静态版
 
@@ -95,13 +112,14 @@ npm run dist       # 打包安装包到 dist/
 
 - **VR 渲染**：Three.js（已内置于 `vendor/`）把 `<video>` 画面贴到 360° 球体内部，相机随拖动旋转——这就是"不用眼镜看 VR"的全部秘密
 - **在线代理**：`server.js` 内置 `/proxy?url=<地址>`，转发 Range 头（进度条可拖）、自动跟随 302 跳转、修正 MIME；页面上的跨域链接自动改走代理，使用无感知
-- **服务器转码**：检测到设备解不动（如手机上的 8K HEVC）时，可一键由服务器 ffmpeg 转成 4K H.264 HLS 流；macOS 自动用 VideoToolbox 硬加速，空闲 2 分钟自动停止
+- **服务器转码**：检测到设备解不动（如手机上的 8K HEVC）时，可一键由服务器 ffmpeg 转成 4K H.264 HLS 流；macOS 在编码器可用时自动用 VideoToolbox 硬加速，其他系统默认使用 libx264，空闲 2 分钟自动停止
 - **桌面版**：内嵌同一个 `server.js`（仅监听 127.0.0.1），本地文件通过 `--local-fs` 开启的 `/local` 接口流式读取
 
 ## 已知限制
 
 - **iPhone / iPad 打开 SMB 网络位置的文件**：iOS「文件」App 会先把整个文件复制到 Safari 沙盒才交给网页，几十 GB 的视频会在后台无声下载很久。建议先下载到「我的 iPhone」，或改用在线直链 + 服务器转码
 - **网盘签名直链**（115、阿里云盘等）通常绑定生成时的 IP / 登录态，换网络环境会报 `invalid signature`，需重新复制链接
+- 自托管后端目前每个进程同时只保留一个实时转码会话，适合个人或单用户部署；多人并发转码需要独立的任务队列和资源调度
 - Windows 播放 HEVC 需系统安装「HEVC 视频扩展」；macOS 原生支持
 - 有声视频首次播放可能被浏览器自动播放策略拦截，点一下播放键即可
 
@@ -111,7 +129,7 @@ npm run dist       # 打包安装包到 dist/
 
 ## 技术栈
 
-- 零依赖 Node.js（`server.js`：静态服务 + 代理 + 转码调度）
+- 零运行时 npm 依赖的 Node.js 18+ 后端（`server.js`：静态服务 + 代理 + 转码调度；转码另需系统 ffmpeg）
 - 原生 HTML5 `<video>` + WebGL（Three.js），无任何构建步骤
 - Electron（桌面版，Windows / macOS）
 
