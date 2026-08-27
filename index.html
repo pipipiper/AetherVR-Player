@@ -508,9 +508,25 @@
         }
 
         /* ── file info ─────────────────────────────────────── */
-        .file-info { text-transform: none; letter-spacing: 0; font-size: 12px; }
+        .file-info { text-transform: none; letter-spacing: 0; font-size: 12px; max-width: 600px; }
         .file-info strong { color: var(--muted); font-weight: 500; }
         .file-info p { color: var(--text); max-width: 220px; }
+        .file-info p.fi-name { max-width: 380px; }
+        .file-info p.fi-size { max-width: 150px; flex: none; }
+        .file-info p.fi-type { max-width: 130px; flex: none; }
+        .top-bar .left { flex: 0 1 640px; }
+        /* 悬停（鼠标）/ 点按（触屏）弹出全文卡片：独立于顶栏，不移动触发元素 */
+        .file-info-pop {
+            display: none; position: fixed; top: 62px; left: 14px; z-index: 40;
+            max-width: min(92vw, 860px);
+            background: rgba(255,255,255,.96); border: 1px solid rgba(0,0,0,.08);
+            border-radius: 10px; padding: 8px 12px;
+            box-shadow: 0 8px 24px rgba(0,0,0,.14);
+            font-size: 12px; color: var(--text); line-height: 1.6;
+        }
+        .file-info-pop.show { display: block; }
+        .file-info-pop p { margin: 2px 0; white-space: normal; word-break: break-all; }
+        .file-info-pop strong { color: var(--muted); font-weight: 500; }
 
         /* ── ghost button (打开新视频) ─────────────────────── */
         .ghost-btn {
@@ -880,10 +896,11 @@
         <div class="top-bar">
             <div class="left">
                 <div class="file-info" id="fileInfo">
-                    <p><strong>文件:</strong> <span id="fileName"></span></p>
-                    <p><strong>大小:</strong> <span id="fileSize"></span></p>
-                    <p><strong>类型:</strong> <span id="fileType"></span></p>
+                    <p class="fi-name"><strong>文件:</strong> <span id="fileName"></span></p>
+                    <p class="fi-size"><strong>大小:</strong> <span id="fileSize"></span></p>
+                    <p class="fi-type"><strong>类型:</strong> <span id="fileType"></span></p>
                 </div>
+                <div class="file-info-pop" id="fileInfoPop"></div>
             </div>
             <div class="center">
                 <div class="view-toggle">
@@ -2455,6 +2472,32 @@
                 rematchAll(`已索引 ${videos.length} 个视频文件。`);
             }
             e.target.value = '';
+        });
+
+        // 文件信息栏：鼠标悬停弹出全文卡片；触屏点按切换显示/隐藏
+        const fileInfoPop = document.getElementById('fileInfoPop');
+        function showFileInfoPop() {
+            if (!fileInfo.classList.contains('active')) return;
+            fileInfoPop.innerHTML = '';
+            [['文件', fileName.textContent], ['大小', fileSize.textContent], ['类型', fileType.textContent]]
+                .forEach(([k, v]) => {
+                    const p = document.createElement('p');
+                    const s = document.createElement('strong');
+                    s.textContent = k + ': ';
+                    p.append(s, document.createTextNode(v));
+                    fileInfoPop.appendChild(p);
+                });
+            fileInfoPop.classList.add('show');
+        }
+        function hideFileInfoPop() { fileInfoPop.classList.remove('show'); }
+        fileInfo.addEventListener('mouseenter', () => { if (!isMobileDevice) showFileInfoPop(); });
+        fileInfo.addEventListener('mouseleave', hideFileInfoPop);
+        fileInfo.addEventListener('click', (e) => {
+            e.stopPropagation();
+            fileInfoPop.classList.contains('show') ? hideFileInfoPop() : showFileInfoPop();
+        });
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('#fileInfo, #fileInfoPop')) hideFileInfoPop();
         });
 
         // Drag and drop handlers
