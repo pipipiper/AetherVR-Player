@@ -291,22 +291,89 @@ function isBlockedAddress(address) {
   return true;
 }
 
+// --local-fs（Electron 桌面端）同时放开内网/非标端口限制：
+// 桌面端常用于播放局域网 OpenList / NAS / SMB 转链，SSRF 防护只针对公网部署。
+const RELAX_LOCAL = LOCAL_FS;
+
 async function resolveSafeTarget(u) {
   if (!['http:', 'https:'].includes(u.protocol)) throw new Error("Only http(s) URLs allowed");
   if (u.username || u.password) throw new Error("Credentials in URLs are not allowed");
-  const isOlPippMedia = u.hostname.toLowerCase() === "ol.pipp.cc" && u.port === "19766";
-  if (u.port && !['80', '443', '8443'].includes(u.port) && !isOlPippMedia) {
-    throw new Error("This source host and port are not allowed");
+  if (!RELAX_LOCAL) {
+    const isOlPippMedia = u.hostname.toLowerCase() === "ol.pipp.cc" && u.port === "19766";
+    if (u.port && !['80', '443', '8443'].includes(u.port) && !isOlPippMedia) {
+      throw new Error("This source host and port are not allowed");
+    }
+    const addresses = await dns.lookup(u.hostname, { all: true, verbatim: true });
+    if (!addresses.length || addresses.some((item) => isBlockedAddress(item.address))) {
+      throw new Error("Private or reserved network targets are not allowed");
+    }
+    return addresses[0];
   }
+  // 桌面端（--local-fs）：仅校验协议，直连内网任意地址/端口
   const addresses = await dns.lookup(u.hostname, { all: true, verbatim: true });
-  if (!addresses.length || addresses.some((item) => isBlockedAddress(item.address))) {
-    throw new Error("Private or reserved network targets are not allowed");
-  }
+  if (!addresses.length) throw new Error("Cannot resolve host");
   return addresses[0];
 }
 
-async function proxyVideo(target, req, res, redirects = 0) {
-  let u;
+/* 远程链接预检：只取前 2KB（Range），判断上游返回的是不是视频数据。
+ * OpenList/网盘路径错误、签名过期、权限不足时返回的是 JSON/HTML，
+ * 直接交给播放器只会得到误导性的「无法解码」。 */
+function preflightRemote(target, redirects = 0) {
+  return new Promise((resolve) => {
+    let u;
+    try { u = new URL(target); } catch { return resolve({ error: "链接格式不正确" }); }
+    resolveSafeTarget(u).then((resolved) => {
+      const lib = u.protocol === "https:" ? https : http;
+      const options = {
+        protocol: u.protocol,
+        hostname: resolved.address,
+        family: resolved.family,
+        port: u.port || (u.protocol === "https:" ? 443 : 80),
+        path: `${u.pathname}${u.search}`,
+        headers: {
+          "Host": u.host,
+          "User-Agent": "Mozilla/5.0",
+          "Accept": "*/*",
+          "Range": "bytes=0-2047",
+        },
+        timeout: 10000,
+      };
+      if (u.protocol === "https:" && !net.isIP(u.hostname)) options.servername = u.hostname;
+      const preq = lib.get(options, (pres) => {
+        if ([301, 302, 303, 307, 308].includes(pres.statusCode) && pres.headers.location) {
+          pres.resume();
+          if (redirects >= 5) return resolve({ error: "重定向次数过多" });
+          return resolve(preflightRemote(new URL(pres.headers.location, u).href, redirects + 1));
+        }
+        const ct = (pres.headers["content-type"] || "").toLowerCase();
+        const status = pres.statusCode;
+        if (status >= 400 || /json|html|text|xml/.test(ct)) {
+          let snippet = "";
+          pres.on("data", (d) => {
+            if (snippet.length < 300) snippet += d.toString("utf8");
+            if (snippet.length >= 300) pres.destroy();
+          });
+          pres.on("close", () => {
+            const detail = snippet.replace(/\s+/g, " ").trim().slice(0, 200);
+            resolve({
+              error: `上游返回 HTTP ${status}（内容类型 ${ct || "未知"}），不是视频数据。`
+                + (detail ? `上游消息：${detail}` : "")
+                + "（常见原因：路径错误、签名过期、权限不足）",
+            });
+          });
+          pres.resume();
+          return;
+        }
+        pres.destroy();
+        resolve({ ok: true });
+      });
+      preq.on("timeout", () => { preq.destroy(); resolve({ error: "连接上游超时（10 秒无响应）" }); });
+      preq.on("error", (e) => resolve({ error: "无法连接上游：" + e.message }));
+    }).catch((e) => resolve({ error: e.message }));
+  });
+}
+
+async function proxyVideo(target, req, res, redirects = 0) {  let u;
   try {
     u = new URL(target);
   } catch {
@@ -495,7 +562,16 @@ const server = http
         return;
       }
       probeStarts.set(ip, Date.now());
-      probeRemoteMedia(target, res);
+      // 先预检上游返回的是不是视频（OpenList 路径错误/签名过期会返回 JSON/HTML），
+      // 不是视频时直接给出具体原因，而不是让 ffprobe/播放器报误导性错误
+      preflightRemote(target).then((pf) => {
+        if (pf && pf.error) {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ preflight_error: pf.error }));
+          return;
+        }
+        probeRemoteMedia(target, res);
+      });
       return;
     }
     if (urlPath.startsWith("/hls/")) {

@@ -2320,6 +2320,14 @@
                 if (requestId !== urlLoadRequestId) return;
                 if (activeProbeController === controller) activeProbeController = null;
                 hideHeroLoading();
+                // 预检发现上游返回的根本不是视频（路径错误/签名过期/权限不足等）：
+                // 直接给出具体原因，不提供转码（转码也读不到数据）
+                if (probe && probe.preflight_error) {
+                    hideLoadSpin();
+                    showError('链接检查未通过：' + probe.preflight_error);
+                    dropZone.classList.add('active');
+                    return;
+                }
                 const reason = probeUnplayableReason(probe);
                 if (reason) {
                     hideLoadSpin(); // playAt 里可能已显示「加载中…」
