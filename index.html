@@ -600,6 +600,7 @@
             border-radius: 10px; box-shadow: none;
             font-size: 12.5px; font-weight: 500;
             letter-spacing: 0; text-transform: none; line-height: 1.7;
+            white-space: pre-line;
         }
 
         /* ── sbs options: floating card over video ─────────── */
@@ -1369,7 +1370,9 @@
             item.fileHandle = handle;
             item.status = 'ready';
             item.error = '';
-            addToFilePool([file]); // 加入索引，方便后续匹配同名/同目录条目
+            // 单文件选择器只给了文件名，没有可信的目录相对路径。不要把它加入
+            // 全局自动匹配池，否则 DPL 中其他目录下的同名文件可能被错误绑定。
+            dplResolved = playlist.every(isPlayable);
             playAt(i);
         }
 
@@ -1946,6 +1949,13 @@
                 return;
             }
 
+            // iOS「文件」App 可能把 SMB 占位文件（0 字节）直接交给网页
+            if (file.size === 0) {
+                showError('读取到的文件大小为 0 字节，文件尚未真正下载到本机。'
+                    + (isIOSDevice ? IOS_SMB_HINT : '请确认文件已完整可用后重试。'));
+                return;
+            }
+
             // Hide drop zone and error
             dropZone.classList.remove('active');
             hideError();
@@ -1980,7 +1990,17 @@
             // Reset player; VR/360 is the default view once metadata is ready
             pendingVrMode = true;
             videoPlayer.load();
-            showLoadSpin('视频加载中…');
+            showLoadSpin(isIOSDevice ? '正在读取文件…' : '视频加载中…');
+            // iOS 读取 SMB 文件可能长时间无进展：15 秒后仍无元数据就在加载提示里给出指引
+            if (isIOSDevice) {
+                const gen = generation;
+                clearTimeout(iosReadWatchdog);
+                iosReadWatchdog = setTimeout(() => {
+                    if (gen !== mediaLoadGeneration) return;
+                    if (videoPlayer.readyState >= 1 || videoPlayer.error) return;
+                    showLoadSpin('仍在读取文件…（iPhone 正在把文件复制到本地，大文件会很慢）');
+                }, 15000);
+            }
         }
 
         // Show error message
@@ -2009,6 +2029,10 @@
                 hint = '视频文件似乎已损坏或不完整。';
             } else if (err && err.code === 2) {
                 hint = '读取视频时发生网络错误（链接可能已失效或被拒绝访问）。';
+            }
+            // iOS 本地文件读取失败：多半是 SMB 占位文件没下载完
+            if (isIOSDevice && videoPlayer.currentSrc.startsWith('blob:')) {
+                hint += '\n' + IOS_SMB_HINT;
             }
             showError(hint);
             // 报错文案在中央面板里，而视频加载后面板是隐藏的——重新弹出面板让用户看到报错
@@ -2043,6 +2067,13 @@
         const isMobileDevice = window.matchMedia('(pointer: coarse)').matches
             || /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
         const isSafariBrowser = /^((?!chrome|chromium|crios|fxios|android).)*safari/i.test(navigator.userAgent);
+        const isIOSDevice = /iPhone|iPad|iPod/i.test(navigator.userAgent)
+            || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        // iPhone/iPad 从「文件」App 选择 SMB 网络位置的文件时，系统必须先把整个文件
+        // 复制到 Safari 沙盒（占位文件可能 0 字节、读取长时间挂起、超大文件直接失败）。
+        const IOS_SMB_HINT = '如果文件来自 SMB 网络位置：iPhone 需要先把整个文件下载到本机才能交给网页，'
+            + '大文件会在后台无声下载很久甚至失败。请先在「文件」App 中长按该视频 → 下载'
+            + '（或拷贝到「我的 iPhone」）后重新选择；更推荐改用在线直链播放（配合服务器转码可看 8K）。';
 
         const heroLoading = document.getElementById('heroLoading');
         const heroLoadingText = document.getElementById('heroLoadingText');
@@ -2079,6 +2110,7 @@
 
         let urlLoadRequestId = 0;
         let activeProbeController = null;
+        let iosReadWatchdog = null;
         async function probeRemoteMedia(url, signal, allowRetry = true) {
             try {
                 const resp = await fetch('/probe', {
