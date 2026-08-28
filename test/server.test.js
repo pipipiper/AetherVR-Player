@@ -50,8 +50,8 @@ test("server exposes only public assets and generic capabilities", async (t) => 
   const statusBody = JSON.parse(status.body);
   assert.deepEqual(statusBody.hls, {
     mode: "rolling",
-    segmentSeconds: 4,
-    listSize: 30,
+    segmentSeconds: 2,
+    listSize: 60,
     windowSeconds: 120,
   });
 

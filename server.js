@@ -167,11 +167,11 @@ const VIDEO_ENCODER = VIDEO_ENCODER_NAME === "h264_videotoolbox"
 
 const HLS_IDLE_MS = 2 * 60 * 1000;
 const HLS_MAX_MS = 2 * 60 * 60 * 1000;
-const HLS_SEGMENT_SECONDS = 4;
-const configuredHlsListSize = Number(process.env.AETHERVR_HLS_LIST_SIZE || "30");
+const HLS_SEGMENT_SECONDS = 2;
+const configuredHlsListSize = Number(process.env.AETHERVR_HLS_LIST_SIZE || "60");
 const HLS_LIST_SIZE = Number.isInteger(configuredHlsListSize)
   && configuredHlsListSize >= 3 && configuredHlsListSize <= 300
-  ? configuredHlsListSize : 30;
+  ? configuredHlsListSize : 60;
 // 冷却只防恶意刷接口：快进重启转码也走 /transcode，不能定得太长
 const TRANSCODE_COOLDOWN_MS = 4 * 1000;
 const PROBE_COOLDOWN_MS = 2 * 1000;
@@ -237,7 +237,7 @@ function startTranscode(target, ownerIp, res, start = 0) {
     ...VIDEO_ENCODER,
     "-vf", VIDEO_FILTER,
     ...VIDEO_PIXEL_FORMAT,
-    "-force_key_frames", "expr:gte(t,n_forced*4)",
+    "-force_key_frames", `expr:gte(t,n_forced*${HLS_SEGMENT_SECONDS})`,
     "-c:a", "aac", "-b:a", "192k", "-ac", "2", "-ar", "48000",
     "-max_muxing_queue_size", "2048",
     "-f", "hls",
