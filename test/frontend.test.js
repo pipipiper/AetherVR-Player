@@ -25,3 +25,8 @@ test("diagnostics controls are present and uniquely identified", () => {
     assert.equal((html.match(new RegExp(`id=["']${id}["']`, "g")) || []).length, 1, id);
   }
 });
+
+test("desktop diagnostics report Electron GPU video decode status", () => {
+  assert.match(html, /vrDesktop\.gpuDiagnostics\(\)/);
+  assert.match(html, /status\.video_decode/);
+});

@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('vrDesktop', {
   // 应用配置（与端口无关的持久化）
   readCfg: () => ipcRenderer.invoke('cfg:read'),
   writeCfg: (obj) => ipcRenderer.invoke('cfg:write', obj),
+  gpuDiagnostics: () => ipcRenderer.invoke('gpu:diagnostics'),
   // File 对象 → 磁盘绝对路径（Electron webUtils；拿不到时返回空串）
   pathForFile: (file) => {
     try { return webUtils.getPathForFile(file) || ''; } catch { return ''; }

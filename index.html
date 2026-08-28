@@ -3802,6 +3802,14 @@
         let diagnosticsBackendFetchedAt = 0;
         let diagnosticsBackendFetching = false;
         let diagnosticsLastRows = [];
+        let diagnosticsDesktopGpu = null;
+
+        if (isDesktopApp && typeof window.vrDesktop.gpuDiagnostics === 'function') {
+            window.vrDesktop.gpuDiagnostics().then((info) => {
+                diagnosticsDesktopGpu = info;
+                renderDiagnostics();
+            }).catch(() => { /* 旧版 preload 或 GPU 进程不可用 */ });
+        }
 
         const READY_STATE_LABELS = ['无媒体', '有元数据', '有当前帧', '有后续数据', '可流畅播放'];
         const NETWORK_STATE_LABELS = ['无媒体', '空闲', '加载中', '无来源'];
@@ -3869,6 +3877,19 @@
             add('播放参数', `${videoPlayer.playbackRate}× · 音量 ${Math.round(videoPlayer.volume * 100)}%${videoPlayer.muted ? ' · 静音' : ''}`);
             add('显示模式', isVrMode ? `VR${isSbsVideo ? ` · SBS ${sbsMode}` : ''} · FOV ${Math.round(camera ? camera.fov : originalVrFov)}°` : '平面');
             add('页面环境', `${innerWidth}×${innerHeight} · DPR ${devicePixelRatio || 1}${isDesktopApp ? ` · ${window.vrDesktop.platform}` : ''}`);
+            if (diagnosticsDesktopGpu) {
+                const gpu = diagnosticsDesktopGpu;
+                add('桌面运行时', `Electron ${gpu.electron || '?'} · Chromium ${gpu.chrome || '?'}`);
+                add('硬件加速', gpu.hardwareAcceleration ? '已启用' : '已禁用');
+                const status = gpu.featureStatus || {};
+                add('视频解码', status.video_decode || '未知');
+                add('WebGL', status.webgl || '未知');
+                const activeDevice = (gpu.devices || []).find((device) => device.active) || (gpu.devices || [])[0];
+                if (activeDevice) {
+                    add('活动 GPU', `${activeDevice.vendorId || '?'}:${activeDevice.deviceId || '?'}${activeDevice.driverVersion ? ` · 驱动 ${activeDevice.driverVersion}` : ''}`);
+                }
+                if (gpu.error) add('GPU 诊断错误', gpu.error);
+            }
             if (!backendAvailable) {
                 add('后端', '静态模式（无代理/转码）');
             } else if (diagnosticsBackendError) {

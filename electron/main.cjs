@@ -16,6 +16,20 @@ const net = require('net');
 const path = require('path');
 const { startServer } = require(path.join(__dirname, '..', 'server.js'));
 
+// Electron 自带的 Chromium 与用户安装的 Chrome/Edge 不是同一个运行时。
+// Windows 上明确开启系统平台视频解码，避免高分辨率 HEVC 被错误地落到
+// Electron 不包含的 FFmpeg 软件解码器后直接报 MEDIA_ERR_SRC_NOT_SUPPORTED。
+// PlatformHEVCDecoderSupport 在新 Chromium 中已默认开启；保留显式开关可兼容
+// 仍使用旧特性门控的 Electron 版本，未知开关会被 Chromium 安全忽略。
+if (process.platform === 'win32') {
+  app.commandLine.appendSwitch('enable-accelerated-video-decode');
+  app.commandLine.appendSwitch('enable-features', 'PlatformHEVCDecoderSupport');
+  // VR 画面会把解码帧上传给 WebGL VideoTexture；DComp 视频 overlay/零拷贝
+  // swap-chain 不能稳定地作为 WebGL 纹理源，8K HEVC 上可能直接黑屏或解码失败。
+  // 禁用的只是视频 overlay，D3D11 硬解与 WebGL/GPU 合成仍保持开启。
+  app.commandLine.appendSwitch('disable-direct-composition-video-overlays');
+}
+
 function findFreePort() {
   return new Promise((resolve, reject) => {
     const srv = net.createServer();
@@ -187,6 +201,28 @@ async function start() {
     }
     await Promise.all(Array.from({ length: Math.min(CONCURRENCY, list.length) }, worker));
     return out;
+  });
+
+  // 让前端诊断面板能够区分“没有 HEVC 解码器”和“GPU 被禁用/回退”。
+  // getGPUInfo 可能因驱动或沙箱失败，因此始终返回一个可序列化结果。
+  ipcMain.handle('gpu:diagnostics', async () => {
+    let info = null;
+    let error = '';
+    try { info = await app.getGPUInfo('basic'); } catch (err) { error = err.message || String(err); }
+    return {
+      electron: process.versions.electron,
+      chrome: process.versions.chrome,
+      hardwareAcceleration: app.isHardwareAccelerationEnabled(),
+      featureStatus: app.getGPUFeatureStatus(),
+      devices: info && Array.isArray(info.gpuDevice) ? info.gpuDevice.map((device) => ({
+        active: !!device.active,
+        vendorId: device.vendorId,
+        deviceId: device.deviceId,
+        driverVendor: device.driverVendor,
+        driverVersion: device.driverVersion,
+      })) : [],
+      error,
+    };
   });
 
   mainWindow = new BrowserWindow({
