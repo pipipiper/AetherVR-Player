@@ -388,6 +388,16 @@ process.on("exit", () => {
 /* Same-origin video proxy: forwards Range headers, follows redirects.
  * Lets the player use remote URLs as WebGL textures (VR mode) even when
  * the remote server sends no CORS headers. */
+function normalizeIp(address) {
+  const value = String(address || "").toLowerCase().split("%")[0];
+  const mappedHex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(value);
+  if (mappedHex) {
+    const n = (((parseInt(mappedHex[1], 16) << 16) | parseInt(mappedHex[2], 16)) >>> 0);
+    return `${(n >>> 24) & 255}.${(n >>> 16) & 255}.${(n >>> 8) & 255}.${n & 255}`;
+  }
+  return value.startsWith("::ffff:") ? value.slice(7) : value;
+}
+
 function isBlockedAddress(address) {
   const value = address.toLowerCase().split("%")[0];
   // 十六进制 IPv4-mapped IPv6（::ffff:7f00:1 ≡ 127.0.0.1）：先归一化为点分 IPv4 再递归
@@ -419,24 +429,50 @@ function isBlockedAddress(address) {
   return true;
 }
 
+function isLanAddress(address) {
+  const value = normalizeIp(address);
+  const version = net.isIP(value);
+  if (version === 4) {
+    const [a, b] = value.split(".").map(Number);
+    return a === 10 || a === 127
+      || (a === 100 && b >= 64 && b <= 127)
+      || (a === 169 && b === 254)
+      || (a === 172 && b >= 16 && b <= 31)
+      || (a === 192 && b === 168);
+  }
+  if (version === 6) {
+    return value === "::1" || value.startsWith("fc") || value.startsWith("fd")
+      || /^fe[89ab]/.test(value);
+  }
+  return false;
+}
+
 // --local-fs（Electron 桌面端）同时放开内网/非标端口限制：
 // 桌面端常用于播放局域网 OpenList / NAS / SMB 转链，SSRF 防护只针对公网部署。
 let RELAX_LOCAL = false;
 
-// 非标端口例外（逗号分隔的 host:port）：AETHERVR_ALLOWED_HOSTPORT=host1:port1,host2:port2
+// 精确信任的媒体来源（逗号分隔的 host:port）：匹配项同时放开私有地址和非标端口，
+// 但不会开放 /local 文件接口或绕过同源 API 校验。
+// AETHERVR_ALLOWED_HOSTPORT=host1:port1,host2:port2
 const ALLOWED_HOSTPORTS = (process.env.AETHERVR_ALLOWED_HOSTPORT || "")
   .split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+// 可信局域网部署可允许任意内网来源和端口；公网、保留测试网段和组播仍受默认限制。
+const TRUST_PRIVATE_SOURCES = /^(1|true|yes)$/i.test(
+  process.env.AETHERVR_TRUST_PRIVATE_SOURCES || ""
+);
 
 async function resolveSafeTarget(u) {
   if (!['http:', 'https:'].includes(u.protocol)) throw new Error("Only http(s) URLs allowed");
   if (u.username || u.password) throw new Error("Credentials in URLs are not allowed");
   if (!RELAX_LOCAL) {
     const allowedHostPort = ALLOWED_HOSTPORTS.includes(`${u.hostname.toLowerCase()}:${u.port}`);
-    if (u.port && !['80', '443'].includes(u.port) && !allowedHostPort) {
+    const addresses = await dns.lookup(u.hostname, { all: true, verbatim: true });
+    if (!addresses.length) throw new Error("Cannot resolve host");
+    const trustedPrivate = TRUST_PRIVATE_SOURCES && addresses.every((item) => isLanAddress(item.address));
+    if (u.port && !['80', '443'].includes(u.port) && !allowedHostPort && !trustedPrivate) {
       throw new Error("This source host and port are not allowed");
     }
-    const addresses = await dns.lookup(u.hostname, { all: true, verbatim: true });
-    if (!addresses.length || addresses.some((item) => isBlockedAddress(item.address))) {
+    if (!allowedHostPort && !trustedPrivate && addresses.some((item) => isBlockedAddress(item.address))) {
       throw new Error("Private or reserved network targets are not allowed");
     }
     return addresses[0];

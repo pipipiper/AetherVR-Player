@@ -39,13 +39,21 @@ node server.js --host 127.0.0.1 --port 7100 --trust-proxy
 
 `--trust-proxy` 会使用反向代理传来的 `X-Forwarded-For` 识别客户端，用于转码会话归属和限流。只有当服务端口不直接暴露到公网、请求必须经过你控制的代理时才应启用。
 
-公网版默认只允许代理 HTTP/HTTPS 标准端口 `80`、`443`。如需播放其他非标准端口的可信来源，可按 `域名:端口` 设置部署环境自己的白名单：
+公网版默认只允许代理 HTTP/HTTPS 标准端口 `80`、`443`，并拒绝内网目标。如需完全信任某个精确来源，可按 `域名:端口` 设置部署环境自己的白名单：
 
 ```bash
 AETHERVR_ALLOWED_HOSTPORT=media.example.com:19766,video.example.com:9443 node server.js --host 127.0.0.1 --port 7100 --trust-proxy
 ```
 
-不要把内网地址加入公网服务的来源白名单；DNS 解析到回环、私网或保留地址的目标仍会被 SSRF 防护拒绝。
+白名单项会同时放开该目标的非标准端口和内网地址限制，不要把内网管理服务加入公网实例。
+
+仅在整个局域网都可信、服务不对公网开放时，可允许任意内网来源和端口：
+
+```bash
+AETHERVR_TRUST_PRIVATE_SOURCES=1 node server.js --host 0.0.0.0 --port 7100
+```
+
+该选项只信任回环、RFC 1918、链路本地、CGNAT 和 IPv6 ULA 来源；公网目标、测试保留网段和组播地址仍使用默认限制，也不会开启桌面版的 `/local` 文件接口。
 
 转码与媒体预检需要系统安装 `ffmpeg` 和 `ffprobe`。程序会先从 `PATH` 查找，也可显式指定路径；编码器和线程数均可按部署机器能力配置：
 
@@ -60,7 +68,8 @@ node server.js --host 127.0.0.1 --port 7100
 | 环境变量 | 默认值 | 说明 |
 | --- | --- | --- |
 | `FFMPEG` / `FFPROBE` | 自动查找 | 可执行文件名或绝对路径 |
-| `AETHERVR_ALLOWED_HOSTPORT` | 空 | 允许访问的非标准来源端口，逗号分隔的 `域名:端口` |
+| `AETHERVR_ALLOWED_HOSTPORT` | 空 | 完全信任的精确媒体来源，逗号分隔的 `域名:端口` |
+| `AETHERVR_TRUST_PRIVATE_SOURCES` | 空 | 设为 `1`、`true` 或 `yes` 时允许任意内网来源和端口；仅限可信局域网部署 |
 | `AETHERVR_VIDEO_ENCODER` | `auto` | `auto`、`libx264`、`h264_videotoolbox` 或 `h264_vaapi`；Linux Intel/AMD 核显可显式选择 VAAPI |
 | `AETHERVR_VAAPI_DEVICE` | `/dev/dri/renderD128` | VAAPI 渲染设备；服务用户必须对它有读写权限（通常加入 `render` 组） |
 | `AETHERVR_VAAPI_QP` | `18` | VAAPI H.264 恒定质量值（1–51，越低越清晰、码率越高）；不设置固定码率上限 |
