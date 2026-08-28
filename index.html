@@ -534,6 +534,48 @@
         .file-info-pop p { margin: 2px 0; white-space: normal; word-break: break-all; }
         .file-info-pop strong { color: var(--muted); font-weight: 500; }
 
+        /* ── playback diagnostics ───────────────────────────── */
+        .diagnostics-panel {
+            display: none; position: absolute; right: 16px; bottom: 76px; z-index: 35;
+            width: min(430px, calc(100% - 32px)); max-height: min(620px, calc(100% - 100px));
+            overflow: auto; color: #eef3ff; background: rgba(14,19,29,.96);
+            border: 1px solid rgba(255,255,255,.14); border-radius: 14px;
+            box-shadow: 0 18px 50px rgba(0,0,0,.38); backdrop-filter: blur(16px);
+        }
+        .diagnostics-panel.show { display: block; }
+        .diagnostics-head {
+            position: sticky; top: 0; z-index: 1; display: flex; align-items: center;
+            gap: 10px; padding: 13px 14px; background: rgba(14,19,29,.98);
+            border-bottom: 1px solid rgba(255,255,255,.1);
+        }
+        .diagnostics-title { flex: 1; font-size: 14px; font-weight: 650; }
+        .diagnostics-live {
+            font-size: 11px; color: #77e19a; display: inline-flex; align-items: center; gap: 5px;
+        }
+        .diagnostics-live::before {
+            content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor;
+            box-shadow: 0 0 8px currentColor;
+        }
+        .diagnostics-action {
+            border: 0; border-radius: 7px; padding: 6px 9px; cursor: pointer;
+            color: rgba(255,255,255,.82); background: rgba(255,255,255,.09); font: inherit;
+        }
+        .diagnostics-action:hover { background: rgba(255,255,255,.16); color: #fff; }
+        .diagnostics-body { padding: 8px 14px 14px; }
+        .diagnostics-row {
+            display: grid; grid-template-columns: 112px minmax(0,1fr); gap: 12px;
+            padding: 7px 0; border-bottom: 1px solid rgba(255,255,255,.065);
+            font-size: 12px; line-height: 1.45;
+        }
+        .diagnostics-row:last-child { border-bottom: 0; }
+        .diagnostics-key { color: rgba(255,255,255,.48); }
+        .diagnostics-value { min-width: 0; color: #fff; word-break: break-word; font-family: 'JetBrains Mono', monospace; }
+        .diagnostics-note { padding: 10px 14px 0; color: rgba(255,255,255,.42); font-size: 11px; }
+        @media (max-width: 768px) {
+            .diagnostics-panel { position: fixed; left: 10px; right: 10px; bottom: 92px; width: auto; max-height: 64vh; }
+            .diagnostics-row { grid-template-columns: 92px minmax(0,1fr); }
+        }
+
         /* ── ghost button (打开新视频) ─────────────────────── */
         .ghost-btn {
             display: inline-flex; align-items: center; gap: 6px;
@@ -683,6 +725,7 @@
             background: rgba(255,255,255,.12); color: #fff;
             border: none; box-shadow: none; transform: none;
         }
+        .control-btn.active { background: rgba(47,107,255,.34); color: #fff; }
         .control-btn:active { transform: none; box-shadow: none; }
         .progress-bar {
             height: 6px; border: none; border-radius: 999px;
@@ -1090,8 +1133,19 @@
                 <button class="control-btn" id="favBtn" title="收藏当前视频" style="display:none"><i class="fa-solid fa-star"></i></button>
                 <button class="control-btn" id="addToListBtn" title="把当前视频加入播放列表" style="display:none"><i class="fa-solid fa-square-plus"></i></button>
                 <button class="control-btn playlist-ctl" id="playlistBtn" title="播放列表" style="display:none"><i class="fa-solid fa-list-ul"></i></button>
+                <button class="control-btn" id="diagnosticsBtn" title="播放诊断"><i class="fa-solid fa-chart-line"></i></button>
                 <button class="control-btn" id="fullscreenBtn"><i class="fa-solid fa-expand"></i></button>
             </div>
+                <section class="diagnostics-panel" id="diagnosticsPanel" role="dialog" aria-label="播放诊断" aria-hidden="true">
+                    <div class="diagnostics-head">
+                        <span class="diagnostics-title">播放诊断</span>
+                        <span class="diagnostics-live">实时</span>
+                        <button class="diagnostics-action" id="diagnosticsCopy" type="button">复制</button>
+                        <button class="diagnostics-action" id="diagnosticsClose" type="button" aria-label="关闭诊断"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                    <div class="diagnostics-note">浏览器不会公开是否正在使用客户端硬件解码；服务器转码的硬件状态可准确显示。</div>
+                    <div class="diagnostics-body" id="diagnosticsBody"></div>
+                </section>
                 <div class="vr-info" id="vrInfo">
                     <i class="fa-solid fa-mouse"></i>
                     <span class="hint-text">&nbsp;拖动旋转视角 · 滚轮缩放</span>
@@ -3157,7 +3211,7 @@
                 // Only allow drag to start from the canvas area, not from any UI chrome
                 // （播放列表面板、SBS 卡片、大播放按钮等也必须排除，否则
                 //   setPointerCapture 会把随后的 click 事件劫持到画布上）
-                if (e.target.closest('.controls, .top-bar, .vr-info, .playlist-panel, .sbs-options, .big-play-btn, .seek-loading, button, a, input, select, label')) return;
+                if (e.target.closest('.controls, .top-bar, .vr-info, .playlist-panel, .diagnostics-panel, .sbs-options, .big-play-btn, .seek-loading, button, a, input, select, label')) return;
                 isDragging = true;
                 vrCanvas.setPointerCapture(e.pointerId);
                 vrCanvas.classList.add('dragging');
@@ -3276,6 +3330,7 @@
             urlLoadRequestId++;
             if (activeProbeController) activeProbeController.abort();
             activeProbeController = null;
+            lastMediaProbe = null;
             hideHeroLoading();
 
             // Check if it's a video file (MIME type can be empty for some containers)
@@ -3477,6 +3532,7 @@
 
         let urlLoadRequestId = 0;
         let activeProbeController = null;
+        let lastMediaProbe = null;
         let iosReadWatchdog = null;
         async function probeRemoteMedia(url, signal, allowRetry = true) {
             if (!probeAvailable) return null;
@@ -3533,6 +3589,7 @@
             pendingSeekPosition = null;
             activeLocalFile = null;
             const rawUrl = (url || '').trim();
+            if (!isTranscodePlaylistUrl(rawUrl)) lastMediaProbe = null;
             if (!backendAvailable && /^https?:\/\//i.test(rawUrl)) {
                 hideLoadSpin();
                 showError('当前为静态托管模式，无法代理或转码在线视频。请使用桌面版或自托管完整版。');
@@ -3560,6 +3617,7 @@
                 if (requestId !== urlLoadRequestId) return;
                 if (activeProbeController === controller) activeProbeController = null;
                 hideHeroLoading();
+                lastMediaProbe = probe;
                 // 预检发现上游返回的根本不是视频（路径错误/签名过期/权限不足等）：
                 // 直接给出具体原因，不提供转码（转码也读不到数据）
                 if (probe && probe.preflight_error) {
@@ -3730,6 +3788,196 @@
         });
         document.addEventListener('click', (e) => {
             if (!e.target.closest('#fileInfo, #fileInfoPop')) hideFileInfoPop();
+        });
+
+        // ── 播放诊断：只读采集浏览器播放质量与后端转码状态 ──
+        const diagnosticsBtn = document.getElementById('diagnosticsBtn');
+        const diagnosticsPanel = document.getElementById('diagnosticsPanel');
+        const diagnosticsBody = document.getElementById('diagnosticsBody');
+        const diagnosticsCopy = document.getElementById('diagnosticsCopy');
+        const diagnosticsClose = document.getElementById('diagnosticsClose');
+        let diagnosticsTimer = null;
+        let diagnosticsBackendStatus = null;
+        let diagnosticsBackendError = '';
+        let diagnosticsBackendFetchedAt = 0;
+        let diagnosticsBackendFetching = false;
+        let diagnosticsLastRows = [];
+
+        const READY_STATE_LABELS = ['无媒体', '有元数据', '有当前帧', '有后续数据', '可流畅播放'];
+        const NETWORK_STATE_LABELS = ['无媒体', '空闲', '加载中', '无来源'];
+
+        function diagnosticSourceLabel() {
+            const raw = videoPlayer.dataset.remoteUrl || '';
+            if (transcodeSrcUrl) return '服务器转码 HLS';
+            if (activeLocalFile || videoPlayer.currentSrc.startsWith('blob:')) return '浏览器本地文件';
+            if (/\/local\?/i.test(raw)) return '桌面端本地文件';
+            if (/^https?:\/\//i.test(raw)) return '在线视频（同源代理）';
+            return videoPlayer.currentSrc ? '同源媒体' : '未加载';
+        }
+
+        function diagnosticBufferedText() {
+            const ranges = videoPlayer.buffered;
+            const now = Number(videoPlayer.currentTime) || 0;
+            let start = 0, end = 0;
+            for (let i = 0; i < ranges.length; i++) {
+                if (now >= ranges.start(i) - 0.05 && now <= ranges.end(i) + 0.05) {
+                    start = ranges.start(i); end = ranges.end(i); break;
+                }
+            }
+            if (!end && ranges.length) {
+                start = ranges.start(ranges.length - 1);
+                end = ranges.end(ranges.length - 1);
+            }
+            const ahead = Math.max(0, end - now);
+            return ranges.length
+                ? `${ahead.toFixed(1)} 秒余量 · ${ranges.length} 段（${formatTime(start)}–${formatTime(end)}）`
+                : '暂无缓冲区间';
+        }
+
+        function diagnosticFrameText() {
+            let total = 0, dropped = 0;
+            try {
+                const q = videoPlayer.getVideoPlaybackQuality && videoPlayer.getVideoPlaybackQuality();
+                total = Number(q && q.totalVideoFrames) || 0;
+                dropped = Number(q && q.droppedVideoFrames) || 0;
+            } catch { /* 浏览器不支持 */ }
+            if (!total) {
+                total = Number(videoPlayer.webkitDecodedFrameCount) || 0;
+                dropped = Number(videoPlayer.webkitDroppedFrameCount) || 0;
+            }
+            if (!total) return '浏览器未提供';
+            const rate = (dropped / total * 100).toFixed(2);
+            return `${total} 帧 · 丢帧 ${dropped}（${rate}%）`;
+        }
+
+        function collectDiagnosticsRows() {
+            const rows = [];
+            const add = (key, value) => rows.push([key, String(value == null || value === '' ? '—' : value)]);
+            const width = videoPlayer.videoWidth || (lastMediaProbe && lastMediaProbe.video && lastMediaProbe.video.width) || 0;
+            const height = videoPlayer.videoHeight || (lastMediaProbe && lastMediaProbe.video && lastMediaProbe.video.height) || 0;
+            const dur = effectiveDuration();
+            const codec = lastMediaProbe && lastMediaProbe.video && lastMediaProbe.video.codec;
+            const audioCodec = lastMediaProbe && lastMediaProbe.audio && lastMediaProbe.audio.codec;
+            add('播放来源', diagnosticSourceLabel());
+            add('画面输出', width && height ? `${width} × ${height}` : '等待视频元数据');
+            add('媒体编码', codec ? `${codec.toUpperCase()}${audioCodec ? ` / ${audioCodec.toUpperCase()}` : ''}` : '浏览器未提供');
+            add('播放位置', `${formatTime(effectiveCurrentTime())} / ${dur ? formatTime(dur) : '--:--'}`);
+            add('播放器状态', `${videoPlayer.paused ? '暂停' : '播放'} · ${READY_STATE_LABELS[videoPlayer.readyState] || videoPlayer.readyState}`);
+            add('网络状态', NETWORK_STATE_LABELS[videoPlayer.networkState] || videoPlayer.networkState);
+            add('缓冲', diagnosticBufferedText());
+            add('播放质量', diagnosticFrameText());
+            add('播放参数', `${videoPlayer.playbackRate}× · 音量 ${Math.round(videoPlayer.volume * 100)}%${videoPlayer.muted ? ' · 静音' : ''}`);
+            add('显示模式', isVrMode ? `VR${isSbsVideo ? ` · SBS ${sbsMode}` : ''} · FOV ${Math.round(camera ? camera.fov : originalVrFov)}°` : '平面');
+            add('页面环境', `${innerWidth}×${innerHeight} · DPR ${devicePixelRatio || 1}${isDesktopApp ? ` · ${window.vrDesktop.platform}` : ''}`);
+            if (!backendAvailable) {
+                add('后端', '静态模式（无代理/转码）');
+            } else if (diagnosticsBackendError) {
+                add('后端', diagnosticsBackendError);
+            } else if (!diagnosticsBackendStatus) {
+                add('后端', '读取中…');
+            } else {
+                const s = diagnosticsBackendStatus;
+                add('后端状态', s.active ? (s.ready ? '正在转码 · 已就绪' : '正在启动转码') : '空闲');
+                add('媒体工具', `FFmpeg ${s.ffmpeg ? '可用' : '不可用'} · FFprobe ${s.ffprobe ? '可用' : '不可用'}`);
+                if (s.transcode) {
+                    add('转码编码器', `${s.encoder || '未知'}${s.hardware ? ' · 硬件加速' : ' · 软件编码'}`);
+                } else {
+                    add('转码编码器', '不可用');
+                }
+                if (s.quality) add('转码质量', `${s.quality.mode || ''}${s.quality.qp != null ? ` · QP ${s.quality.qp}` : ''}`);
+                if (s.hls) add('HLS 缓冲窗', `${s.hls.windowSeconds || 0} 秒 · ${s.hls.listSize || 0} 分片`);
+            }
+            return rows;
+        }
+
+        function renderDiagnostics() {
+            if (!diagnosticsPanel.classList.contains('show')) return;
+            diagnosticsLastRows = collectDiagnosticsRows();
+            diagnosticsBody.replaceChildren(...diagnosticsLastRows.map(([key, value]) => {
+                const row = document.createElement('div');
+                row.className = 'diagnostics-row';
+                const k = document.createElement('span');
+                k.className = 'diagnostics-key';
+                k.textContent = key;
+                const v = document.createElement('span');
+                v.className = 'diagnostics-value';
+                v.textContent = value;
+                row.append(k, v);
+                return row;
+            }));
+            if (backendAvailable && Date.now() - diagnosticsBackendFetchedAt > 3000) {
+                refreshDiagnosticsBackend();
+            }
+        }
+
+        async function refreshDiagnosticsBackend() {
+            if (!backendAvailable || diagnosticsBackendFetching) return;
+            diagnosticsBackendFetching = true;
+            diagnosticsBackendFetchedAt = Date.now();
+            try {
+                const response = await fetch(backendUrl('transcode/status'), { cache: 'no-store' });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                diagnosticsBackendStatus = await response.json();
+                diagnosticsBackendError = '';
+            } catch (e) {
+                diagnosticsBackendError = '状态读取失败：' + e.message;
+            } finally {
+                diagnosticsBackendFetching = false;
+                renderDiagnostics();
+            }
+        }
+
+        function openDiagnostics() {
+            diagnosticsPanel.classList.add('show');
+            diagnosticsPanel.setAttribute('aria-hidden', 'false');
+            diagnosticsBtn.classList.add('active');
+            renderDiagnostics();
+            refreshDiagnosticsBackend();
+            clearInterval(diagnosticsTimer);
+            diagnosticsTimer = setInterval(renderDiagnostics, 1000);
+        }
+        function closeDiagnostics() {
+            diagnosticsPanel.classList.remove('show');
+            diagnosticsPanel.setAttribute('aria-hidden', 'true');
+            diagnosticsBtn.classList.remove('active');
+            clearInterval(diagnosticsTimer);
+            diagnosticsTimer = null;
+        }
+        diagnosticsBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            diagnosticsPanel.classList.contains('show') ? closeDiagnostics() : openDiagnostics();
+        });
+        diagnosticsClose.addEventListener('click', closeDiagnostics);
+        async function copyDiagnosticsText(text) {
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(text);
+                return;
+            }
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.setAttribute('readonly', '');
+            textarea.style.cssText = 'position:fixed;left:-9999px;top:0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            const copied = document.execCommand('copy');
+            textarea.remove();
+            if (!copied) throw new Error('clipboard unavailable');
+        }
+        diagnosticsCopy.addEventListener('click', async () => {
+            renderDiagnostics();
+            const text = ['AetherVR Player 播放诊断', new Date().toLocaleString(), '']
+                .concat(diagnosticsLastRows.map(([key, value]) => `${key}: ${value}`)).join('\n');
+            try {
+                await copyDiagnosticsText(text);
+                diagnosticsCopy.textContent = '已复制';
+                setTimeout(() => { diagnosticsCopy.textContent = '复制'; }, 1500);
+            } catch {
+                diagnosticsCopy.textContent = '复制失败';
+                setTimeout(() => { diagnosticsCopy.textContent = '复制'; }, 1500);
+            }
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && diagnosticsPanel.classList.contains('show')) closeDiagnostics();
         });
 
         // Drag and drop handlers
