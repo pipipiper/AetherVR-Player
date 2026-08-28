@@ -65,7 +65,7 @@ node server.js --host 127.0.0.1 --port 7100
 | `AETHERVR_VAAPI_DEVICE` | `/dev/dri/renderD128` | VAAPI 渲染设备；服务用户必须对它有读写权限（通常加入 `render` 组） |
 | `AETHERVR_VAAPI_QP` | `18` | VAAPI H.264 恒定质量值（1–51，越低越清晰、码率越高）；不设置固定码率上限 |
 | `AETHERVR_TRANSCODE_THREADS` | ffmpeg 自动决定 | `libx264` 的线程数（1–256）；通常无需设置 |
-| `AETHERVR_HLS_LIST_SIZE` | `30` | 实时转码保留的 HLS 分片数（3–300，每片约 4 秒）；默认只占用约 2 分钟窗口，跳出窗口时自动从目标时间重启转码 |
+| `AETHERVR_HLS_LIST_SIZE` | `60` | 实时转码保留的 HLS 分片数（3–300，每片约 2 秒）；默认只占用约 2 分钟窗口，跳出窗口时自动从目标时间重启转码 |
 
 ### GitHub Pages 静态版
 
