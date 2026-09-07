@@ -936,6 +936,13 @@
         }
         .pl-tab-action:hover { color: #fff; background: rgba(255,255,255,.10); }
         .playlist-head-actions { display: flex; gap: 2px; flex: none; align-items: center; }
+        /* 页签条左右滚动按钮：仅页签溢出时出现 */
+        .pl-tab-nav {
+            flex: none; background: none; border: none; color: #9aa3b2; cursor: pointer;
+            font-size: 11px; padding: 3px 5px; border-radius: 6px;
+        }
+        .pl-tab-nav:hover { color: #fff; background: rgba(255,255,255,.10); }
+        .pl-tab-nav:disabled { color: rgba(154,163,178,.35); cursor: default; background: none; }
 
         /* ── 条目位置标记（起播跳转点）──────────────────── */
         .pl-pos {
@@ -1204,11 +1211,13 @@
                  导入 dpl 后还没有视频加载时（全部待匹配），面板也必须可见 -->
             <div class="playlist-panel" id="playlistPanel">
                 <div class="playlist-head">
+                    <button class="pl-tab-nav" id="tabScrollLeft" style="display:none" title="向左滚动页签"><i class="fa-solid fa-chevron-left"></i></button>
                     <div class="playlist-tabs" id="playlistTabs" style="display:none">
                         <!-- 收藏夹固定在最左侧 -->
                         <button class="pl-tab" id="tabFavs" title="收藏夹"><i class="fa-solid fa-star"></i><span class="pl-tab-name">收藏夹</span></button>
                         <span id="plTabList" style="display:contents"></span>
                     </div>
+                    <button class="pl-tab-nav" id="tabScrollRight" style="display:none" title="向右滚动页签"><i class="fa-solid fa-chevron-right"></i></button>
                     <!-- 新建/打开按钮钉在滚动区外，页签再多也点得到 -->
                     <div class="playlist-head-actions" id="playlistHeadActions" style="display:none">
                         <button class="pl-tab-action" id="tabNewList" title="新建播放列表"><i class="fa-solid fa-plus"></i></button>
@@ -2477,6 +2486,7 @@
                 plTabList.appendChild(b);
             });
             tabFavs.classList.toggle('active', activeTab === 'favs');
+            if (typeof updateTabScrollBtns === 'function') updateTabScrollBtns();
         }
         function closePlaylistTab(id) {
             const i = playlists.findIndex((p) => p.id === id);
@@ -2640,6 +2650,24 @@
             e.preventDefault();
             playlistTabs.scrollLeft += e.deltaY;
         }, { passive: false });
+
+        // 页签条左右滚动按钮：仅在页签溢出时出现，滚到尽头自动置灰
+        const tabScrollLeft = document.getElementById('tabScrollLeft');
+        const tabScrollRight = document.getElementById('tabScrollRight');
+        function updateTabScrollBtns() {
+            const el = playlistTabs;
+            const overflow = el.style.display !== 'none' && el.scrollWidth > el.clientWidth + 1;
+            tabScrollLeft.style.display = overflow ? '' : 'none';
+            tabScrollRight.style.display = overflow ? '' : 'none';
+            if (overflow) {
+                tabScrollLeft.disabled = el.scrollLeft <= 1;
+                tabScrollRight.disabled = el.scrollLeft >= el.scrollWidth - el.clientWidth - 1;
+            }
+        }
+        tabScrollLeft.addEventListener('click', () => playlistTabs.scrollBy({ left: -180, behavior: 'smooth' }));
+        tabScrollRight.addEventListener('click', () => playlistTabs.scrollBy({ left: 180, behavior: 'smooth' }));
+        playlistTabs.addEventListener('scroll', updateTabScrollBtns);
+        window.addEventListener('resize', updateTabScrollBtns);
 
         // ── 首次进入：选择播放列表/收藏夹的本地保存目录 ──
         const libDirMask = document.getElementById('libDirMask');
