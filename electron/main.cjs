@@ -203,6 +203,29 @@ async function start() {
     return out;
   });
 
+  // 列出目录下的视频文件（临时播放列表自动收录同文件夹视频用）：
+  // [{ path, name, size }]，按中文数字序排序；失败返回 []
+  const VIDEO_EXTS = new Set(['.mp4', '.m4v', '.webm', '.mkv', '.avi', '.mov', '.ts', '.m2ts', '.flv', '.wmv', '.mpg', '.mpeg', '.3gp']);
+  ipcMain.handle('fs:listVideos', async (event, dir) => {
+    try {
+      if (typeof dir !== 'string' || !dir) return [];
+      const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+      const out = [];
+      for (const ent of entries) {
+        if (!ent.isFile() || ent.name.startsWith('.')) continue;
+        if (!VIDEO_EXTS.has(path.extname(ent.name).toLowerCase())) continue;
+        const full = path.join(dir, ent.name);
+        let size = 0;
+        try { size = (await fs.promises.stat(full)).size; } catch { /* 跳过读取失败的项大小 */ }
+        out.push({ path: full, name: ent.name, size });
+      }
+      out.sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN', { numeric: true }));
+      return out;
+    } catch {
+      return [];
+    }
+  });
+
   // 让前端诊断面板能够区分“没有 HEVC 解码器”和“GPU 被禁用/回退”。
   // getGPUInfo 可能因驱动或沙箱失败，因此始终返回一个可序列化结果。
   ipcMain.handle('gpu:diagnostics', async () => {

@@ -676,6 +676,51 @@
             white-space: pre-line;
         }
 
+        /* ── global error dialog: remains visible during playback/fullscreen ── */
+        .app-error-mask {
+            position: fixed; inset: 0; z-index: 10000;
+            display: none; align-items: center; justify-content: center;
+            padding: 20px; box-sizing: border-box;
+            background: rgba(15, 23, 42, .52);
+            backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
+        }
+        .app-error-mask.active { display: flex; }
+        .app-error-dialog {
+            width: min(560px, 100%); max-height: min(80vh, 680px); overflow: auto;
+            padding: 24px; box-sizing: border-box;
+            background: #fff; border: 1px solid #f0b9ae; border-radius: 18px;
+            box-shadow: 0 24px 70px rgba(15, 23, 42, .25);
+        }
+        .app-error-heading { display: flex; align-items: flex-start; gap: 14px; }
+        .app-error-icon {
+            flex: 0 0 38px; height: 38px; display: grid; place-items: center;
+            border-radius: 50%; color: #c23a22; background: #fef2f0; font-size: 17px;
+        }
+        .app-error-title { margin: 0; color: #1d2735; font-size: 18px; line-height: 1.35; }
+        .app-error-summary { margin: 6px 0 0; color: #5d6878; font-size: 13.5px; line-height: 1.65; }
+        .app-error-detail-label {
+            margin: 18px 0 7px; color: #7b8492; font-size: 11px;
+            font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+        }
+        .app-error-details {
+            margin: 0; padding: 12px 14px; overflow-wrap: anywhere; white-space: pre-wrap;
+            color: #8f2d1c; background: #fff7f5; border: 1px solid #f4d3cc;
+            border-radius: 10px; font: 12px/1.6 'JetBrains Mono', monospace;
+        }
+        .app-error-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+        .app-error-btn {
+            padding: 9px 16px; border: 1px solid var(--border-hi); border-radius: 9px;
+            color: var(--text); background: #fff; font: inherit; font-size: 13px;
+            font-weight: 600; cursor: pointer;
+        }
+        .app-error-btn.primary { color: #fff; background: var(--yellow); border-color: var(--yellow); }
+        @media (max-width: 560px) {
+            .app-error-mask { align-items: flex-end; padding: 12px; }
+            .app-error-dialog { padding: 20px; border-radius: 16px; }
+            .app-error-actions { flex-direction: column-reverse; }
+            .app-error-btn { width: 100%; }
+        }
+
         /* ── sbs options: floating card over video ─────────── */
         .sbs-options {
             position: absolute; top: 76px; left: 50%;
@@ -1278,6 +1323,25 @@
         </div>
     </div>
 
+    <div class="app-error-mask" id="appErrorMask" role="alertdialog" aria-modal="true"
+         aria-hidden="true" aria-labelledby="appErrorTitle" aria-describedby="appErrorSummary">
+        <div class="app-error-dialog">
+            <div class="app-error-heading">
+                <div class="app-error-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                <div>
+                    <h2 class="app-error-title" id="appErrorTitle">操作失败</h2>
+                    <p class="app-error-summary" id="appErrorSummary"></p>
+                </div>
+            </div>
+            <p class="app-error-detail-label">技术详情</p>
+            <pre class="app-error-details" id="appErrorDetails"></pre>
+            <div class="app-error-actions">
+                <button class="app-error-btn" id="appErrorCopy" type="button">复制详情</button>
+                <button class="app-error-btn primary" id="appErrorClose" type="button">知道了</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         // 桌面端 /local 鉴权 token：server 在 local-fs 模式 serve 本页时替换占位符，
         // 未替换时保持字面量（网页版不走 /local，无副作用）
@@ -1300,6 +1364,12 @@
         const fileSize = document.getElementById('fileSize');
         const fileType = document.getElementById('fileType');
         const errorMessage = document.getElementById('errorMessage');
+        const appErrorMask = document.getElementById('appErrorMask');
+        const appErrorTitle = document.getElementById('appErrorTitle');
+        const appErrorSummary = document.getElementById('appErrorSummary');
+        const appErrorDetails = document.getElementById('appErrorDetails');
+        const appErrorCopy = document.getElementById('appErrorCopy');
+        const appErrorClose = document.getElementById('appErrorClose');
         const playPauseBtn = document.getElementById('playPauseBtn');
         const progressBar = document.getElementById('progressBar');
         const progressFill = document.getElementById('progressFill');
@@ -1354,8 +1424,9 @@
             try {
                 await videoPlayer.play();
                 bigPlayBtn.classList.remove('active');
-            } catch {
+            } catch (error) {
                 bigPlayBtn.classList.add('active');
+                showError('播放启动失败：' + (error.message || error));
             }
         });
 
@@ -1658,6 +1729,9 @@
             playlistSummary.classList.add('warn');
             playlistSummary.textContent = text;
             summaryTimer = setTimeout(updateSummary, 5000);
+            if (/失败|错误|无法|未找到|找不到|不一致|未授权|被拒绝|已失效|格式无法识别|没有识别|当前没有|为空|请先|已存在同名/.test(text)) {
+                showError(text);
+            }
         }
 
         function updatePlaylistButtons() {
@@ -1805,6 +1879,7 @@
                     bindFileToItem(i, file, handle);
                 } catch (err) {
                     // 用户取消：条目保留，状态不变，不影响其他条目
+                    if (err && err.name !== 'AbortError') showError('选择文件失败：' + (err.message || err));
                 }
                 grantingIndex = -1;
                 grantingItem = null;
@@ -1847,6 +1922,7 @@
                     rematchAll(`已从「${dirHandle.name}」索引 ${entries.length} 个视频文件。`);
                 } catch (err) {
                     // 用户取消目录选择：不做任何事
+                    if (err && err.name !== 'AbortError') showError('读取媒体目录失败：' + (err.message || err));
                 }
             } else {
                 grantDirInput.value = '';
@@ -1877,7 +1953,7 @@
 
         // 文件选择（多选 / 文件夹 / 拖放统一入口）
         // opts.minSize：过滤掉过小的文件（打开文件夹时排除样片/预告等杂文件）
-        function handleFiles(fileList, opts = {}) {
+        async function handleFiles(fileList, opts = {}) {
             const files = Array.from(fileList || []);
             if (!files.length) return;
             const dpl = files.find((f) => /\.dpl$/i.test(f.name));
@@ -1905,12 +1981,70 @@
                 return;
             }
             lastDplEntries = null;
+            // ── 临时播放列表：拖入/选择的文件进入「临时列表」页签（收藏夹之后第二位），
+            //    path 为 null 永不落盘，绝不会覆盖真实播放列表的 dpl 文件 ──
+            detachPlaylistTab();
+            if (isDesktopApp) {
+                const temp = await buildTempItems(videos);
+                const t = ensureTempTab();
+                activeTab = 'playlist';
+                activePlId = t.id;
+                renderTabs();
+                setPlaylist(temp.list, temp.playIndex);
+                return;
+            }
             setPlaylist(videos.map((f) => ({
                 name: f.webkitRelativePath || f.name,
                 originalPath: f.webkitRelativePath || f.name,
                 normalizedPath: normalizePath(f.webkitRelativePath || f.name),
                 url: '', file: f, fileHandle: null, status: 'ready', error: '',
             })), 0);
+        }
+
+        // 桌面端临时列表内容：单文件（非文件夹拖入/多选）→ 自动收录同文件夹全部视频，
+        // 并从被拖入的那个文件开始播放；再次拖入别的文件夹的文件时自然重置为新文件夹内容。
+        // 多选 / 拿不到磁盘路径（网页端）→ 所选文件本身组成列表。
+        async function buildTempItems(videos) {
+            const first = videos[0];
+            const p0 = (videos.length === 1 && !first.webkitRelativePath)
+                ? (window.vrDesktop.pathForFile(first) || '') : '';
+            if (p0) {
+                const dir = p0.replace(/[\\/][^\\/]*$/, '');
+                let siblings = [];
+                try { siblings = await window.vrDesktop.listVideos(dir) || []; } catch { siblings = []; }
+                if (siblings.length) {
+                    const playIndex = Math.max(0, siblings.findIndex((s) => s.path === p0));
+                    return {
+                        list: siblings.map((s) => ({
+                            name: s.name, originalPath: s.path, normalizedPath: normalizePath(s.path),
+                            url: localUrl(s.path), file: null, fileHandle: null,
+                            status: 'ready', error: '', position: 0,
+                        })),
+                        playIndex,
+                    };
+                }
+            }
+            return {
+                list: videos.map((f) => ({
+                    name: f.webkitRelativePath || f.name,
+                    originalPath: f.webkitRelativePath || f.name,
+                    normalizedPath: normalizePath(f.webkitRelativePath || f.name),
+                    url: '', file: f, fileHandle: null, status: 'ready', error: '',
+                })),
+                playIndex: 0,
+            };
+        }
+
+        // 「临时列表」页签：固定排在 playlists 首位（页签条上紧随收藏夹），不落盘、不记忆
+        const TEMP_TAB_ID = '__temp__';
+        function ensureTempTab() {
+            let t = playlists.find((p) => p.id === TEMP_TAB_ID);
+            if (!t) {
+                t = { id: TEMP_TAB_ID, name: '临时列表', path: null, items: [], entries: null };
+                playlists.unshift(t);
+            }
+            renderTabs();
+            return t;
         }
 
         // ── .dpl（PotPlayer 播放列表）解析 ──
@@ -2286,6 +2420,14 @@
         const plSaveTimers = {};
         function activePlaylist() {
             return playlists.find((p) => p.id === activePlId) || null;
+        }
+        // 临时播放（拖入/选择新文件、粘贴链接）前与真实播放列表页签脱钩：
+        // setPlaylist/clearPlaylist 会把内容写回激活页签并落盘 dpl，
+        // 不脱钩会用临时内容覆盖用户真正的播放列表文件
+        function detachPlaylistTab() {
+            if (!isDesktopApp || !activePlId) return;
+            activePlId = null;
+            renderTabs();
         }
         function saveActivePlaylistFile() {
             const pl = activePlaylist();
@@ -3399,11 +3541,75 @@
             }
         }
 
-        // Show error message
-        function showError(message) {
-            errorMessage.textContent = message;
-            errorMessage.classList.add('active');
+        function describeError(message) {
+            const raw = String(message instanceof Error ? message.message : message || '发生未知错误').trim();
+            const lower = raw.toLowerCase();
+            if (lower.includes('source host and port are not allowed')) {
+                return { raw, title: '视频来源未被服务器允许', summary: '转码服务器拒绝了这个视频来源的主机或端口。请检查服务器的来源白名单或内网来源设置。' };
+            }
+            if (lower.includes('private') && (lower.includes('target') || lower.includes('address'))) {
+                return { raw, title: '内网视频来源被拦截', summary: '服务器的安全策略不允许访问该内网地址。请在可信网络的部署配置中允许内网来源。' };
+            }
+            if (lower.includes('failed to fetch') || lower.includes('networkerror') || lower.includes('network error')) {
+                return { raw, title: '网络请求失败', summary: '没有收到服务器响应。请检查网络、地址、端口、跨域设置以及后端服务是否正在运行。' };
+            }
+            const status = raw.match(/\bHTTP\s*(\d{3})\b/i);
+            if (status) {
+                const hints = { 401: '需要登录或凭据已失效。', 403: '服务器拒绝了当前请求。', 404: '请求的资源不存在或链接已失效。', 409: '服务器当前存在冲突的转码任务。', 429: '请求过于频繁，请稍候重试。', 500: '服务器内部处理失败。', 502: '网关无法连接后端服务。', 503: '服务暂时不可用。' };
+                return { raw, title: `服务器返回 HTTP ${status[1]}`, summary: hints[status[1]] || '服务器返回了异常状态，请查看技术详情。' };
+            }
+            if (/转码.*失败|ffmpeg|encoder|vaapi|qsv/.test(lower)) {
+                return { raw, title: '服务器转码失败', summary: '视频转码进程未能正常启动或运行。技术详情中保留了后端返回的完整原因。' };
+            }
+            if (/无法解码|媒体错误|codec|hevc|h\.265/.test(lower)) {
+                return { raw, title: '当前设备无法解码视频', summary: '视频编码、分辨率、位深或音频格式超出了当前播放器的支持范围，可尝试服务器转码。' };
+            }
+            if (/播放列表|dpl/.test(lower)) {
+                return { raw, title: '播放列表处理失败', summary: '播放列表无法读取、解析或匹配，请查看下方技术详情。' };
+            }
+            return { raw, title: '操作未能完成', summary: raw.split('\n')[0] };
         }
+
+        // Keep the legacy inline message, and also show an always-visible dialog.
+        function showError(message) {
+            const info = describeError(message);
+            errorMessage.textContent = info.raw;
+            errorMessage.classList.add('active');
+            appErrorTitle.textContent = info.title;
+            appErrorSummary.textContent = info.summary;
+            appErrorDetails.textContent = info.raw;
+            appErrorMask.classList.add('active');
+            appErrorMask.setAttribute('aria-hidden', 'false');
+            requestAnimationFrame(() => appErrorClose.focus());
+        }
+
+        function closeErrorDialog() {
+            appErrorMask.classList.remove('active');
+            appErrorMask.setAttribute('aria-hidden', 'true');
+        }
+
+        appErrorClose.addEventListener('click', closeErrorDialog);
+        appErrorMask.addEventListener('click', (event) => {
+            if (event.target === appErrorMask) closeErrorDialog();
+        });
+        appErrorCopy.addEventListener('click', async () => {
+            try {
+                await copyDiagnosticsText(`${appErrorTitle.textContent}\n${appErrorDetails.textContent}`);
+                appErrorCopy.textContent = '已复制';
+                setTimeout(() => { appErrorCopy.textContent = '复制详情'; }, 1500);
+            } catch (error) {
+                appErrorCopy.textContent = '复制失败';
+                setTimeout(() => { appErrorCopy.textContent = '复制详情'; }, 1500);
+            }
+        });
+        window.addEventListener('error', (event) => {
+            if (event.error || event.message) showError('页面运行错误：' + (event.error?.message || event.message));
+        });
+        window.addEventListener('unhandledrejection', (event) => {
+            const reason = event.reason;
+            if (reason && reason.name === 'AbortError') return;
+            showError('异步操作失败：' + (reason?.message || reason || '未知原因'));
+        });
 
         // Hide error message
         function hideError() {
@@ -3703,10 +3909,10 @@
 
         const videoUrlInput = document.getElementById('videoUrl');
         const openUrlBtn = document.getElementById('openUrlBtn');
-        // 直接输入链接播放时脱离当前播放列表
-        openUrlBtn.addEventListener('click', () => { clearPlaylist(); loadVideoURL(videoUrlInput.value); });
+        // 直接输入链接播放时脱离当前播放列表（先与真实页签脱钩，避免清空写回 dpl 文件）
+        openUrlBtn.addEventListener('click', () => { detachPlaylistTab(); clearPlaylist(); loadVideoURL(videoUrlInput.value); });
         videoUrlInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') { clearPlaylist(); loadVideoURL(videoUrlInput.value); }
+            if (e.key === 'Enter') { detachPlaylistTab(); clearPlaylist(); loadVideoURL(videoUrlInput.value); }
         });
 
         // File input change handler（多选 / .dpl / 单文件统一入口）
@@ -3992,13 +4198,15 @@
                 await copyDiagnosticsText(text);
                 diagnosticsCopy.textContent = '已复制';
                 setTimeout(() => { diagnosticsCopy.textContent = '复制'; }, 1500);
-            } catch {
+            } catch (error) {
                 diagnosticsCopy.textContent = '复制失败';
                 setTimeout(() => { diagnosticsCopy.textContent = '复制'; }, 1500);
+                showError('复制诊断信息失败：' + (error.message || error));
             }
         });
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && diagnosticsPanel.classList.contains('show')) closeDiagnostics();
+            if (e.key === 'Escape' && appErrorMask.classList.contains('active')) closeErrorDialog();
         });
 
         // Drag and drop handlers
@@ -4013,7 +4221,19 @@
 
         dropZone.addEventListener('drop', (e) => {
             e.preventDefault();
+            e.stopPropagation(); // 阻止冒泡到 document 级兜底，避免重复处理
             dropZone.classList.remove('drag-over');
+            handleFiles(e.dataTransfer.files);
+        });
+
+        // 播放中也能拖入新文件：dropZone 隐藏时（display:none）拖放会落到页面上，
+        // 浏览器默认导航又被导航防护拦截导致毫无反应；在文档级兜底接收
+        document.addEventListener('dragover', (e) => {
+            if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) e.preventDefault();
+        });
+        document.addEventListener('drop', (e) => {
+            if (!e.dataTransfer || !e.dataTransfer.files || !e.dataTransfer.files.length) return;
+            e.preventDefault();
             handleFiles(e.dataTransfer.files);
         });
 
@@ -4074,6 +4294,7 @@
             if (videoPlayer.paused) {
                 videoPlayer.play().catch(err => {
                     console.error('Error playing video:', err);
+                    showError('播放启动失败：' + (err.message || err));
                 });
                 playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
             } else {
@@ -4358,6 +4579,7 @@
                 if (fullscreenTarget.requestFullscreen) {
                     fullscreenTarget.requestFullscreen().catch(err => {
                         console.log('Error attempting to enable fullscreen:', err);
+                        showError('进入全屏失败：' + (err.message || err));
                     });
                 } else if (fullscreenTarget.webkitRequestFullscreen) {
                     fullscreenTarget.webkitRequestFullscreen();

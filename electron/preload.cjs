@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld('vrDesktop', {
   saveDpl: (name, data) => ipcRenderer.invoke('dpl:save', { name, data }),
   pickVideos: () => ipcRenderer.invoke('files:pick'),
   checkPaths: (paths) => ipcRenderer.invoke('fs:check', paths),
+  // 列出目录下的视频文件（临时播放列表自动收录同文件夹视频用）
+  listVideos: (dir) => ipcRenderer.invoke('fs:listVideos', dir),
   // 播放列表库
   pickLibDir: () => ipcRenderer.invoke('lib:pickDir'),
   listDpls: (dir) => ipcRenderer.invoke('lib:list', dir),
