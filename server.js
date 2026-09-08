@@ -168,6 +168,11 @@ const VIDEO_ENCODER = VIDEO_ENCODER_NAME === "h264_videotoolbox"
 const HLS_IDLE_MS = 2 * 60 * 1000;
 const HLS_MAX_MS = 2 * 60 * 60 * 1000;
 const HLS_SEGMENT_SECONDS = 2;
+const configuredUpstreamTimeout = Number(process.env.AETHERVR_UPSTREAM_TIMEOUT_MS || "60000");
+const UPSTREAM_IDLE_TIMEOUT_MS = Number.isInteger(configuredUpstreamTimeout)
+  && configuredUpstreamTimeout >= 15000 && configuredUpstreamTimeout <= 300000
+  ? configuredUpstreamTimeout : 60000;
+const FFMPEG_RW_TIMEOUT_US = String(UPSTREAM_IDLE_TIMEOUT_MS * 1000);
 const configuredHlsListSize = Number(process.env.AETHERVR_HLS_LIST_SIZE || "60");
 const HLS_LIST_SIZE = Number.isInteger(configuredHlsListSize)
   && configuredHlsListSize >= 3 && configuredHlsListSize <= 300
@@ -218,6 +223,29 @@ function localProxyInput(target) {
   return `http://${localAuthority}:${PORT}/proxy?url=${encodeURIComponent(target)}`;
 }
 
+function transcodeFailureMessage(stderr) {
+  const text = String(stderr || "");
+  if (/connection timed out|upstream timeout|timed out/i.test(text)) {
+    return `读取视频源超时：上游连续 ${Math.round(UPSTREAM_IDLE_TIMEOUT_MS / 1000)} 秒没有返回数据。`
+      + "服务器已启用断流自动重连；如果仍然失败，请检查源站、签名有效期或网络稳定性。";
+  }
+  if (/server returned 4\d\d|http error 4\d\d|403 forbidden/i.test(text)) {
+    return "视频源拒绝访问：链接可能已经过期、签名失效或不允许 Range 分段读取。";
+  }
+  if (/no space left on device/i.test(text)) return "转码缓存写入失败：服务器磁盘空间不足。";
+  if (/permission denied.*\/dev\/dri|failed to initialise vaapi connection/i.test(text)) {
+    return "核显初始化失败：服务账号没有访问 VAAPI 设备的权限，或核显驱动不可用。";
+  }
+  const diagnostic = text
+    .split(/\r?\n/)
+    .filter((line) => !line.includes("/proxy?url="))
+    .filter((line) => /(error|failed|invalid|unsupported|vaapi|encoder|device|conversion)/i.test(line))
+    .slice(-12)
+    .join("\n")
+    .slice(-1800);
+  return diagnostic || text.slice(-1000) || "FFmpeg 未返回错误详情";
+}
+
 function startTranscode(target, ownerIp, res, start = 0) {
   if (hlsSession) stopHlsSession(hlsSession);
   const id = crypto.randomBytes(12).toString("hex");
@@ -227,7 +255,16 @@ function startTranscode(target, ownerIp, res, start = 0) {
   const proxyInput = localProxyInput(target);
   const proc = spawn(FFMPEG, [
     "-hide_banner", "-loglevel", "info", "-nostdin",
-    "-rw_timeout", "15000000",
+    "-rw_timeout", FFMPEG_RW_TIMEOUT_US,
+    // FFmpeg reads through the local HTTP proxy. If a remote Range request is
+    // interrupted, reopen it at the current byte offset instead of treating the
+    // resulting premature EOF as an encoder failure.
+    "-reconnect", "1",
+    "-reconnect_on_network_error", "1",
+    "-reconnect_streamed", "1",
+    "-reconnect_delay_max", "3",
+    "-reconnect_max_retries", "10",
+    "-reconnect_delay_total_max", "30",
     // 从指定时间点开始转码（快进重启）。-ss 放在 -i 前走 HTTP Range 快速
     // 定位，重编码下输出帧精确；输出时间轴从 0 开始，前端自行加偏移显示。
     ...(start > 0 ? ["-ss", start.toFixed(3)] : []),
@@ -304,16 +341,10 @@ function startTranscode(target, ownerIp, res, start = 0) {
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ playlist: `/hls/${id}/index.m3u8`, duration: session.duration, start }));
       } else {
-        const diagnostic = session.error
-          .split(/\r?\n/)
-          .filter((line) => !line.includes("/proxy?url="))
-          .filter((line) => /(error|failed|invalid|unsupported|vaapi|encoder|device|conversion)/i.test(line))
-          .slice(-12)
-          .join("\n")
-          .slice(-1800);
+        const diagnostic = transcodeFailureMessage(session.error);
         stopHlsSession(session);
         res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "转码启动失败：" + (diagnostic || session.error.slice(-1000)) }));
+        res.end(JSON.stringify({ error: "转码启动失败：" + diagnostic }));
       }
     }
   }, 500);
@@ -600,7 +631,7 @@ async function proxyVideo(target, req, res, redirects = 0) {  let u;
     if (!res.headersSent) res.writeHead(502);
     res.end("Proxy error: " + e.message);
   });
-  preq.setTimeout(15000, () => preq.destroy(new Error("Upstream timeout")));
+  preq.setTimeout(UPSTREAM_IDLE_TIMEOUT_MS, () => preq.destroy(new Error("Upstream timeout")));
   req.on("aborted", () => preq.destroy());
   res.on("close", () => {
     if (!res.writableEnded) preq.destroy();
@@ -741,6 +772,11 @@ const requestHandler = async (req, res) => {
         hardware: USE_VAAPI || VIDEO_ENCODER_NAME === "h264_videotoolbox",
         device: USE_VAAPI ? VAAPI_DEVICE : null,
         quality: USE_VAAPI ? { mode: "CQP", qp: Number(VAAPI_QP) } : null,
+        sourceRecovery: {
+          idleTimeoutSeconds: Math.round(UPSTREAM_IDLE_TIMEOUT_MS / 1000),
+          reconnect: true,
+          maxRetries: 10,
+        },
         hls: {
           mode: "rolling",
           segmentSeconds: HLS_SEGMENT_SECONDS,

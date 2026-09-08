@@ -48,6 +48,11 @@ test("server exposes only public assets and generic capabilities", async (t) => 
   const status = await request(running.port, "/transcode/status");
   assert.equal(status.status, 200);
   const statusBody = JSON.parse(status.body);
+  assert.deepEqual(statusBody.sourceRecovery, {
+    idleTimeoutSeconds: 60,
+    reconnect: true,
+    maxRetries: 10,
+  });
   assert.deepEqual(statusBody.hls, {
     mode: "rolling",
     segmentSeconds: 2,
