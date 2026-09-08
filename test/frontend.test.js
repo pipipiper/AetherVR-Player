@@ -26,6 +26,18 @@ test("diagnostics controls are present and uniquely identified", () => {
   }
 });
 
+test("global error dialog is present, unique, and wired to showError", () => {
+  for (const id of [
+    "appErrorMask", "appErrorTitle", "appErrorSummary",
+    "appErrorDetails", "appErrorCopy", "appErrorClose",
+  ]) {
+    assert.equal((html.match(new RegExp(`id=["']${id}["']`, "g")) || []).length, 1, id);
+  }
+  assert.match(html, /appErrorMask\.classList\.add\('active'\)/);
+  assert.match(html, /role="alertdialog"/);
+  assert.match(html, /source host and port are not allowed/);
+});
+
 test("desktop diagnostics report Electron GPU video decode status", () => {
   assert.match(html, /vrDesktop\.gpuDiagnostics\(\)/);
   assert.match(html, /status\.video_decode/);
