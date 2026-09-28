@@ -117,10 +117,12 @@ struct PlaylistView: View {
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 6)
                                     .background(
-                                        currentTab?.id == playlist.id ? Color.accentColor : Color.secondary.opacity(0.2),
+                                        currentTab?.id == playlist.id
+                                            ? Color.accentColor.opacity(0.3)
+                                            : Color.secondary.opacity(0.15),
                                         in: Capsule()
                                     )
-                                    .foregroundStyle(currentTab?.id == playlist.id ? .white : .primary)
+                                    .foregroundStyle(currentTab?.id == playlist.id ? Color.accentColor : .primary)
                             }
                             .id(playlist.id)
                         }
