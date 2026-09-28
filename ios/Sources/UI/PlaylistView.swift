@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// 播放列表页：页签（收藏夹 → 临时列表 → 真实列表）+ 条目列表
+/// 播放列表页：页签（收藏夹 → 临时列表 → 真实列表）+ 原生分页切换。
+/// 内容区是系统分页 TabView：左右滑翻页时行点击由系统自动取消，不会误触。
 struct PlaylistView: View {
     @EnvironmentObject private var store: PlaylistStore
     @State private var selectedTabID: UUID?
@@ -10,8 +11,6 @@ struct PlaylistView: View {
     @State private var exportText: String?
     @State private var errorMessage: String?
     @State private var playback: URLPlaySheet.PlaybackTarget?
-    /// 正在页签条上横向滑动（此时禁用页签按钮，避免误触）
-    @State private var isSwipingTabs = false
 
     private var currentTab: Playlist? {
         let tabs = store.tabs
@@ -22,24 +21,16 @@ struct PlaylistView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 tabBar
-                if let playlist = currentTab {
-                    itemList(playlist)
-                }
-            }
-            .navigationTitle("播放列表")
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Menu {
-                        Button("新建列表") { showNewListAlert = true }
-                        Button("导入 DPL 文件") { showImportPicker = true }
-                        if let playlist = currentTab, playlist.fileURL != nil {
-                            Button("导出当前列表") { export(playlist) }
-                        }
-                    } label: {
-                        Image(systemName: "plus")
+                // 系统分页：左右滑动切换列表（原生手势，滑动中行点击自动失效）
+                TabView(selection: $selectedTabID) {
+                    ForEach(store.tabs) { playlist in
+                        itemList(playlist)
+                            .tag(playlist.id as UUID?)
                     }
                 }
+                .tabViewStyle(.page(indexDisplayMode: .never))
             }
+            .navigationTitle("播放列表")
             .alert("新建播放列表", isPresented: $showNewListAlert) {
                 TextField("列表名称", text: $newListName)
                 Button("创建") {
@@ -101,28 +92,26 @@ struct PlaylistView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         ForEach(store.tabs) { playlist in
-                            Button {
-                                selectedTabID = playlist.id
-                            } label: {
-                                Text(playlist.name)
-                                    .font(.subheadline)
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 6)
-                                    .background(
-                                        currentTab?.id == playlist.id
-                                            ? Color.accentColor.opacity(0.3)
-                                            : Color.secondary.opacity(0.15),
-                                        in: Capsule()
-                                    )
-                                    .foregroundStyle(currentTab?.id == playlist.id ? Color.accentColor : .primary)
-                            }
-                            .disabled(isSwipingTabs)
-                            .id(playlist.id)
+                            Text(playlist.name)
+                                .font(.subheadline)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(
+                                    currentTab?.id == playlist.id
+                                        ? Color.accentColor.opacity(0.3)
+                                        : Color.secondary.opacity(0.15),
+                                    in: Capsule()
+                                )
+                                .foregroundStyle(currentTab?.id == playlist.id ? Color.accentColor : .primary)
+                                .onTapGesture {
+                                    selectedTabID = playlist.id
+                                }
+                                .id(playlist.id)
                         }
                     }
                     .padding(.vertical, 8)
                 }
-                // 禁止拖动滚动：滑动交给外层手势翻页，溢出用箭头滚动
+                // 禁止拖动滚动：页签条上的滑动交给外层手势翻页，溢出用箭头滚动
                 .scrollDisabled(true)
                 Button { moveTab(1, proxy: proxy) } label: {
                     Image(systemName: "chevron.right")
@@ -150,24 +139,14 @@ struct PlaylistView: View {
                 }
             }
             .padding(.horizontal, 8)
-            // 页签条上左右滑动切换页签（高优先级，盖过页签条自身的滚动）
+            // 页签条上左右滑动翻页（拖动会让 onTapGesture 失败，天然不误触）
             .highPriorityGesture(
-                DragGesture(minimumDistance: 15)
-                    .onChanged { value in
+                DragGesture(minimumDistance: 20)
+                    .onEnded { value in
                         let dx = value.translation.width
                         let dy = value.translation.height
-                        if abs(dx) > 20, abs(dx) > abs(dy) * 1.5 {
-                            isSwipingTabs = true
-                        }
-                    }
-                    .onEnded { value in
-                        defer {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                                isSwipingTabs = false
-                            }
-                        }
-                        guard isSwipingTabs else { return }
-                        moveTab(value.translation.width < 0 ? 1 : -1)
+                        guard abs(dx) > abs(dy) * 1.5 else { return }
+                        moveTab(dx < 0 ? 1 : -1)
                     }
             )
         }
@@ -180,7 +159,9 @@ struct PlaylistView: View {
         let current = tabs.firstIndex { $0.id == currentTab?.id } ?? 0
         let next = min(max(current + offset, 0), tabs.count - 1)
         guard next != current else { return }
-        selectedTabID = tabs[next].id
+        withAnimation {
+            selectedTabID = tabs[next].id
+        }
         if let proxy {
             withAnimation { proxy.scrollTo(tabs[next].id, anchor: .center) }
         }
@@ -194,7 +175,7 @@ struct PlaylistView: View {
                 List {
                     ForEach(playlist.items) { item in
                         Button {
-                            play(item)
+                            play(item, in: playlist)
                         } label: {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(item.title.isEmpty ? item.file : item.title)
@@ -229,19 +210,18 @@ struct PlaylistView: View {
         }
     }
 
-    private func play(_ item: PlaylistItem) {
+    private func play(_ item: PlaylistItem, in playlist: Playlist) {
         guard let url = URL(string: item.file) else {
             errorMessage = "无法识别的地址：\(item.file)"
             return
         }
-        let playlist = currentTab
         playback = URLPlaySheet.PlaybackTarget(
             url: url,
             title: item.title.isEmpty ? item.file : item.title,
             mode: VRDisplayMode(rawValue: UserDefaults.standard.string(forKey: SettingsKeys.defaultProjection) ?? "") ?? .vr360,
             position: TimeInterval(item.position),
-            queue: playlist?.items ?? [],
-            queueIndex: playlist?.items.firstIndex(where: { $0.id == item.id }) ?? 0
+            queue: playlist.items,
+            queueIndex: playlist.items.firstIndex(where: { $0.id == item.id }) ?? 0
         )
     }
 
