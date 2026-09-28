@@ -376,81 +376,18 @@ struct VRPlayerView: View {
         scheduleAutoHide()
     }
 
-    /// 播放列表弹层：有队列显示当前队列；无队列（单集播放）可浏览全部列表选片
+    /// 播放列表弹层：页签浏览全部列表（左右滑动切换），当前播放条目高亮
     private var queueSheet: some View {
-        NavigationStack {
-            Group {
-                if hasQueue {
-                    queueList
-                } else {
-                    playlistBrowser
-                }
-            }
-            .navigationTitle(hasQueue ? "播放列表（\(currentIndex + 1)/\(queue.count)）" : "播放列表")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("关闭") { showQueueSheet = false }
-                }
-            }
+        InPlayerPlaylistView(currentItemID: currentItem?.id) { playlist, index in
+            showQueueSheet = false
+            playFromBrowser(playlist: playlist, index: index)
         }
         .presentationDetents([.medium, .large])
     }
 
-    private var queueList: some View {
-        List(queue.indices, id: \.self) { index in
-            let item = queue[index]
-            Button {
-                switchTo(index)
-            } label: {
-                queueRow(item: item, isCurrent: index == currentIndex)
-            }
-        }
-    }
-
-    private var playlistBrowser: some View {
-        List {
-            ForEach(playlistStore.tabs) { playlist in
-                if !playlist.items.isEmpty {
-                    Section(playlist.name) {
-                        ForEach(Array(playlist.items.enumerated()), id: \.element.id) { index, item in
-                            Button {
-                                playFromBrowser(playlist: playlist, index: index)
-                            } label: {
-                                queueRow(item: item, isCurrent: false)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private func queueRow(item: PlaylistItem, isCurrent: Bool) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.title.isEmpty ? item.file : item.title)
-                    .lineLimit(1)
-                    .foregroundStyle(isCurrent ? Color.accentColor : .primary)
-                if item.position > 0 {
-                    Text("看到 \(formatTimeShort(item.position))")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Spacer()
-            if isCurrent {
-                Image(systemName: "play.fill")
-                    .foregroundStyle(.tint)
-                    .font(.caption)
-            }
-        }
-    }
-
-    /// 单集播放时从全量列表选片：把整个列表设为队列并起播
+    /// 从列表弹层选片：把整个列表设为队列并起播
     private func playFromBrowser(playlist: Playlist, index: Int) {
         guard playlist.items.indices.contains(index) else { return }
-        showQueueSheet = false
         rebuildPlayer {
             useResumeTime = false
             queue = playlist.items
@@ -462,12 +399,6 @@ struct VRPlayerView: View {
 
     private func formatRate(_ rate: Float) -> String {
         rate == Float(Int(rate)) ? "\(Int(rate)).0x" : String(format: "%.2gx", rate)
-    }
-
-    private func formatTimeShort(_ seconds: Int) -> String {
-        let m = seconds / 60
-        let s = seconds % 60
-        return String(format: "%d:%02d", m, s)
     }
 
     private func attachCallbacks() {
