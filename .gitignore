@@ -14,3 +14,10 @@ original-site.png
 # Electron 打包产物
 dist/
 out/
+
+# iOS
+ios/AetherVR.xcodeproj/
+ios/LocalSigning.xcconfig
+ios/.build/
+ios/DerivedData/
+xcuserdata/
