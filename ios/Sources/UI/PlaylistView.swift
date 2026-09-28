@@ -10,8 +10,8 @@ struct PlaylistView: View {
     @State private var exportText: String?
     @State private var errorMessage: String?
     @State private var playback: URLPlaySheet.PlaybackTarget?
-    /// 正在横向滑动切页签（此时禁用行点击，避免滑动手势误触发选中）
-    @State private var isSwitchingTab = false
+    /// 正在页签条上横向滑动（此时禁用页签按钮，避免误触）
+    @State private var isSwipingTabs = false
 
     private var currentTab: Playlist? {
         let tabs = store.tabs
@@ -26,27 +26,6 @@ struct PlaylistView: View {
                     itemList(playlist)
                 }
             }
-            .simultaneousGesture(
-                // 内容区左右滑动切换页签（对齐 PC 端）
-                DragGesture(minimumDistance: 20)
-                    .onChanged { value in
-                        let dx = value.translation.width
-                        let dy = value.translation.height
-                        if abs(dx) > 24, abs(dx) > abs(dy) * 1.5 {
-                            isSwitchingTab = true
-                        }
-                    }
-                    .onEnded { value in
-                        // 延迟恢复行点击，防止同一次抬手触发选中
-                        defer {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                                isSwitchingTab = false
-                            }
-                        }
-                        guard isSwitchingTab else { return }
-                        moveTab(value.translation.width < 0 ? 1 : -1)
-                    }
-            )
             .navigationTitle("播放列表")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
@@ -137,6 +116,7 @@ struct PlaylistView: View {
                                     )
                                     .foregroundStyle(currentTab?.id == playlist.id ? Color.accentColor : .primary)
                             }
+                            .disabled(isSwipingTabs)
                             .id(playlist.id)
                         }
                     }
@@ -168,10 +148,30 @@ struct PlaylistView: View {
                 }
             }
             .padding(.horizontal, 8)
+            // 页签条上左右滑动切换页签（高优先级，盖过页签条自身的滚动）
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 15)
+                    .onChanged { value in
+                        let dx = value.translation.width
+                        let dy = value.translation.height
+                        if abs(dx) > 20, abs(dx) > abs(dy) * 1.5 {
+                            isSwipingTabs = true
+                        }
+                    }
+                    .onEnded { value in
+                        defer {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                                isSwipingTabs = false
+                            }
+                        }
+                        guard isSwipingTabs else { return }
+                        moveTab(value.translation.width < 0 ? 1 : -1)
+                    }
+            )
         }
     }
 
-    /// 左移/右移页签（箭头点击或内容区左右滑动），并把目标页签滚到可见位置
+    /// 左移/右移页签（箭头点击或页签条上滑动），并把目标页签滚到可见位置
     private func moveTab(_ offset: Int, proxy: ScrollViewProxy? = nil) {
         let tabs = store.tabs
         guard !tabs.isEmpty else { return }
@@ -204,7 +204,6 @@ struct PlaylistView: View {
                             }
                         }
                         .foregroundStyle(.primary)
-                        .disabled(isSwitchingTab)
                         .swipeActions(edge: .trailing) {
                             Button(role: .destructive) {
                                 playlist.items.removeAll { $0.id == item.id }

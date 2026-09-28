@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// 播放器内的播放列表弹层：页签（收藏夹 → 临时列表 → 真实列表），
-/// 左右滑动切换，支持新建/导入/导出，点条目立即起播。
+/// 在页签条上左右滑动切换，支持新建/导入/导出，点条目立即起播。
+/// 不用 NavigationStack（其导航条会在标题下产生阴影色块），标题栏自绘。
 struct InPlayerPlaylistView: View {
     @EnvironmentObject private var store: PlaylistStore
     /// 当前正在播放的条目（高亮标记）
@@ -14,8 +15,9 @@ struct InPlayerPlaylistView: View {
     @State private var newListName = ""
     @State private var showImportPicker = false
     @State private var errorMessage: String?
-    /// 正在横向滑动切页签（此时禁用行点击，避免滑动手势误触发选中）
-    @State private var isSwitchingTab = false
+    @State private var showCopiedHint = false
+    /// 正在页签条上横向滑动（此时禁用页签按钮，避免误触）
+    @State private var isSwipingTabs = false
 
     private var currentTab: Playlist? {
         let tabs = store.tabs
@@ -23,71 +25,51 @@ struct InPlayerPlaylistView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                tabBar
-                if let playlist = currentTab {
-                    itemList(playlist)
+        VStack(spacing: 0) {
+            // 自绘标题栏（避免 NavigationStack 导航条阴影）
+            HStack {
+                Text("播放列表")
+                    .font(.headline)
+                Spacer()
+                Button("关闭") { dismiss() }
+                    .font(.subheadline)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+
+            tabBar
+
+            if let playlist = currentTab {
+                itemList(playlist)
+            }
+        }
+        .alert("新建播放列表", isPresented: $showNewListAlert) {
+            TextField("列表名称", text: $newListName)
+            Button("创建") {
+                do {
+                    let playlist = try store.createList(name: newListName)
+                    selectedTabID = playlist.id
+                    newListName = ""
+                } catch {
+                    errorMessage = error.localizedDescription
                 }
             }
-            .simultaneousGesture(
-                // 内容区左右滑动切换页签（对齐 PC 端）
-                DragGesture(minimumDistance: 20)
-                    .onChanged { value in
-                        let dx = value.translation.width
-                        let dy = value.translation.height
-                        if abs(dx) > 24, abs(dx) > abs(dy) * 1.5 {
-                            isSwitchingTab = true
-                        }
-                    }
-                    .onEnded { value in
-                        // 延迟恢复行点击，防止同一次抬手触发选中
-                        defer {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                                isSwitchingTab = false
-                            }
-                        }
-                        guard isSwitchingTab else { return }
-                        moveTab(value.translation.width < 0 ? 1 : -1)
-                    }
-            )
-            .navigationTitle("播放列表")
-            .navigationBarTitleDisplayMode(.inline)
-            // sheet 里导航条不要渲染成不透明色块
-            .toolbarBackground(.hidden, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("关闭") { dismiss() }
-                }
+            Button("取消", role: .cancel) { newListName = "" }
+        }
+        .fileImporter(isPresented: $showImportPicker, allowedContentTypes: [.plainText, .data]) { result in
+            if case .success(let url) = result {
+                importDPL(url)
             }
-            .alert("新建播放列表", isPresented: $showNewListAlert) {
-                TextField("列表名称", text: $newListName)
-                Button("创建") {
-                    do {
-                        let playlist = try store.createList(name: newListName)
-                        selectedTabID = playlist.id
-                        newListName = ""
-                    } catch {
-                        errorMessage = error.localizedDescription
-                    }
-                }
-                Button("取消", role: .cancel) { newListName = "" }
-            }
-            .fileImporter(isPresented: $showImportPicker, allowedContentTypes: [.plainText, .data]) { result in
-                if case .success(let url) = result {
-                    importDPL(url)
-                }
-            }
-            .alert("操作失败", isPresented: .constant(errorMessage != nil)) {
-                Button("好") { errorMessage = nil }
-            } message: {
-                Text(errorMessage ?? "")
-            }
-            .alert("导出成功", isPresented: $showCopiedHint) {
-                Button("好") {}
-            } message: {
-                Text("列表已生成为 DPL 文本并拷贝到剪贴板，可粘贴分享或保存。")
-            }
+        }
+        .alert("操作失败", isPresented: .constant(errorMessage != nil)) {
+            Button("好") { errorMessage = nil }
+        } message: {
+            Text(errorMessage ?? "")
+        }
+        .alert("导出成功", isPresented: $showCopiedHint) {
+            Button("好") {}
+        } message: {
+            Text("列表已生成为 DPL 文本并拷贝到剪贴板，可粘贴分享或保存。")
         }
         .task {
             // 默认选中包含当前播放条目的列表
@@ -126,6 +108,7 @@ struct InPlayerPlaylistView: View {
                                     )
                                     .foregroundStyle(currentTab?.id == playlist.id ? Color.accentColor : .primary)
                             }
+                            .disabled(isSwipingTabs)
                             .id(playlist.id)
                         }
                     }
@@ -156,9 +139,30 @@ struct InPlayerPlaylistView: View {
                 }
             }
             .padding(.horizontal, 8)
+            // 页签条上左右滑动切换页签（高优先级，盖过页签条自身的滚动）
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 15)
+                    .onChanged { value in
+                        let dx = value.translation.width
+                        let dy = value.translation.height
+                        if abs(dx) > 20, abs(dx) > abs(dy) * 1.5 {
+                            isSwipingTabs = true
+                        }
+                    }
+                    .onEnded { value in
+                        defer {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                                isSwipingTabs = false
+                            }
+                        }
+                        guard isSwipingTabs else { return }
+                        moveTab(value.translation.width < 0 ? 1 : -1)
+                    }
+            )
         }
     }
 
+    /// 左移/右移页签（箭头点击或页签条上滑动），并把目标页签滚到可见位置
     private func moveTab(_ offset: Int, proxy: ScrollViewProxy? = nil) {
         let tabs = store.tabs
         guard !tabs.isEmpty else { return }
@@ -199,7 +203,6 @@ struct InPlayerPlaylistView: View {
                             }
                         }
                     }
-                    .disabled(isSwitchingTab)
                 }
             }
         }
@@ -225,8 +228,6 @@ struct InPlayerPlaylistView: View {
         UIPasteboard.general.string = text
         showCopiedHint = true
     }
-
-    @State private var showCopiedHint = false
 
     private func formatTimeShort(_ seconds: Int) -> String {
         let m = seconds / 60
