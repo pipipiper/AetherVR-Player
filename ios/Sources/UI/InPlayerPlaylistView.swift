@@ -14,6 +14,8 @@ struct InPlayerPlaylistView: View {
     @State private var newListName = ""
     @State private var showImportPicker = false
     @State private var errorMessage: String?
+    /// 正在横向滑动切页签（此时禁用行点击，避免滑动手势误触发选中）
+    @State private var isSwitchingTab = false
 
     private var currentTab: Playlist? {
         let tabs = store.tabs
@@ -30,12 +32,23 @@ struct InPlayerPlaylistView: View {
             }
             .simultaneousGesture(
                 // 内容区左右滑动切换页签（对齐 PC 端）
-                DragGesture(minimumDistance: 40)
-                    .onEnded { value in
+                DragGesture(minimumDistance: 20)
+                    .onChanged { value in
                         let dx = value.translation.width
                         let dy = value.translation.height
-                        guard abs(dx) > abs(dy) * 1.5 else { return }
-                        moveTab(dx < 0 ? 1 : -1)
+                        if abs(dx) > 24, abs(dx) > abs(dy) * 1.5 {
+                            isSwitchingTab = true
+                        }
+                    }
+                    .onEnded { value in
+                        // 延迟恢复行点击，防止同一次抬手触发选中
+                        defer {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                                isSwitchingTab = false
+                            }
+                        }
+                        guard isSwitchingTab else { return }
+                        moveTab(value.translation.width < 0 ? 1 : -1)
                     }
             )
             .navigationTitle("播放列表")
@@ -186,6 +199,7 @@ struct InPlayerPlaylistView: View {
                             }
                         }
                     }
+                    .disabled(isSwitchingTab)
                 }
             }
         }
