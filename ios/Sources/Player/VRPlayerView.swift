@@ -43,6 +43,9 @@ struct VRPlayerView: View {
         options.display = mode.displayEnum
         options.startPlayTime = startPosition
         options.hardwareDecode = true
+        // 关键：默认 false 时 MEPlayer 用 FFmpeg 软解，8K 直接卡成幻灯片；
+        // 打开后走 VideoToolbox 硬解（DecompressionSession），不支持的编码会自动回退软解
+        options.asynchronousDecompression = true
         options.isSecondOpen = true
         if !httpHeaders.isEmpty {
             options.appendHeader(httpHeaders)
@@ -54,6 +57,7 @@ struct VRPlayerView: View {
         ZStack {
             Color.black.ignoresSafeArea()
             KSVideoPlayer(coordinator: coordinator, url: url, options: options)
+                .ignoresSafeArea()
                 .onTapGesture {
                     withAnimation(.easeInOut(duration: 0.2)) {
                         showControls.toggle()
