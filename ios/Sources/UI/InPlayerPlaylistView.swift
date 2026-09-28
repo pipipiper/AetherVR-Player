@@ -18,6 +18,8 @@ struct InPlayerPlaylistView: View {
     @State private var showCopiedHint = false
     /// 正在页签条上横向滑动（此时禁用页签按钮，避免误触）
     @State private var isSwipingTabs = false
+    /// 正在内容区横向滑动（此时禁用行按钮，避免误触选中）
+    @State private var isSwipingList = false
 
     private var currentTab: Playlist? {
         let tabs = store.tabs
@@ -29,10 +31,13 @@ struct InPlayerPlaylistView: View {
             // 自绘标题栏（避免 NavigationStack 导航条阴影）
             HStack {
                 Text("播放列表")
-                    .font(.headline)
+                    .font(.title3.weight(.semibold))
                 Spacer()
                 Button("关闭") { dismiss() }
-                    .font(.subheadline)
+                    .font(.body)
+                    .padding(.horizontal, 14)
+                    .frame(minHeight: 36)
+                    .background(.white.opacity(0.12), in: Capsule())
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
@@ -43,6 +48,28 @@ struct InPlayerPlaylistView: View {
                 itemList(playlist)
             }
         }
+        .simultaneousGesture(
+            // 内容区左右滑动也可切页签；横移刚出现就禁用行按钮，杜绝误触选中
+            DragGesture(minimumDistance: 0)
+                .onChanged { value in
+                    let dx = value.translation.width
+                    let dy = value.translation.height
+                    if abs(dx) > 10, abs(dx) > abs(dy) {
+                        isSwipingList = true
+                    }
+                }
+                .onEnded { value in
+                    defer {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                            isSwipingList = false
+                        }
+                    }
+                    let dx = value.translation.width
+                    let dy = value.translation.height
+                    guard abs(dx) > 40, abs(dx) > abs(dy) * 1.5 else { return }
+                    moveTab(dx < 0 ? 1 : -1)
+                }
+        )
         .alert("新建播放列表", isPresented: $showNewListAlert) {
             TextField("列表名称", text: $newListName)
             Button("创建") {
@@ -203,6 +230,7 @@ struct InPlayerPlaylistView: View {
                             }
                         }
                     }
+                    .disabled(isSwipingList)
                 }
             }
         }
