@@ -7,6 +7,7 @@ enum SettingsKeys {
     static let gyroDefaultOn = "gyroDefaultOn"             // Bool
     static let autoPlayNext = "autoPlayNext"               // Bool
     static let rememberPosition = "rememberPosition"       // Bool
+    static let appearance = "appearance"                   // String: system / light / dark
 
     static func registerDefaults() {
         UserDefaults.standard.register(defaults: [
@@ -15,6 +16,7 @@ enum SettingsKeys {
             gyroDefaultOn: false,
             autoPlayNext: true,
             rememberPosition: true,
+            appearance: "dark",
         ])
     }
 }
@@ -25,10 +27,18 @@ struct SettingsView: View {
     @AppStorage(SettingsKeys.gyroDefaultOn) private var gyroDefaultOn = false
     @AppStorage(SettingsKeys.autoPlayNext) private var autoPlayNext = true
     @AppStorage(SettingsKeys.rememberPosition) private var rememberPosition = true
+    @AppStorage(SettingsKeys.appearance) private var appearance = "dark"
 
     var body: some View {
         NavigationStack {
             Form {
+                Section("外观") {
+                    Picker("主题", selection: $appearance) {
+                        Text("跟随系统").tag("system")
+                        Text("深色").tag("dark")
+                        Text("浅色").tag("light")
+                    }
+                }
                 Section("播放") {
                     Picker("默认投影模式", selection: $defaultProjection) {
                         ForEach(VRDisplayMode.allCases) { mode in
