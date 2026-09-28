@@ -41,6 +41,9 @@ struct VRPlayerView: View {
     @State private var hideControlsTask: DispatchWorkItem?
     /// 双指缩放 FOV 的基准值（弧度）
     @State private var baseFov: Float = .pi / 3
+    /// SwiftUI 手势直控视角的基准值（弧度）
+    @State private var yawBase: Float = 0
+    @State private var pitchBase: Float = 0
     /// 软/硬解与投影模式：切换会重建播放器，rebuildToken 驱动 .id/.task
     @State private var hardwareDecode = true
     @State private var modeOverride: VRDisplayMode?
@@ -77,7 +80,22 @@ struct VRPlayerView: View {
                     }
                     if showControls { scheduleAutoHide() }
                 }
-                .gesture(
+                .simultaneousGesture(
+                    // SwiftUI 直控视角：绕过 KSPlayer 的 UIKit touchesMoved 路径
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            guard effectiveMode != .plane, !gyroEnabled else { return }
+                            let yaw = yawBase - Float(value.translation.width) * 0.004
+                            let pitch = pitchBase - Float(value.translation.height) * 0.004
+                            KSOptions.vrYaw = yaw
+                            KSOptions.vrPitch = min(max(pitch, -.pi / 2), .pi / 2)
+                        }
+                        .onEnded { _ in
+                            yawBase = KSOptions.vrYaw ?? 0
+                            pitchBase = KSOptions.vrPitch ?? 0
+                        }
+                )
+                .simultaneousGesture(
                     MagnificationGesture()
                         .onChanged { scale in
                             guard effectiveMode != .plane else { return }
@@ -112,10 +130,17 @@ struct VRPlayerView: View {
         .onAppear {
             gyroEnabled = false
             KSOptions.enableSensor = false
+            // 启用 SwiftUI 外部视角控制（fork: vrYaw/vrPitch 非 nil 时优先于内置旋转/陀螺仪）
+            KSOptions.vrYaw = 0
+            KSOptions.vrPitch = 0
+            yawBase = 0
+            pitchBase = 0
             coordinator.isMaskShow = false
             scheduleAutoHide()
         }
         .onDisappear {
+            KSOptions.vrYaw = nil
+            KSOptions.vrPitch = nil
             coordinator.resetPlayer()
         }
     }
@@ -159,6 +184,17 @@ struct VRPlayerView: View {
                     Button {
                         gyroEnabled.toggle()
                         KSOptions.enableSensor = gyroEnabled
+                        if gyroEnabled {
+                            // 交还给陀螺仪驱动
+                            KSOptions.vrYaw = nil
+                            KSOptions.vrPitch = nil
+                        } else {
+                            // 回到手动拖动，从正前方重新开始
+                            KSOptions.vrYaw = 0
+                            KSOptions.vrPitch = 0
+                            yawBase = 0
+                            pitchBase = 0
+                        }
                         scheduleAutoHide()
                     } label: {
                         Label(gyroEnabled ? "陀螺仪：开" : "陀螺仪：关",
@@ -202,6 +238,21 @@ struct VRPlayerView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .background(.black.opacity(0.45))
+
+            // 渲染诊断（临时，定位手势卡顿用）
+            TimelineView(.periodic(from: .now, by: 0.5)) { _ in
+                let info = coordinator.playerLayer?.player.dynamicInfo
+                Text(String(
+                    format: "渲染 %.0ffps · 丢帧 %u · FOV %.0f°",
+                    info?.displayFPS ?? 0,
+                    info?.droppedVideoFrameCount ?? 0,
+                    Double(KSOptions.vrFov) * 180 / .pi
+                ))
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.white.opacity(0.7))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+            }
         }
     }
 
