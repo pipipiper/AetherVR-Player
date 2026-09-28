@@ -25,6 +25,9 @@ targets:
           - Info.plist
     info:
       path: Sources/Info.plist
+    configFiles:
+      Debug: LocalSigning.xcconfig
+      Release: LocalSigning.xcconfig
     dependencies:
       - package: KSPlayer
         product: KSPlayer
