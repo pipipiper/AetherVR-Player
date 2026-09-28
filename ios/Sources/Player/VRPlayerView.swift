@@ -30,17 +30,38 @@ struct VRPlayerView: View {
     /// WebDAV 等需要认证头时传入（如 ["Authorization": "Basic ..."]）
     var httpHeaders: [String: String] = [:]
 
+    @State private var gyroEnabled = KSOptions.enableSensor
+
     var body: some View {
-        KSVideoPlayerView(
-            url: url,
-            options: Self.makeOptions(
-                mode: mode,
-                start: startPosition,
-                headers: httpHeaders
-            ),
-            title: title
-        )
-        .ignoresSafeArea()
+        ZStack(alignment: .topTrailing) {
+            KSVideoPlayerView(
+                url: url,
+                options: Self.makeOptions(
+                    mode: mode,
+                    start: startPosition,
+                    headers: httpHeaders
+                ),
+                title: title
+            )
+            // 陀螺仪开关：关闭后用拖动来手动调整视角
+            if mode != .plane {
+                Button {
+                    gyroEnabled.toggle()
+                    KSOptions.enableSensor = gyroEnabled
+                } label: {
+                    Label(gyroEnabled ? "陀螺仪：开" : "陀螺仪：关",
+                          systemImage: "gyroscope")
+                        .font(.footnote)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(.black.opacity(0.55), in: Capsule())
+                        .foregroundStyle(.white)
+                }
+                // 避开 KSPlayer 自带顶部控制条
+                .padding(.top, 56)
+                .padding(.trailing, 12)
+            }
+        }
     }
 
     static func makeOptions(
