@@ -205,8 +205,9 @@ struct VRPlayerView: View {
         }
     }
 
-    /// 切换软硬解/投影模式：记录当前进度，改变 rebuildToken 触发播放器重建
+    /// 切换软硬解/投影模式：先停掉旧播放器（防止后台继续解码），记录进度后重建
     private func rebuildPlayer(_ change: () -> Void) {
+        coordinator.playerLayer?.stop()
         resumeTime = Double(coordinator.timemodel.currentTime)
         change()
         scheduleAutoHide()
