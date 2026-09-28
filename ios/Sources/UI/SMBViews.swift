@@ -10,10 +10,43 @@ struct SMBConnectSheet: View {
     @State private var errorMessage: String?
     @State private var connecting = false
     @State private var shares: [String]?
+    @State private var recents: [RecentServer] = []
 
     var body: some View {
         NavigationStack {
             Form {
+                if !recents.isEmpty {
+                    Section("最近连接") {
+                        ForEach(recents) { server in
+                            Button {
+                                connectRecent(server)
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(server.address)
+                                            .foregroundStyle(.primary)
+                                        if !server.username.isEmpty {
+                                            Text(server.username)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+                                    Spacer()
+                                    Image(systemName: "arrow.right.circle")
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .swipeActions(edge: .trailing) {
+                                Button(role: .destructive) {
+                                    ServerHistory.remove(server)
+                                    recents = ServerHistory.load(type: "smb")
+                                } label: {
+                                    Label("删除", systemImage: "trash")
+                                }
+                            }
+                        }
+                    }
+                }
                 Section("服务器") {
                     TextField("主机名或 IP，如 192.168.1.10", text: $host)
                         .keyboardType(.URL)
@@ -56,6 +89,9 @@ struct SMBConnectSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
+        .onAppear {
+            recents = ServerHistory.load(type: "smb")
+        }
     }
 
     private func makeConfig() -> SMBServerConfig {
@@ -68,6 +104,15 @@ struct SMBConnectSheet: View {
         )
     }
 
+    private func connectRecent(_ server: RecentServer) {
+        let parts = server.address.split(separator: ":")
+        host = String(parts.first ?? "")
+        port = parts.count > 1 ? String(parts[1]) : "445"
+        username = server.username
+        password = ServerHistory.password(for: server) ?? ""
+        connect()
+    }
+
     private func connect() {
         connecting = true
         errorMessage = nil
@@ -77,6 +122,12 @@ struct SMBConnectSheet: View {
                 let result = try await SMBClient(config: config).listShares()
                 await MainActor.run {
                     connecting = false
+                    ServerHistory.remember(
+                        type: "smb",
+                        address: "\(config.host):\(config.port)",
+                        username: config.username,
+                        password: config.password
+                    )
                     shares = result
                 }
             } catch {

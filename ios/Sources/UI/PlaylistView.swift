@@ -211,7 +211,15 @@ struct PlaylistView: View {
     }
 
     private func play(_ item: PlaylistItem, in playlist: Playlist) {
-        guard let url = URL(string: item.file) else {
+        // 本地路径条目（多为电脑端导出的 dpl）：手机上看不到就明确报错
+        if !item.isRemote {
+            let path = item.file.replacingOccurrences(of: "file://", with: "")
+            guard FileManager.default.fileExists(atPath: path) else {
+                errorMessage = "文件不存在：\(item.file)\n（如果列表是从电脑端导出的，这些路径只在电脑上有效）"
+                return
+            }
+        }
+        guard let url = item.isRemote ? URL(string: item.file) : URL(fileURLWithPath: item.file) else {
             errorMessage = "无法识别的地址：\(item.file)"
             return
         }

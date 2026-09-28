@@ -9,10 +9,44 @@ struct WebDAVConnectSheet: View {
     @State private var errorMessage: String?
     @State private var connecting = false
     @State private var connectedClient: WebDAVClient?
+    @State private var recents: [RecentServer] = []
 
     var body: some View {
         NavigationStack {
             Form {
+                if !recents.isEmpty {
+                    Section("最近连接") {
+                        ForEach(recents) { server in
+                            Button {
+                                connectRecent(server)
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(server.address)
+                                            .foregroundStyle(.primary)
+                                            .lineLimit(1)
+                                        if !server.username.isEmpty {
+                                            Text(server.username)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+                                    Spacer()
+                                    Image(systemName: "arrow.right.circle")
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .swipeActions(edge: .trailing) {
+                                Button(role: .destructive) {
+                                    ServerHistory.remove(server)
+                                    recents = ServerHistory.load(type: "webdav")
+                                } label: {
+                                    Label("删除", systemImage: "trash")
+                                }
+                            }
+                        }
+                    }
+                }
                 Section("服务器地址") {
                     TextField("如 https://nas.example.com:5006/dav", text: $address)
                         .keyboardType(.URL)
@@ -53,6 +87,9 @@ struct WebDAVConnectSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
+        .onAppear {
+            recents = ServerHistory.load(type: "webdav")
+        }
     }
 
     private var baseURL: URL? {
@@ -62,6 +99,13 @@ struct WebDAVConnectSheet: View {
             return nil
         }
         return url
+    }
+
+    private func connectRecent(_ server: RecentServer) {
+        address = server.address
+        username = server.username
+        password = ServerHistory.password(for: server) ?? ""
+        connect()
     }
 
     private func connect() {
@@ -78,6 +122,12 @@ struct WebDAVConnectSheet: View {
                 _ = try await client.list(path: "/")
                 await MainActor.run {
                     connecting = false
+                    ServerHistory.remember(
+                        type: "webdav",
+                        address: url.absoluteString,
+                        username: username,
+                        password: password
+                    )
                     connectedClient = client
                 }
             } catch {

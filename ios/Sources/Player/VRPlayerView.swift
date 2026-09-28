@@ -291,7 +291,7 @@ struct VRPlayerView: View {
                         .font(.title3)
                         .frame(width: 40, height: 40)
                 }
-                PlayerTimeSlider(
+                PlayerSeekBar(
                     timemodel: coordinator.timemodel,
                     isSeeking: $isSeeking,
                     seekPosition: $seekPosition,
@@ -501,33 +501,50 @@ struct VRPlayerView: View {
     }
 }
 
-/// 进度条：独立于 coordinator 观察 timemodel，拖动时不被播放进度回写干扰
-private struct PlayerTimeSlider: View {
+/// 自绘进度条：支持点按跳转 + 拖动实时跟随（SwiftUI Slider 不支持点按，
+/// 且和视角拖动手势容易互相干扰）
+private struct PlayerSeekBar: View {
     @ObservedObject var timemodel: ControllerTimeModel
     @Binding var isSeeking: Bool
     @Binding var seekPosition: Double
     let onSeek: (TimeInterval) -> Void
 
+    private var total: Double { max(1, Double(timemodel.totalTime)) }
+    private var shown: Double { isSeeking ? seekPosition : Double(timemodel.currentTime) }
+
     var body: some View {
         HStack(spacing: 8) {
-            Text(formatTime(isSeeking ? seekPosition : Double(timemodel.currentTime)))
+            Text(formatTime(shown))
                 .font(.caption.monospacedDigit())
-            Slider(
-                value: Binding(
-                    get: { isSeeking ? seekPosition : Double(timemodel.currentTime) },
-                    set: { seekPosition = $0 }
-                ),
-                in: 0...max(1, Double(timemodel.totalTime)),
-                onEditingChanged: { editing in
-                    if editing {
-                        seekPosition = Double(timemodel.currentTime)
-                    } else {
-                        onSeek(seekPosition)
-                    }
-                    isSeeking = editing
+            GeometryReader { geo in
+                let fraction = min(max(shown / total, 0), 1)
+                ZStack(alignment: .leading) {
+                    Capsule().fill(.white.opacity(0.3))
+                    Capsule().fill(.white)
+                        .frame(width: max(0, geo.size.width * fraction))
                 }
-            )
-            Text(formatTime(Double(timemodel.totalTime)))
+                .frame(height: 6)
+                .frame(maxHeight: .infinity, alignment: .center)
+                .contentShape(Rectangle())
+                // minimumDistance: 0 → 点按和拖动走同一个手势，实时跟随手指
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            if !isSeeking {
+                                seekPosition = Double(timemodel.currentTime)
+                            }
+                            isSeeking = true
+                            let ratio = min(max(value.location.x / geo.size.width, 0), 1)
+                            seekPosition = ratio * total
+                        }
+                        .onEnded { _ in
+                            onSeek(seekPosition)
+                            isSeeking = false
+                        }
+                )
+            }
+            .frame(height: 32)
+            Text(formatTime(total))
                 .font(.caption.monospacedDigit())
         }
     }
