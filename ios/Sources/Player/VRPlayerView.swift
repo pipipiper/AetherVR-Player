@@ -209,6 +209,10 @@ struct VRPlayerView: View {
         .sheet(isPresented: $showQueueSheet) {
             queueSheet
         }
+        .onChange(of: showQueueSheet) { _, presented in
+            // 弹层打开时暂停 8K 无帧重绘，避免 GPU 被占满导致列表滑动卡顿
+            KSOptions.vrPauseRerender = presented
+        }
     }
 
     private var controlsOverlay: some View {

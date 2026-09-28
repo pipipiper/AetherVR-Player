@@ -24,6 +24,16 @@ struct PlaylistView: View {
                     itemList(playlist)
                 }
             }
+            .simultaneousGesture(
+                // 内容区左右滑动切换页签（对齐 PC 端）
+                DragGesture(minimumDistance: 40)
+                    .onEnded { value in
+                        let dx = value.translation.width
+                        let dy = value.translation.height
+                        guard abs(dx) > abs(dy) * 1.5 else { return }
+                        moveTab(dx < 0 ? 1 : -1)
+                    }
+            )
             .navigationTitle("播放列表")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
@@ -89,26 +99,73 @@ struct PlaylistView: View {
     }
 
     private var tabBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(store.tabs) { playlist in
-                    Button {
-                        selectedTabID = playlist.id
-                    } label: {
-                        Text(playlist.name)
-                            .font(.subheadline)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(
-                                currentTab?.id == playlist.id ? Color.accentColor : Color.secondary.opacity(0.2),
-                                in: Capsule()
-                            )
-                            .foregroundStyle(currentTab?.id == playlist.id ? .white : .primary)
+        ScrollViewReader { proxy in
+            HStack(spacing: 6) {
+                Button { moveTab(-1, proxy: proxy) } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.callout)
+                        .frame(width: 28, height: 32)
+                }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(store.tabs) { playlist in
+                            Button {
+                                selectedTabID = playlist.id
+                            } label: {
+                                Text(playlist.name)
+                                    .font(.subheadline)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(
+                                        currentTab?.id == playlist.id ? Color.accentColor : Color.secondary.opacity(0.2),
+                                        in: Capsule()
+                                    )
+                                    .foregroundStyle(currentTab?.id == playlist.id ? .white : .primary)
+                            }
+                            .id(playlist.id)
+                        }
+                    }
+                    .padding(.vertical, 8)
+                }
+                Button { moveTab(1, proxy: proxy) } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.callout)
+                        .frame(width: 28, height: 32)
+                }
+                Divider().frame(height: 20)
+                // 新增 / 导入 / 导出（对齐 PC 端页签条操作）
+                Button { showNewListAlert = true } label: {
+                    Image(systemName: "plus")
+                        .font(.callout)
+                        .frame(width: 28, height: 32)
+                }
+                Button { showImportPicker = true } label: {
+                    Image(systemName: "square.and.arrow.down")
+                        .font(.callout)
+                        .frame(width: 28, height: 32)
+                }
+                if let playlist = currentTab, playlist.fileURL != nil {
+                    Button { export(playlist) } label: {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.callout)
+                            .frame(width: 28, height: 32)
                     }
                 }
             }
-            .padding(.horizontal)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 8)
+        }
+    }
+
+    /// 左移/右移页签（箭头点击或内容区左右滑动），并把目标页签滚到可见位置
+    private func moveTab(_ offset: Int, proxy: ScrollViewProxy? = nil) {
+        let tabs = store.tabs
+        guard !tabs.isEmpty else { return }
+        let current = tabs.firstIndex { $0.id == currentTab?.id } ?? 0
+        let next = min(max(current + offset, 0), tabs.count - 1)
+        guard next != current else { return }
+        selectedTabID = tabs[next].id
+        if let proxy {
+            withAnimation { proxy.scrollTo(tabs[next].id, anchor: .center) }
         }
     }
 
