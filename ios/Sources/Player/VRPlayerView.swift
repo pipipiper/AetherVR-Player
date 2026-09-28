@@ -133,7 +133,8 @@ struct VRPlayerView: View {
                 controlsOverlay
                     .transition(.opacity)
             }
-            if playerState == .buffering || playerState == .initialized {
+            // 重建中只显示「正在切换…」，不再叠缓冲转圈
+            if playerVisible && (playerState == .buffering || playerState == .initialized) {
                 ProgressView()
                     .tint(.white)
                     .scaleEffect(1.3)
@@ -142,13 +143,7 @@ struct VRPlayerView: View {
         }
         .statusBarHidden(true)
         .task(id: rebuildToken) {
-            // 播放器每次重建（软硬解/模式切换）后重新挂回调（dismantle 时会清空）
-            coordinator.onStateChanged = { _, state in
-                playerState = state
-            }
-            coordinator.onFinish = { _, error in
-                if error == nil { dismiss() }
-            }
+            attachCallbacks()
         }
         .onAppear {
             gyroEnabled = false
@@ -279,6 +274,16 @@ struct VRPlayerView: View {
         }
     }
 
+    /// 挂播放器状态回调（dismantle 会清空，重建后必须重挂）
+    private func attachCallbacks() {
+        coordinator.onStateChanged = { _, state in
+            playerState = state
+        }
+        coordinator.onFinish = { _, error in
+            if error == nil { dismiss() }
+        }
+    }
+
     /// 切换软硬解/投影模式：先停旧播放器并卸载播放视图，给异步关停让出时间后再重建，
     /// 避免新旧两个 8K 解码管线并存把主线程/内存挤爆
     private func rebuildPlayer(_ change: () -> Void) {
@@ -287,6 +292,8 @@ struct VRPlayerView: View {
         playerVisible = false
         change()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            // dismantle 已走完：先重挂回调，再让 SwiftUI 建新播放器
+            attachCallbacks()
             playerVisible = true
             scheduleAutoHide()
         }
