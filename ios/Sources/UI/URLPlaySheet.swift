@@ -9,11 +9,13 @@ struct URLPlaySheet: View {
         let mode: VRDisplayMode
         var position: TimeInterval = 0
         var headers: [String: String] = [:]
+        var hardwareDecode: Bool = true
     }
 
     @Environment(\.dismiss) private var dismiss
     @State private var urlText = ""
     @State private var mode: VRDisplayMode = .vr360
+    @State private var hardwareDecode = true
     @State private var playback: PlaybackTarget?
 
     var body: some View {
@@ -30,6 +32,10 @@ struct URLPlaySheet: View {
                         ForEach(VRDisplayMode.allCases) { mode in
                             Text(mode.rawValue).tag(mode)
                         }
+                    }
+                    Picker("解码", selection: $hardwareDecode) {
+                        Text("硬件解码").tag(true)
+                        Text("软件解码").tag(false)
                     }
                 }
             }
@@ -48,7 +54,8 @@ struct URLPlaySheet: View {
                 VRPlayerView(
                     url: target.url,
                     title: target.title,
-                    mode: target.mode
+                    mode: target.mode,
+                    hardwareDecode: target.hardwareDecode
                 )
             }
         }
@@ -70,7 +77,8 @@ struct URLPlaySheet: View {
         playback = PlaybackTarget(
             url: url,
             title: name.isEmpty ? "在线视频" : name,
-            mode: mode
+            mode: mode,
+            hardwareDecode: hardwareDecode
         )
     }
 }

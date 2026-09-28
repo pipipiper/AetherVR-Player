@@ -26,10 +26,10 @@ enum VRDisplayMode: String, CaseIterable, Identifiable {
 struct VRPlayerView: View {
     let url: URL
     let title: String
-    var startPosition: TimeInterval = 0
-    var mode: VRDisplayMode = .vr360
+    var startPosition: TimeInterval
+    var mode: VRDisplayMode
     /// WebDAV 等需要认证头时传入（如 ["Authorization": "Basic ..."]）
-    var httpHeaders: [String: String] = [:]
+    var httpHeaders: [String: String]
 
     @Environment(\.dismiss) private var dismiss
     @StateObject private var coordinator = KSVideoPlayer.Coordinator()
@@ -45,10 +45,23 @@ struct VRPlayerView: View {
     @State private var yawBase: Float = 0
     @State private var pitchBase: Float = 0
     /// 软/硬解与投影模式：切换会重建播放器，rebuildToken 驱动 .id/.task
-    @State private var hardwareDecode = true
+    @State private var hardwareDecode: Bool
     @State private var modeOverride: VRDisplayMode?
     /// 重建播放器时恢复到的进度
     @State private var resumeTime: TimeInterval?
+    /// 重建期间的短暂卸载窗口（让旧播放器异步关停走完）
+    @State private var playerVisible = true
+
+    init(url: URL, title: String, startPosition: TimeInterval = 0,
+         mode: VRDisplayMode = .vr360, httpHeaders: [String: String] = [:],
+         hardwareDecode: Bool = true) {
+        self.url = url
+        self.title = title
+        self.startPosition = startPosition
+        self.mode = mode
+        self.httpHeaders = httpHeaders
+        _hardwareDecode = State(initialValue: hardwareDecode)
+    }
 
     private var effectiveMode: VRDisplayMode { modeOverride ?? mode }
     private var rebuildToken: String { "\(hardwareDecode)-\(effectiveMode.rawValue)" }
@@ -71,41 +84,51 @@ struct VRPlayerView: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            KSVideoPlayer(coordinator: coordinator, url: url, options: options)
-                .id(rebuildToken)
-                .ignoresSafeArea()
-                .onTapGesture {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        showControls.toggle()
+            if playerVisible {
+                KSVideoPlayer(coordinator: coordinator, url: url, options: options)
+                    .id(rebuildToken)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            showControls.toggle()
+                        }
+                        if showControls { scheduleAutoHide() }
                     }
-                    if showControls { scheduleAutoHide() }
+                    .simultaneousGesture(
+                        // SwiftUI 直控视角：绕过 KSPlayer 的 UIKit touchesMoved 路径
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { value in
+                                guard effectiveMode != .plane, !gyroEnabled else { return }
+                                let yaw = yawBase - Float(value.translation.width) * 0.004
+                                let pitch = pitchBase - Float(value.translation.height) * 0.004
+                                KSOptions.vrYaw = yaw
+                                KSOptions.vrPitch = min(max(pitch, -.pi / 2), .pi / 2)
+                            }
+                            .onEnded { _ in
+                                yawBase = KSOptions.vrYaw ?? 0
+                                pitchBase = KSOptions.vrPitch ?? 0
+                            }
+                    )
+                    .simultaneousGesture(
+                        MagnificationGesture()
+                            .onChanged { scale in
+                                guard effectiveMode != .plane else { return }
+                                let fov = baseFov / Float(scale)
+                                KSOptions.vrFov = min(max(fov, .pi / 6), .pi * 2 / 3)
+                            }
+                            .onEnded { _ in
+                                baseFov = KSOptions.vrFov
+                            }
+                    )
+            } else {
+                // 重建中（切换软硬解/投影模式）
+                VStack(spacing: 12) {
+                    ProgressView().tint(.white)
+                    Text("正在切换…")
+                        .font(.footnote)
+                        .foregroundStyle(.white.opacity(0.8))
                 }
-                .simultaneousGesture(
-                    // SwiftUI 直控视角：绕过 KSPlayer 的 UIKit touchesMoved 路径
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { value in
-                            guard effectiveMode != .plane, !gyroEnabled else { return }
-                            let yaw = yawBase - Float(value.translation.width) * 0.004
-                            let pitch = pitchBase - Float(value.translation.height) * 0.004
-                            KSOptions.vrYaw = yaw
-                            KSOptions.vrPitch = min(max(pitch, -.pi / 2), .pi / 2)
-                        }
-                        .onEnded { _ in
-                            yawBase = KSOptions.vrYaw ?? 0
-                            pitchBase = KSOptions.vrPitch ?? 0
-                        }
-                )
-                .simultaneousGesture(
-                    MagnificationGesture()
-                        .onChanged { scale in
-                            guard effectiveMode != .plane else { return }
-                            let fov = baseFov / Float(scale)
-                            KSOptions.vrFov = min(max(fov, .pi / 6), .pi * 2 / 3)
-                        }
-                        .onEnded { _ in
-                            baseFov = KSOptions.vrFov
-                        }
-                )
+            }
             if showControls {
                 controlsOverlay
                     .transition(.opacity)
@@ -256,12 +279,17 @@ struct VRPlayerView: View {
         }
     }
 
-    /// 切换软硬解/投影模式：先停掉旧播放器（防止后台继续解码），记录进度后重建
+    /// 切换软硬解/投影模式：先停旧播放器并卸载播放视图，给异步关停让出时间后再重建，
+    /// 避免新旧两个 8K 解码管线并存把主线程/内存挤爆
     private func rebuildPlayer(_ change: () -> Void) {
-        coordinator.playerLayer?.stop()
         resumeTime = Double(coordinator.timemodel.currentTime)
+        coordinator.playerLayer?.stop()
+        playerVisible = false
         change()
-        scheduleAutoHide()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            playerVisible = true
+            scheduleAutoHide()
+        }
     }
 
     private func scheduleAutoHide() {
