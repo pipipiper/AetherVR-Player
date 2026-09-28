@@ -134,7 +134,7 @@ struct WebDAVDirectoryView: View {
                             } label: {
                                 Label {
                                     HStack {
-                                        Text(item.name).lineLimit(1)
+                                        Text(item.name).lineLimit(2)
                                         Spacer()
                                         Text(formatSize(item.size))
                                             .font(.caption)

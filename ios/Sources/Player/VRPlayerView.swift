@@ -54,6 +54,8 @@ struct VRPlayerView: View {
     @State private var useResumeTime = false
     /// 播完连播时跳过重建流程里的进度保存（避免把末尾进度写回去）
     @State private var skipNextSave = false
+    /// 播放失败原因（展示给用户，便于诊断）
+    @State private var playbackError: String?
     /// 播放队列（播放中可整体替换，如从单集切到某个列表）
     @State private var queue: [PlaylistItem]
 
@@ -212,6 +214,11 @@ struct VRPlayerView: View {
         .onChange(of: showQueueSheet) { _, presented in
             // 弹层打开时暂停 8K 无帧重绘，避免 GPU 被占满导致列表滑动卡顿
             KSOptions.vrPauseRerender = presented
+        }
+        .alert("播放失败", isPresented: .constant(playbackError != nil)) {
+            Button("返回") { dismiss() }
+        } message: {
+            Text(playbackError ?? "")
         }
     }
 
@@ -406,7 +413,10 @@ struct VRPlayerView: View {
             playerState = state
         }
         coordinator.onFinish = { _, error in
-            if error != nil { return }
+            if let error {
+                playbackError = error.localizedDescription
+                return
+            }
             // 播完：清掉本集记忆位置，自动连播下一集（跳过重建时的再次保存）
             savePosition(reset: true)
             skipNextSave = true

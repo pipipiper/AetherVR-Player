@@ -143,7 +143,7 @@ struct SMBDirectoryView: View {
                                 Label {
                                     HStack {
                                         Text(item.name)
-                                            .lineLimit(1)
+                                            .lineLimit(2)
                                         Spacer()
                                         Text(formatSize(item.size))
                                             .font(.caption)

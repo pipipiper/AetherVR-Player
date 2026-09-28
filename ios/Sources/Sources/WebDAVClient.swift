@@ -16,6 +16,25 @@ enum WebDAVError: Error, Equatable {
     case badResponse
 }
 
+extension WebDAVError: LocalizedError {
+    var errorDescription: String? {
+        switch self {
+        case .invalidURL:
+            return "服务器地址格式不正确"
+        case .httpError(let code):
+            switch code {
+            case 401: return "认证失败（401）：请检查用户名和密码"
+            case 403: return "没有访问权限（403）"
+            case 404: return "路径不存在（404）：请确认 WebDAV 路径（如 /dav）"
+            case 405: return "该地址不支持 WebDAV（405）：请确认地址是 WebDAV 端点（如 …/dav）"
+            default: return "服务器返回错误（HTTP \(code)）"
+            }
+        case .badResponse:
+            return "服务器响应格式不正确"
+        }
+    }
+}
+
 /// PROPFIND (Depth: 1) 的 multistatus XML 解析，与具体网络层解耦便于测试。
 /// 命名空间无关：只按 local name 匹配 href/displayname/getcontentlength/resourcetype/collection。
 enum WebDAVParser {
@@ -144,9 +163,9 @@ final class WebDAVClient: @unchecked Sendable {
         self.session = session
     }
 
-    /// 列出目录（path 相对 baseURL，"/" 开头）
+    /// 列出目录。path="/" 表示 baseURL 的根（如 /dav）；子目录传入 href 里的服务器绝对路径
     func list(path: String) async throws -> [WebDAVItem] {
-        guard let url = URL(string: path, relativeTo: baseURL)?.absoluteURL else {
+        guard let url = makeURL(serverPath: path) else {
             throw WebDAVError.invalidURL
         }
         var request = URLRequest(url: url)
@@ -171,7 +190,24 @@ final class WebDAVClient: @unchecked Sendable {
 
     /// 供 KSPlayer 播放的完整 URL；认证信息通过 KSOptions header 传递
     func fileURL(path: String) -> URL? {
-        URL(string: path, relativeTo: baseURL)?.absoluteURL
+        makeURL(serverPath: path)
+    }
+
+    /// 构造请求 URL：不用 URL(relativeTo:)（iOS 上 "/" 会丢掉 baseURL 的 /dav 前缀，
+    /// 且部分系统版本 relativeTo 返回 nil 导致 invalidURL）
+    private func makeURL(serverPath: String) -> URL? {
+        var components = URLComponents()
+        components.scheme = baseURL.scheme
+        components.host = baseURL.host
+        components.port = baseURL.port
+        if serverPath == "/" || serverPath.isEmpty {
+            // 列根目录 = baseURL 自身路径（如 /dav）
+            components.path = baseURL.path.hasSuffix("/") ? baseURL.path : baseURL.path + "/"
+        } else {
+            // 子目录 href 是服务器绝对路径（已含 basePath 前缀）
+            components.path = serverPath
+        }
+        return components.url
     }
 
     /// 播放/下载时附加的认证头
