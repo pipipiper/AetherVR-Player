@@ -215,24 +215,26 @@ struct VRPlayerView: View {
 
     private var controlsOverlay: some View {
         VStack {
-            // 顶部：返回、标题、播放列表、更多菜单
-            HStack(spacing: 10) {
+            // 顶部：返回、标题、播放列表、陀螺仪
+            HStack(spacing: 14) {
                 Button { dismiss() } label: {
                     Image(systemName: "chevron.left")
-                        .font(.headline)
-                        .frame(width: 36, height: 36)
+                        .font(.title3)
+                        .frame(width: 44, height: 44)
                 }
                 Text(currentTitle)
-                    .font(.caption)
+                    .font(.subheadline)
                     .lineLimit(1)
                 Spacer()
                 if hasQueue {
                     Button {
                         showQueueSheet = true
                     } label: {
-                        Image(systemName: "list.bullet")
-                            .font(.subheadline)
-                            .frame(width: 32, height: 32)
+                        Label("\(currentIndex + 1)/\(queue.count)", systemImage: "list.bullet")
+                            .font(.callout)
+                            .padding(.horizontal, 12)
+                            .frame(height: 44)
+                            .background(.white.opacity(0.15), in: Capsule())
                     }
                 }
                 if effectiveMode != .plane {
@@ -251,22 +253,21 @@ struct VRPlayerView: View {
                         scheduleAutoHide()
                     } label: {
                         Image(systemName: "gyroscope")
-                            .font(.subheadline)
-                            .frame(width: 32, height: 32)
+                            .font(.title3)
+                            .frame(width: 44, height: 44)
                             .opacity(gyroEnabled ? 1 : 0.45)
                     }
                 }
-                moreMenu
             }
             .foregroundStyle(.white)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
             .background(.black.opacity(0.45))
 
             Spacer()
 
             // 底部：播放/暂停 + 进度条
-            HStack(spacing: 12) {
+            HStack(spacing: 14) {
                 Button {
                     if playerState.isPlaying {
                         coordinator.playerLayer?.pause()
@@ -276,8 +277,8 @@ struct VRPlayerView: View {
                     scheduleAutoHide()
                 } label: {
                     Image(systemName: playerState.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.title3)
-                        .frame(width: 36, height: 36)
+                        .font(.title2)
+                        .frame(width: 48, height: 48)
                 }
                 PlayerTimeSlider(
                     timemodel: coordinator.timemodel,
@@ -290,50 +291,63 @@ struct VRPlayerView: View {
                 )
             }
             .foregroundStyle(.white)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
             .background(.black.opacity(0.45))
+        }
+        .overlay(alignment: .trailing) {
+            // 右侧竖排按钮列：投影模式 / 倍速 / 软硬解 / 收藏
+            VStack(spacing: 16) {
+                sideButton(text: effectiveMode.rawValue) {
+                    cycleMode()
+                }
+                sideButton(text: formatRate(playbackRate)) {
+                    cycleRate()
+                }
+                sideButton(text: hardwareDecode ? "硬解" : "软解") {
+                    rebuildPlayer { hardwareDecode.toggle() }
+                }
+                Button {
+                    toggleFavorite()
+                } label: {
+                    Image(systemName: isFavorite ? "star.fill" : "star")
+                        .font(.title3)
+                        .foregroundStyle(isFavorite ? .yellow : .white)
+                        .frame(width: 48, height: 48)
+                        .background(.black.opacity(0.45), in: Circle())
+                }
+            }
+            .padding(.trailing, 14)
         }
     }
 
-    private var moreMenu: some View {
-        Menu {
-            // 投影模式
-            Menu("投影模式：\(effectiveMode.rawValue)") {
-                Picker("投影模式", selection: Binding(
-                    get: { effectiveMode },
-                    set: { newMode in
-                        rebuildPlayer { modeOverride = newMode }
-                    }
-                )) {
-                    ForEach(VRDisplayMode.allCases) { mode in
-                        Text(mode.rawValue).tag(mode)
-                    }
-                }
-            }
-            // 倍速
-            Menu("倍速：\(formatRate(playbackRate))") {
-                ForEach([Float(0.5), 0.75, 1.0, 1.25, 1.5, 2.0], id: \.self) { rate in
-                    Button(formatRate(rate)) {
-                        playbackRate = rate
-                        coordinator.playbackRate = rate
-                        scheduleAutoHide()
-                    }
-                }
-            }
-            // 软硬解
-            Button(hardwareDecode ? "切换为软件解码" : "切换为硬件解码") {
-                rebuildPlayer { hardwareDecode.toggle() }
-            }
-            // 收藏
-            Button(isFavorite ? "取消收藏" : "收藏当前视频") {
-                toggleFavorite()
-            }
-        } label: {
-            Image(systemName: "ellipsis.circle")
-                .font(.subheadline)
-                .frame(width: 32, height: 32)
+    private func sideButton(text: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(text)
+                .font(.callout.weight(.medium))
+                .foregroundStyle(.white)
+                .frame(minWidth: 48, minHeight: 48)
+                .padding(.horizontal, 10)
+                .background(.black.opacity(0.45), in: Capsule())
         }
+    }
+
+    private static let modeOrder = VRDisplayMode.allCases
+
+    private func cycleMode() {
+        guard let idx = Self.modeOrder.firstIndex(of: effectiveMode) else { return }
+        let next = Self.modeOrder[(idx + 1) % Self.modeOrder.count]
+        rebuildPlayer { modeOverride = next }
+    }
+
+    private static let rateOrder: [Float] = [1.0, 1.25, 1.5, 2.0, 0.5, 0.75]
+
+    private func cycleRate() {
+        let idx = Self.rateOrder.firstIndex(of: playbackRate) ?? 0
+        let next = Self.rateOrder[(idx + 1) % Self.rateOrder.count]
+        playbackRate = next
+        coordinator.playbackRate = next
+        scheduleAutoHide()
     }
 
     /// 播放列表弹层
