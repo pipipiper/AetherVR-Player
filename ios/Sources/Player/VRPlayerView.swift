@@ -30,9 +30,6 @@ struct VRPlayerView: View {
     var mode: VRDisplayMode
     /// WebDAV 等需要认证头时传入（如 ["Authorization": "Basic ..."]）
     var httpHeaders: [String: String]
-    /// 播放列表上下文（从列表进入时传入；空数组表示单集播放）
-    var queue: [PlaylistItem]
-    var queueIndex: Int
 
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var playlistStore: PlaylistStore
@@ -57,6 +54,8 @@ struct VRPlayerView: View {
     @State private var useResumeTime = false
     /// 播完连播时跳过重建流程里的进度保存（避免把末尾进度写回去）
     @State private var skipNextSave = false
+    /// 播放队列（播放中可整体替换，如从单集切到某个列表）
+    @State private var queue: [PlaylistItem]
 
     init(url: URL, title: String, startPosition: TimeInterval = 0,
          mode: VRDisplayMode = .vr360, httpHeaders: [String: String] = [:],
@@ -67,13 +66,12 @@ struct VRPlayerView: View {
         self.startPosition = startPosition
         self.mode = mode
         self.httpHeaders = httpHeaders
-        self.queue = queue
-        self.queueIndex = queueIndex
         let defaults = UserDefaults.standard
         _hardwareDecode = State(
             initialValue: hardwareDecode ?? defaults.bool(forKey: SettingsKeys.defaultHardwareDecode)
         )
         _currentIndex = State(initialValue: queueIndex)
+        _queue = State(initialValue: queue)
     }
 
     // MARK: - 当前播放项
@@ -215,28 +213,30 @@ struct VRPlayerView: View {
 
     private var controlsOverlay: some View {
         VStack {
-            // 顶部：返回、标题、播放列表、陀螺仪
-            HStack(spacing: 14) {
+            // 顶部：返回、标题、播放列表、180°/360° 切换、陀螺仪
+            HStack(spacing: 10) {
                 Button { dismiss() } label: {
                     Image(systemName: "chevron.left")
-                        .font(.title3)
-                        .frame(width: 44, height: 44)
+                        .font(.body)
+                        .frame(width: 36, height: 36)
                 }
                 Text(currentTitle)
-                    .font(.subheadline)
+                    .font(.caption)
                     .lineLimit(1)
                 Spacer()
-                if hasQueue {
-                    Button {
-                        showQueueSheet = true
-                    } label: {
-                        Label("\(currentIndex + 1)/\(queue.count)", systemImage: "list.bullet")
-                            .font(.callout)
-                            .padding(.horizontal, 12)
-                            .frame(height: 44)
-                            .background(.white.opacity(0.15), in: Capsule())
-                    }
+                Button {
+                    showQueueSheet = true
+                } label: {
+                    Label(
+                        hasQueue ? "\(currentIndex + 1)/\(queue.count)" : "列表",
+                        systemImage: "list.bullet"
+                    )
+                    .font(.footnote)
+                    .padding(.horizontal, 10)
+                    .frame(height: 32)
+                    .background(.white.opacity(0.15), in: Capsule())
                 }
+                modeSegment
                 if effectiveMode != .plane {
                     Button {
                         gyroEnabled.toggle()
@@ -253,21 +253,21 @@ struct VRPlayerView: View {
                         scheduleAutoHide()
                     } label: {
                         Image(systemName: "gyroscope")
-                            .font(.title3)
-                            .frame(width: 44, height: 44)
+                            .font(.body)
+                            .frame(width: 36, height: 36)
                             .opacity(gyroEnabled ? 1 : 0.45)
                     }
                 }
             }
             .foregroundStyle(.white)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
             .background(.black.opacity(0.45))
 
             Spacer()
 
             // 底部：播放/暂停 + 进度条
-            HStack(spacing: 14) {
+            HStack(spacing: 10) {
                 Button {
                     if playerState.isPlaying {
                         coordinator.playerLayer?.pause()
@@ -277,8 +277,8 @@ struct VRPlayerView: View {
                     scheduleAutoHide()
                 } label: {
                     Image(systemName: playerState.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.title2)
-                        .frame(width: 48, height: 48)
+                        .font(.title3)
+                        .frame(width: 40, height: 40)
                 }
                 PlayerTimeSlider(
                     timemodel: coordinator.timemodel,
@@ -291,16 +291,13 @@ struct VRPlayerView: View {
                 )
             }
             .foregroundStyle(.white)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
             .background(.black.opacity(0.45))
         }
         .overlay(alignment: .trailing) {
-            // 右侧竖排按钮列：投影模式 / 倍速 / 软硬解 / 收藏
-            VStack(spacing: 16) {
-                sideButton(text: effectiveMode.rawValue) {
-                    cycleMode()
-                }
+            // 右侧竖排按钮列：倍速 / 软硬解 / 收藏 / 更多投影
+            VStack(spacing: 12) {
                 sideButton(text: formatRate(playbackRate)) {
                     cycleRate()
                 }
@@ -311,33 +308,58 @@ struct VRPlayerView: View {
                     toggleFavorite()
                 } label: {
                     Image(systemName: isFavorite ? "star.fill" : "star")
-                        .font(.title3)
+                        .font(.body)
                         .foregroundStyle(isFavorite ? .yellow : .white)
-                        .frame(width: 48, height: 48)
+                        .frame(width: 40, height: 40)
+                        .background(.black.opacity(0.45), in: Circle())
+                }
+                Menu {
+                    Button("平面") { rebuildPlayer { modeOverride = .plane } }
+                    Button("VR 眼镜分屏") { rebuildPlayer { modeOverride = .vrBox } }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.body)
+                        .foregroundStyle(.white)
+                        .frame(width: 40, height: 40)
                         .background(.black.opacity(0.45), in: Circle())
                 }
             }
-            .padding(.trailing, 14)
+            .padding(.trailing, 12)
         }
+    }
+
+    /// 180°/360° 主切换（平面/VR眼镜在右侧 ⋯ 二级菜单里）
+    private var modeSegment: some View {
+        HStack(spacing: 0) {
+            ForEach([VRDisplayMode.vr180, .vr360]) { m in
+                Button {
+                    if effectiveMode != m {
+                        rebuildPlayer { modeOverride = m }
+                    }
+                } label: {
+                    Text(m.rawValue)
+                        .font(.footnote.weight(.medium))
+                        .frame(width: 46, height: 32)
+                        .background(
+                            effectiveMode == m ? Color.accentColor : Color.white.opacity(0.15),
+                            in: Rectangle()
+                        )
+                }
+            }
+        }
+        .foregroundStyle(.white)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     private func sideButton(text: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(text)
-                .font(.callout.weight(.medium))
+                .font(.footnote.weight(.medium))
                 .foregroundStyle(.white)
-                .frame(minWidth: 48, minHeight: 48)
-                .padding(.horizontal, 10)
+                .frame(minWidth: 40, minHeight: 40)
+                .padding(.horizontal, 8)
                 .background(.black.opacity(0.45), in: Capsule())
         }
-    }
-
-    private static let modeOrder = VRDisplayMode.allCases
-
-    private func cycleMode() {
-        guard let idx = Self.modeOrder.firstIndex(of: effectiveMode) else { return }
-        let next = Self.modeOrder[(idx + 1) % Self.modeOrder.count]
-        rebuildPlayer { modeOverride = next }
     }
 
     private static let rateOrder: [Float] = [1.0, 1.25, 1.5, 2.0, 0.5, 0.75]
@@ -350,35 +372,17 @@ struct VRPlayerView: View {
         scheduleAutoHide()
     }
 
-    /// 播放列表弹层
+    /// 播放列表弹层：有队列显示当前队列；无队列（单集播放）可浏览全部列表选片
     private var queueSheet: some View {
         NavigationStack {
-            List(queue.indices, id: \.self) { index in
-                let item = queue[index]
-                Button {
-                    switchTo(index)
-                } label: {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(item.title.isEmpty ? item.file : item.title)
-                                .lineLimit(1)
-                                .foregroundStyle(index == currentIndex ? Color.accentColor : .primary)
-                            if item.position > 0 {
-                                Text("看到 \(formatTimeShort(item.position))")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        Spacer()
-                        if index == currentIndex {
-                            Image(systemName: "play.fill")
-                                .foregroundStyle(.tint)
-                                .font(.caption)
-                        }
-                    }
+            Group {
+                if hasQueue {
+                    queueList
+                } else {
+                    playlistBrowser
                 }
             }
-            .navigationTitle("播放列表（\(currentIndex + 1)/\(queue.count)）")
+            .navigationTitle(hasQueue ? "播放列表（\(currentIndex + 1)/\(queue.count)）" : "播放列表")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -387,6 +391,67 @@ struct VRPlayerView: View {
             }
         }
         .presentationDetents([.medium, .large])
+    }
+
+    private var queueList: some View {
+        List(queue.indices, id: \.self) { index in
+            let item = queue[index]
+            Button {
+                switchTo(index)
+            } label: {
+                queueRow(item: item, isCurrent: index == currentIndex)
+            }
+        }
+    }
+
+    private var playlistBrowser: some View {
+        List {
+            ForEach(playlistStore.tabs) { playlist in
+                if !playlist.items.isEmpty {
+                    Section(playlist.name) {
+                        ForEach(Array(playlist.items.enumerated()), id: \.element.id) { index, item in
+                            Button {
+                                playFromBrowser(playlist: playlist, index: index)
+                            } label: {
+                                queueRow(item: item, isCurrent: false)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func queueRow(item: PlaylistItem, isCurrent: Bool) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.title.isEmpty ? item.file : item.title)
+                    .lineLimit(1)
+                    .foregroundStyle(isCurrent ? Color.accentColor : .primary)
+                if item.position > 0 {
+                    Text("看到 \(formatTimeShort(item.position))")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            if isCurrent {
+                Image(systemName: "play.fill")
+                    .foregroundStyle(.tint)
+                    .font(.caption)
+            }
+        }
+    }
+
+    /// 单集播放时从全量列表选片：把整个列表设为队列并起播
+    private func playFromBrowser(playlist: Playlist, index: Int) {
+        guard playlist.items.indices.contains(index) else { return }
+        showQueueSheet = false
+        rebuildPlayer {
+            useResumeTime = false
+            queue = playlist.items
+            currentIndex = index
+        }
     }
 
     // MARK: - 行为
