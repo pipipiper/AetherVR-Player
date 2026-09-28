@@ -9,7 +9,7 @@ configs:
   Release: release
 packages:
   KSPlayer:
-    url: https://github.com/kingslay/KSPlayer.git
+    url: https://github.com/pipipiper/KSPlayer.git
     branch: main
   AMSMB2:
     url: https://github.com/amosavian/AMSMB2.git
