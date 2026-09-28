@@ -9,13 +9,17 @@ struct URLPlaySheet: View {
         let mode: VRDisplayMode
         var position: TimeInterval = 0
         var headers: [String: String] = [:]
-        var hardwareDecode: Bool = true
+        var hardwareDecode: Bool? = nil
+        var queue: [PlaylistItem] = []
+        var queueIndex: Int = 0
     }
 
     @Environment(\.dismiss) private var dismiss
     @State private var urlText = ""
-    @State private var mode: VRDisplayMode = .vr360
-    @State private var hardwareDecode = true
+    @State private var mode: VRDisplayMode = VRDisplayMode(
+        rawValue: UserDefaults.standard.string(forKey: SettingsKeys.defaultProjection) ?? ""
+    ) ?? .vr360
+    @State private var hardwareDecode = UserDefaults.standard.bool(forKey: SettingsKeys.defaultHardwareDecode)
     @State private var playback: PlaybackTarget?
 
     var body: some View {

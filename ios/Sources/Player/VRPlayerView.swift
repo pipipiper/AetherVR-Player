@@ -20,9 +20,9 @@ enum VRDisplayMode: String, CaseIterable, Identifiable {
     }
 }
 
-/// 播放器封装：裸 KSVideoPlayer（无自带控制层，避免亮度/音量拖动手势
-/// 和球面视角拖动打架）+ 自绘控制层。
-/// 陀螺仪默认关闭，手动拖动调视角；双指缩放调 FOV；可切换软硬解与投影模式。
+/// 播放器：裸 KSVideoPlayer + 自绘控制层。
+/// 支持播放列表上下文（列表内切换/自动连播/进度回写）、倍速、收藏、
+/// 双指缩放 FOV、拖动调视角、陀螺仪、软硬解切换。
 struct VRPlayerView: View {
     let url: URL
     let title: String
@@ -30,62 +30,108 @@ struct VRPlayerView: View {
     var mode: VRDisplayMode
     /// WebDAV 等需要认证头时传入（如 ["Authorization": "Basic ..."]）
     var httpHeaders: [String: String]
+    /// 播放列表上下文（从列表进入时传入；空数组表示单集播放）
+    var queue: [PlaylistItem]
+    var queueIndex: Int
 
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var playlistStore: PlaylistStore
     @StateObject private var coordinator = KSVideoPlayer.Coordinator()
     @State private var gyroEnabled = false
     @State private var showControls = true
+    @State private var showQueueSheet = false
     @State private var playerState: KSPlayerState = .initialized
     @State private var isSeeking = false
     @State private var seekPosition: Double = 0
     @State private var hideControlsTask: DispatchWorkItem?
-    /// 双指缩放 FOV 的基准值（弧度）
     @State private var baseFov: Float = .pi / 3
-    /// SwiftUI 手势直控视角的基准值（弧度）
     @State private var yawBase: Float = 0
     @State private var pitchBase: Float = 0
-    /// 软/硬解与投影模式：切换会重建播放器，rebuildToken 驱动 .id/.task
     @State private var hardwareDecode: Bool
     @State private var modeOverride: VRDisplayMode?
-    /// 重建播放器时恢复到的进度
     @State private var resumeTime: TimeInterval?
-    /// 重建期间的短暂卸载窗口（让旧播放器异步关停走完）
     @State private var playerVisible = true
+    @State private var currentIndex: Int
+    @State private var playbackRate: Float = 1.0
+    @State private var isFavorite = false
+    @State private var useResumeTime = false
+    /// 播完连播时跳过重建流程里的进度保存（避免把末尾进度写回去）
+    @State private var skipNextSave = false
 
     init(url: URL, title: String, startPosition: TimeInterval = 0,
          mode: VRDisplayMode = .vr360, httpHeaders: [String: String] = [:],
-         hardwareDecode: Bool = true) {
+         hardwareDecode: Bool? = nil,
+         queue: [PlaylistItem] = [], queueIndex: Int = 0) {
         self.url = url
         self.title = title
         self.startPosition = startPosition
         self.mode = mode
         self.httpHeaders = httpHeaders
-        _hardwareDecode = State(initialValue: hardwareDecode)
+        self.queue = queue
+        self.queueIndex = queueIndex
+        let defaults = UserDefaults.standard
+        _hardwareDecode = State(
+            initialValue: hardwareDecode ?? defaults.bool(forKey: SettingsKeys.defaultHardwareDecode)
+        )
+        _currentIndex = State(initialValue: queueIndex)
+    }
+
+    // MARK: - 当前播放项
+
+    private var hasQueue: Bool { !queue.isEmpty && queue.indices.contains(currentIndex) }
+
+    private var currentItem: PlaylistItem? {
+        hasQueue ? queue[currentIndex] : nil
+    }
+
+    private var currentURL: URL {
+        if let item = currentItem, let u = URL(string: item.file) { return u }
+        return url
+    }
+
+    private var currentTitle: String {
+        if let item = currentItem, !item.title.isEmpty { return item.title }
+        return title
+    }
+
+    private var rememberPosition: Bool {
+        UserDefaults.standard.bool(forKey: SettingsKeys.rememberPosition)
+    }
+
+    private var effectiveStart: TimeInterval {
+        if useResumeTime, let resumeTime { return resumeTime }
+        if let item = currentItem, rememberPosition, item.position > 0 {
+            return TimeInterval(item.position)
+        }
+        return startPosition
     }
 
     private var effectiveMode: VRDisplayMode { modeOverride ?? mode }
-    private var rebuildToken: String { "\(hardwareDecode)-\(effectiveMode.rawValue)" }
+    private var rebuildToken: String { "\(hardwareDecode)-\(effectiveMode.rawValue)-\(currentURL.absoluteString)" }
 
     private var options: KSOptions {
         let options = KSOptions()
         options.display = effectiveMode.displayEnum
-        options.startPlayTime = resumeTime ?? startPosition
+        options.startPlayTime = effectiveStart
         options.hardwareDecode = hardwareDecode
-        // 关键：默认 false 时 MEPlayer 用 FFmpeg 软解，8K 直接卡成幻灯片；
+        // 默认 false 时 MEPlayer 用 FFmpeg 软解，8K 直接卡成幻灯片；
         // 打开后走 VideoToolbox 硬解（DecompressionSession），不支持的编码会自动回退软解
         options.asynchronousDecompression = true
         options.isSecondOpen = true
+        options.startPlayRate = playbackRate
         if !httpHeaders.isEmpty {
             options.appendHeader(httpHeaders)
         }
         return options
     }
 
+    // MARK: - 界面
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             if playerVisible {
-                KSVideoPlayer(coordinator: coordinator, url: url, options: options)
+                KSVideoPlayer(coordinator: coordinator, url: currentURL, options: options)
                     .id(rebuildToken)
                     .ignoresSafeArea()
                     .onTapGesture {
@@ -121,7 +167,6 @@ struct VRPlayerView: View {
                             }
                     )
             } else {
-                // 重建中（切换软硬解/投影模式）
                 VStack(spacing: 12) {
                     ProgressView().tint(.white)
                     Text("正在切换…")
@@ -133,7 +178,6 @@ struct VRPlayerView: View {
                 controlsOverlay
                     .transition(.opacity)
             }
-            // 重建中只显示「正在切换…」，不再叠缓冲转圈
             if playerVisible && (playerState == .buffering || playerState == .initialized) {
                 ProgressView()
                     .tint(.white)
@@ -146,68 +190,59 @@ struct VRPlayerView: View {
             attachCallbacks()
         }
         .onAppear {
-            gyroEnabled = false
-            KSOptions.enableSensor = false
-            // 启用 SwiftUI 外部视角控制（fork: vrYaw/vrPitch 非 nil 时优先于内置旋转/陀螺仪）
-            KSOptions.vrYaw = 0
-            KSOptions.vrPitch = 0
-            yawBase = 0
-            pitchBase = 0
+            gyroEnabled = UserDefaults.standard.bool(forKey: SettingsKeys.gyroDefaultOn)
+            KSOptions.enableSensor = gyroEnabled
+            if !gyroEnabled {
+                KSOptions.vrYaw = 0
+                KSOptions.vrPitch = 0
+                yawBase = 0
+                pitchBase = 0
+            }
+            isFavorite = playlistStore.favorites.items.contains { $0.file == currentURL.absoluteString }
             coordinator.isMaskShow = false
             scheduleAutoHide()
         }
         .onDisappear {
+            savePosition()
             KSOptions.vrYaw = nil
             KSOptions.vrPitch = nil
             coordinator.resetPlayer()
+        }
+        .sheet(isPresented: $showQueueSheet) {
+            queueSheet
         }
     }
 
     private var controlsOverlay: some View {
         VStack {
-            // 顶部：返回、标题、投影模式、软硬解、陀螺仪开关
+            // 顶部：返回、标题、播放列表、更多菜单
             HStack(spacing: 10) {
                 Button { dismiss() } label: {
                     Image(systemName: "chevron.left")
                         .font(.headline)
                         .frame(width: 36, height: 36)
                 }
-                Text(title)
+                Text(currentTitle)
                     .font(.caption)
                     .lineLimit(1)
                 Spacer()
-                Menu {
-                    Picker("投影模式", selection: Binding(
-                        get: { effectiveMode },
-                        set: { newMode in
-                            rebuildPlayer { modeOverride = newMode }
-                        }
-                    )) {
-                        ForEach(VRDisplayMode.allCases) { mode in
-                            Text(mode.rawValue).tag(mode)
-                        }
+                if hasQueue {
+                    Button {
+                        showQueueSheet = true
+                    } label: {
+                        Image(systemName: "list.bullet")
+                            .font(.subheadline)
+                            .frame(width: 32, height: 32)
                     }
-                } label: {
-                    Text(effectiveMode.rawValue)
-                        .font(.footnote)
-                        .frame(minWidth: 44)
-                }
-                Button {
-                    rebuildPlayer { hardwareDecode.toggle() }
-                } label: {
-                    Text(hardwareDecode ? "硬解" : "软解")
-                        .font(.footnote)
                 }
                 if effectiveMode != .plane {
                     Button {
                         gyroEnabled.toggle()
                         KSOptions.enableSensor = gyroEnabled
                         if gyroEnabled {
-                            // 交还给陀螺仪驱动
                             KSOptions.vrYaw = nil
                             KSOptions.vrPitch = nil
                         } else {
-                            // 回到手动拖动，从正前方重新开始
                             KSOptions.vrYaw = 0
                             KSOptions.vrPitch = 0
                             yawBase = 0
@@ -215,11 +250,13 @@ struct VRPlayerView: View {
                         }
                         scheduleAutoHide()
                     } label: {
-                        Label(gyroEnabled ? "陀螺仪：开" : "陀螺仪：关",
-                              systemImage: "gyroscope")
-                            .font(.footnote)
+                        Image(systemName: "gyroscope")
+                            .font(.subheadline)
+                            .frame(width: 32, height: 32)
+                            .opacity(gyroEnabled ? 1 : 0.45)
                     }
                 }
+                moreMenu
             }
             .foregroundStyle(.white)
             .padding(.horizontal, 12)
@@ -256,47 +293,176 @@ struct VRPlayerView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .background(.black.opacity(0.45))
-
-            // 渲染诊断（临时，定位手势卡顿用）
-            TimelineView(.periodic(from: .now, by: 0.5)) { _ in
-                let info = coordinator.playerLayer?.player.dynamicInfo
-                Text(String(
-                    format: "渲染 %.0ffps · 丢帧 %u · FOV %.0f°",
-                    info?.displayFPS ?? 0,
-                    info?.droppedVideoFrameCount ?? 0,
-                    Double(KSOptions.vrFov) * 180 / .pi
-                ))
-                .font(.caption2.monospacedDigit())
-                .foregroundStyle(.white.opacity(0.7))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 12)
-            }
         }
     }
 
-    /// 挂播放器状态回调（dismantle 会清空，重建后必须重挂）
+    private var moreMenu: some View {
+        Menu {
+            // 投影模式
+            Menu("投影模式：\(effectiveMode.rawValue)") {
+                Picker("投影模式", selection: Binding(
+                    get: { effectiveMode },
+                    set: { newMode in
+                        rebuildPlayer { modeOverride = newMode }
+                    }
+                )) {
+                    ForEach(VRDisplayMode.allCases) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
+                }
+            }
+            // 倍速
+            Menu("倍速：\(formatRate(playbackRate))") {
+                ForEach([Float(0.5), 0.75, 1.0, 1.25, 1.5, 2.0], id: \.self) { rate in
+                    Button(formatRate(rate)) {
+                        playbackRate = rate
+                        coordinator.playbackRate = rate
+                        scheduleAutoHide()
+                    }
+                }
+            }
+            // 软硬解
+            Button(hardwareDecode ? "切换为软件解码" : "切换为硬件解码") {
+                rebuildPlayer { hardwareDecode.toggle() }
+            }
+            // 收藏
+            Button(isFavorite ? "取消收藏" : "收藏当前视频") {
+                toggleFavorite()
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .font(.subheadline)
+                .frame(width: 32, height: 32)
+        }
+    }
+
+    /// 播放列表弹层
+    private var queueSheet: some View {
+        NavigationStack {
+            List(queue.indices, id: \.self) { index in
+                let item = queue[index]
+                Button {
+                    switchTo(index)
+                } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.title.isEmpty ? item.file : item.title)
+                                .lineLimit(1)
+                                .foregroundStyle(index == currentIndex ? Color.accentColor : .primary)
+                            if item.position > 0 {
+                                Text("看到 \(formatTimeShort(item.position))")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer()
+                        if index == currentIndex {
+                            Image(systemName: "play.fill")
+                                .foregroundStyle(.tint)
+                                .font(.caption)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("播放列表（\(currentIndex + 1)/\(queue.count)）")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("关闭") { showQueueSheet = false }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    // MARK: - 行为
+
+    private func formatRate(_ rate: Float) -> String {
+        rate == Float(Int(rate)) ? "\(Int(rate)).0x" : String(format: "%.2gx", rate)
+    }
+
+    private func formatTimeShort(_ seconds: Int) -> String {
+        let m = seconds / 60
+        let s = seconds % 60
+        return String(format: "%d:%02d", m, s)
+    }
+
     private func attachCallbacks() {
         coordinator.onStateChanged = { _, state in
             playerState = state
         }
         coordinator.onFinish = { _, error in
-            if error == nil { dismiss() }
+            if error != nil { return }
+            // 播完：清掉本集记忆位置，自动连播下一集（跳过重建时的再次保存）
+            savePosition(reset: true)
+            skipNextSave = true
+            if UserDefaults.standard.bool(forKey: SettingsKeys.autoPlayNext),
+               hasQueue, currentIndex + 1 < queue.count {
+                switchTo(currentIndex + 1)
+            } else {
+                dismiss()
+            }
         }
     }
 
-    /// 切换软硬解/投影模式：先停旧播放器并卸载播放视图，给异步关停让出时间后再重建，
-    /// 避免新旧两个 8K 解码管线并存把主线程/内存挤爆
+    /// 切换软硬解/投影模式/列表项：先停旧播放器并卸载播放视图，
+    /// 给异步关停让出时间后再重建，避免新旧解码管线并存
     private func rebuildPlayer(_ change: () -> Void) {
+        if !skipNextSave { savePosition() }
+        skipNextSave = false
         resumeTime = Double(coordinator.timemodel.currentTime)
+        useResumeTime = true
         coordinator.playerLayer?.stop()
         playerVisible = false
         change()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-            // dismantle 已走完：先重挂回调，再让 SwiftUI 建新播放器
             attachCallbacks()
             playerVisible = true
             scheduleAutoHide()
         }
+    }
+
+    /// 列表内切集（不保留进度，从该集记忆位置起播）
+    private func switchTo(_ index: Int) {
+        guard queue.indices.contains(index), index != currentIndex || !playerVisible else {
+            showQueueSheet = false
+            return
+        }
+        showQueueSheet = false
+        rebuildPlayer {
+            useResumeTime = false
+            currentIndex = index
+        }
+    }
+
+    /// 进度回写到播放列表（reset=true 表示已播完，清掉记忆位置）
+    private func savePosition(reset: Bool = false) {
+        guard rememberPosition, let item = currentItem else { return }
+        let seconds = reset ? 0 : Int(coordinator.timemodel.currentTime)
+        guard reset || seconds > 0 else { return }
+        for playlist in playlistStore.tabs {
+            if let idx = playlist.items.firstIndex(where: { $0.id == item.id }) {
+                playlist.items[idx].position = seconds
+                try? playlistStore.save(playlist)
+                return
+            }
+        }
+    }
+
+    private func toggleFavorite() {
+        isFavorite.toggle()
+        if isFavorite {
+            let item = currentItem ?? PlaylistItem(
+                file: currentURL.absoluteString,
+                title: currentTitle,
+                position: Int(coordinator.timemodel.currentTime)
+            )
+            playlistStore.favorites.items.append(item)
+        } else {
+            playlistStore.favorites.items.removeAll { $0.file == currentURL.absoluteString }
+        }
+        try? playlistStore.save(playlistStore.favorites)
+        scheduleAutoHide()
     }
 
     private func scheduleAutoHide() {

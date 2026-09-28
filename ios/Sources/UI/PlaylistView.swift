@@ -2,7 +2,7 @@ import SwiftUI
 
 /// 播放列表页：页签（收藏夹 → 临时列表 → 真实列表）+ 条目列表
 struct PlaylistView: View {
-    @StateObject private var store = PlaylistStore()
+    @EnvironmentObject private var store: PlaylistStore
     @State private var selectedTabID: UUID?
     @State private var showNewListAlert = false
     @State private var newListName = ""
@@ -75,13 +75,15 @@ struct PlaylistView: View {
                     url: target.url,
                     title: target.title,
                     startPosition: target.position,
-                    mode: .vr360,
-                    httpHeaders: target.headers
+                    mode: VRDisplayMode(rawValue: UserDefaults.standard.string(forKey: SettingsKeys.defaultProjection) ?? "") ?? .vr360,
+                    httpHeaders: target.headers,
+                    hardwareDecode: target.hardwareDecode,
+                    queue: target.queue,
+                    queueIndex: target.queueIndex
                 )
             }
         }
         .task {
-            try? store.load()
             selectedTabID = store.tabs.first?.id
         }
     }
@@ -158,11 +160,14 @@ struct PlaylistView: View {
             errorMessage = "无法识别的地址：\(item.file)"
             return
         }
+        let playlist = currentTab
         playback = URLPlaySheet.PlaybackTarget(
             url: url,
             title: item.title.isEmpty ? item.file : item.title,
-            mode: .vr360,
-            position: TimeInterval(item.position)
+            mode: VRDisplayMode(rawValue: UserDefaults.standard.string(forKey: SettingsKeys.defaultProjection) ?? "") ?? .vr360,
+            position: TimeInterval(item.position),
+            queue: playlist?.items ?? [],
+            queueIndex: playlist?.items.firstIndex(where: { $0.id == item.id }) ?? 0
         )
     }
 
