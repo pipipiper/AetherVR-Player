@@ -1,31 +1,59 @@
 import SwiftUI
 
 struct ContentView: View {
+    @State private var tab: AppTab = .sources
+
     var body: some View {
-        TabView {
-            SourcesView()
-                .tabItem { Label("片源", systemImage: "play.rectangle.on.rectangle") }
-            PlaylistView()
-                .tabItem { Label("播放列表", systemImage: "list.bullet.rectangle") }
-            HistoryView()
-                .tabItem { Label("播放记录", systemImage: "clock") }
-            SettingsView()
-                .tabItem { Label("设置", systemImage: "gearshape") }
+        ZStack(alignment: .bottom) {
+            // 四个页签用 ZStack 保活，切换不丢滚动位置/状态
+            Group {
+                SourcesView()
+                    .opacity(tab == .sources ? 1 : 0)
+                    .disabled(tab != .sources)
+                PlaylistView()
+                    .opacity(tab == .playlist ? 1 : 0)
+                    .disabled(tab != .playlist)
+                HistoryView()
+                    .opacity(tab == .history ? 1 : 0)
+                    .disabled(tab != .history)
+                SettingsView()
+                    .opacity(tab == .settings ? 1 : 0)
+                    .disabled(tab != .settings)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            // 自绘底部栏（不用系统 TabView——它的液态玻璃胶囊会投系统阴影，无法关闭）
+            HStack(spacing: 0) {
+                tabButton(.sources, title: "片源", icon: "play.rectangle.on.rectangle")
+                tabButton(.playlist, title: "播放列表", icon: "list.bullet.rectangle")
+                tabButton(.history, title: "播放记录", icon: "clock")
+                tabButton(.settings, title: "设置", icon: "gearshape")
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.bar)
         }
-        .hideTabBarBackground()
+    }
+
+    private func tabButton(_ target: AppTab, title: String, icon: String) -> some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.15)) { tab = target }
+        } label: {
+            VStack(spacing: 3) {
+                Image(systemName: icon)
+                    .font(.body)
+                Text(title)
+                    .font(.caption2)
+            }
+            .foregroundStyle(tab == target ? Color.accentColor : .primary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 4)
+        }
     }
 }
 
-private extension View {
-    /// 隐藏底部 TabView 栏的背景与上边缘分隔阴影
-    @ViewBuilder
-    func hideTabBarBackground() -> some View {
-        if #available(iOS 18.0, *) {
-            self.toolbarBackground(.hidden, for: .tabBar)
-        } else {
-            self
-        }
-    }
+private enum AppTab {
+    case sources, playlist, history, settings
 }
 
 private struct SourcesView: View {
