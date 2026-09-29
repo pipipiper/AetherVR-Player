@@ -194,11 +194,12 @@ struct SMBDirectoryView: View {
                                 Label {
                                     HStack {
                                         Text(item.name)
-                                            .lineLimit(2)
+                                            .layoutPriority(1)
                                         Spacer()
                                         Text(formatSize(item.size))
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
+                                            .fixedSize()
                                     }
                                 } icon: {
                                     Image(systemName: "play.rectangle.fill")

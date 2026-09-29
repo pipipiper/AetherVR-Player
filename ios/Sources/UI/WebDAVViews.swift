@@ -184,11 +184,13 @@ struct WebDAVDirectoryView: View {
                             } label: {
                                 Label {
                                     HStack {
-                                        Text(item.name).lineLimit(2)
+                                        Text(item.name)
+                                            .layoutPriority(1)
                                         Spacer()
                                         Text(formatSize(item.size))
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
+                                            .fixedSize()
                                     }
                                 } icon: {
                                     Image(systemName: "play.rectangle.fill")
