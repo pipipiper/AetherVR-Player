@@ -12,6 +12,19 @@ struct ContentView: View {
             SettingsView()
                 .tabItem { Label("设置", systemImage: "gearshape") }
         }
+        .hideTabBarBackground()
+    }
+}
+
+private extension View {
+    /// 隐藏底部 TabView 栏的背景与上边缘分隔阴影
+    @ViewBuilder
+    func hideTabBarBackground() -> some View {
+        if #available(iOS 18.0, *) {
+            self.toolbarBackground(.hidden, for: .tabBar)
+        } else {
+            self
+        }
     }
 }
 
