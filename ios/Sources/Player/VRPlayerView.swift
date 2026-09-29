@@ -215,7 +215,11 @@ struct VRPlayerView: View {
             // 弹层打开时暂停 8K 无帧重绘，避免 GPU 被占满导致列表滑动卡顿
             KSOptions.vrPauseRerender = presented
         }
-        .alert("播放失败", isPresented: .constant(playbackError != nil)) {
+        .alert("播放中断", isPresented: .constant(playbackError != nil)) {
+            Button("重试") {
+                playbackError = nil
+                rebuildPlayer { }
+            }
             Button("返回") { dismiss() }
         } message: {
             Text(playbackError ?? "")
@@ -415,6 +419,13 @@ struct VRPlayerView: View {
         coordinator.onFinish = { _, error in
             if let error {
                 playbackError = error.localizedDescription
+                return
+            }
+            // 异常中断（断流被当成 EOF）：离结尾还很远就“播完”了，不静默退出
+            let current = Double(coordinator.timemodel.currentTime)
+            let total = Double(coordinator.timemodel.totalTime)
+            if total > 0, current < total - 5 {
+                playbackError = "播放中断（可能网络断流或读取失败），请重试。"
                 return
             }
             // 播完：清掉本集记忆位置，自动连播下一集（跳过重建时的再次保存）
