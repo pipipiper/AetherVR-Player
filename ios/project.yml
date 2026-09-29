@@ -11,7 +11,7 @@ packages:
   KSPlayer:
     url: https://github.com/pipipiper/KSPlayer.git
     # 钉死 commit：SPM 对 branch 的缓存非常顽固，改代码后递增这里的 hash
-    revision: 40d9ec60294e39c9fb85b2719c6081becd236a33
+    revision: 5fa3d0e7e0d7e0bc87e6ff598489b2123d086af7
   AMSMB2:
     url: https://github.com/amosavian/AMSMB2.git
     from: 4.0.3
