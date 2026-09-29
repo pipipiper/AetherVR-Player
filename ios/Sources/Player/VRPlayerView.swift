@@ -85,7 +85,8 @@ struct VRPlayerView: View {
     }
 
     private var currentURL: URL {
-        if let item = currentItem, let u = URL(string: item.file) { return u }
+        if let item = currentItem,
+           let u = URLLiteral.http(item.file) ?? URL(string: item.file) { return u }
         return url
     }
 

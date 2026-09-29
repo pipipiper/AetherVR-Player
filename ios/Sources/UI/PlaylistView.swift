@@ -219,7 +219,7 @@ struct PlaylistView: View {
                 return
             }
         }
-        guard let url = item.isRemote ? URL(string: item.file) : URL(fileURLWithPath: item.file) else {
+        guard let url = item.isRemote ? (URLLiteral.http(item.file) ?? URL(string: item.file)) : URL(fileURLWithPath: item.file) else {
             errorMessage = "无法识别的地址：\(item.file)"
             return
         }

@@ -68,6 +68,9 @@ struct URLPlaySheet: View {
 
     private var parsedURL: URL? {
         let text = urlText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        // 优先用 URLLiteral（保留已有百分号编码，防 openlist 类签名链接被二次编码）
+        if let url = URLLiteral.http(text) { return url }
         guard let url = URL(string: text), let scheme = url.scheme?.lowercased(),
               ["http", "https"].contains(scheme), url.host != nil else {
             return nil
