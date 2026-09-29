@@ -240,6 +240,11 @@ struct VRPlayerView: View {
         .onChange(of: showQueueSheet) { _, presented in
             // 弹层打开时暂停 8K 无帧重绘，避免 GPU 被占满导致列表滑动卡顿
             KSOptions.vrPauseRerender = presented
+            if presented {
+                // 弹层盖过控制栏，隐藏控制层避免与弹层边缘阴影叠加
+                hideControlsTask?.cancel()
+                showControls = false
+            }
         }
         .alert("播放中断", isPresented: .constant(playbackError != nil)) {
             Button("重试") {
