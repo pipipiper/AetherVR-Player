@@ -33,6 +33,7 @@ struct VRPlayerView: View {
 
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var playlistStore: PlaylistStore
+    @EnvironmentObject private var historyStore: PlaybackHistoryStore
     @StateObject private var coordinator = KSVideoPlayer.Coordinator()
     @State private var gyroEnabled = false
     @State private var showControls = true
@@ -222,10 +223,12 @@ struct VRPlayerView: View {
                 pitchBase = 0
             }
             isFavorite = playlistStore.favorites.items.contains { $0.file == currentURL.absoluteString }
+            recordHistory()
             coordinator.isMaskShow = false
             scheduleAutoHide()
         }
         .onDisappear {
+            recordHistory()
             savePosition()
             KSOptions.vrYaw = nil
             KSOptions.vrPitch = nil
@@ -469,6 +472,7 @@ struct VRPlayerView: View {
     private func rebuildPlayer(_ change: () -> Void) {
         if !skipNextSave { savePosition() }
         skipNextSave = false
+        recordHistory()
         resumeTime = Double(coordinator.timemodel.currentTime)
         useResumeTime = true
         coordinator.playerLayer?.stop()
@@ -492,6 +496,16 @@ struct VRPlayerView: View {
             useResumeTime = false
             currentIndex = index
         }
+    }
+
+    /// 写入播放记录（片名/地址/进度/时长）
+    private func recordHistory() {
+        historyStore.upsert(
+            title: currentTitle,
+            url: currentURL.absoluteString,
+            position: Int(coordinator.timemodel.currentTime),
+            duration: Int(coordinator.timemodel.totalTime)
+        )
     }
 
     /// 进度回写到播放列表（reset=true 表示已播完，清掉记忆位置）

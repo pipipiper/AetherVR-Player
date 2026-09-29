@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct AetherVRApp: App {
     @StateObject private var playlistStore = PlaylistStore()
+    @StateObject private var historyStore = PlaybackHistoryStore()
     @AppStorage(SettingsKeys.appearance) private var appearance = "dark"
 
     init() {
@@ -22,6 +23,7 @@ struct AetherVRApp: App {
             ContentView()
                 .preferredColorScheme(colorScheme)
                 .environmentObject(playlistStore)
+                .environmentObject(historyStore)
                 .task {
                     try? playlistStore.load()
                 }

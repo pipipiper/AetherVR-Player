@@ -7,6 +7,8 @@ struct ContentView: View {
                 .tabItem { Label("片源", systemImage: "play.rectangle.on.rectangle") }
             PlaylistView()
                 .tabItem { Label("播放列表", systemImage: "list.bullet.rectangle") }
+            HistoryView()
+                .tabItem { Label("播放记录", systemImage: "clock") }
             SettingsView()
                 .tabItem { Label("设置", systemImage: "gearshape") }
         }
