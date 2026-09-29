@@ -31,6 +31,9 @@ struct PlaylistView: View {
                 .tabViewStyle(.page(indexDisplayMode: .never))
             }
             .navigationTitle("播放列表")
+            // 只在这个页面：分页 TabView 的内容始终在底部栏下方，触发底部栏的
+            // 滚动边缘阴影。其它页面是 List/Form，没有这个问题。
+            .toolbarBackground(.hidden, for: .tabBar)
             .alert("新建播放列表", isPresented: $showNewListAlert) {
                 TextField("列表名称", text: $newListName)
                 Button("创建") {
