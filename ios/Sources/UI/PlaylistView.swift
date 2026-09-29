@@ -116,8 +116,6 @@ struct PlaylistView: View {
                     }
                     .padding(.vertical, 8)
                 }
-                // 禁止拖动滚动：页签条上的滑动交给外层手势翻页，溢出用箭头滚动
-                .scrollDisabled(true)
                 Button { moveTab(1, proxy: proxy) } label: {
                     Image(systemName: "chevron.right")
                         .font(.callout)
@@ -144,16 +142,6 @@ struct PlaylistView: View {
                 }
             }
             .padding(.horizontal, 8)
-            // 页签条上左右滑动翻页（拖动会让 onTapGesture 失败，天然不误触）
-            .highPriorityGesture(
-                DragGesture(minimumDistance: 20)
-                    .onEnded { value in
-                        let dx = value.translation.width
-                        let dy = value.translation.height
-                        guard abs(dx) > abs(dy) * 1.5 else { return }
-                        moveTab(dx < 0 ? 1 : -1)
-                    }
-            )
         }
     }
 
@@ -192,7 +180,8 @@ struct PlaylistView: View {
                             }
                         }
                         .foregroundStyle(.primary)
-                        .swipeActions(edge: .trailing) {
+                        // 长按菜单代替左滑（分页翻页会吃掉行的左滑手势）
+                        .contextMenu {
                             Button(role: .destructive) {
                                 playlist.items.removeAll { $0.id == item.id }
                                 try? store.save(playlist)
@@ -206,7 +195,6 @@ struct PlaylistView: View {
                                 } label: {
                                     Label("收藏", systemImage: "star")
                                 }
-                                .tint(.yellow)
                             }
                         }
                     }

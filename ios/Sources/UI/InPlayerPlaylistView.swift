@@ -117,8 +117,6 @@ struct InPlayerPlaylistView: View {
                     }
                     .padding(.vertical, 8)
                 }
-                // 禁止拖动滚动：页签条上的滑动交给外层手势翻页，溢出用箭头滚动
-                .scrollDisabled(true)
                 Button { moveTab(1, proxy: proxy) } label: {
                     Image(systemName: "chevron.right")
                         .font(.callout)
@@ -144,16 +142,6 @@ struct InPlayerPlaylistView: View {
                 }
             }
             .padding(.horizontal, 8)
-            // 页签条上左右滑动翻页（拖动会让 onTapGesture 失败，天然不误触）
-            .highPriorityGesture(
-                DragGesture(minimumDistance: 20)
-                    .onEnded { value in
-                        let dx = value.translation.width
-                        let dy = value.translation.height
-                        guard abs(dx) > abs(dy) * 1.5 else { return }
-                        moveTab(dx < 0 ? 1 : -1)
-                    }
-            )
         }
     }
 
