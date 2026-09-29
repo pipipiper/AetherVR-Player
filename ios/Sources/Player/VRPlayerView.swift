@@ -56,6 +56,8 @@ struct VRPlayerView: View {
     @State private var skipNextSave = false
     /// 播放失败原因（展示给用户，便于诊断）
     @State private var playbackError: String?
+    /// 诊断浮层开关
+    @State private var showDiagnostics = false
     /// 播放队列（播放中可整体替换，如从单集切到某个列表）
     @State private var queue: [PlaylistItem]
 
@@ -184,6 +186,26 @@ struct VRPlayerView: View {
                     .tint(.white)
                     .scaleEffect(1.3)
                     .allowsHitTesting(false)
+            }
+            if showDiagnostics {
+                TimelineView(.periodic(from: .now, by: 0.5)) { _ in
+                    let info = coordinator.playerLayer?.player.dynamicInfo
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(String(format: "渲染 %.1f fps · 丢帧 %u · 丢包 %u",
+                                    info?.displayFPS ?? 0,
+                                    info?.droppedVideoFrameCount ?? 0,
+                                    info?.droppedVideoPacketCount ?? 0))
+                        Text("解码：\(hardwareDecode ? "硬解" : "软解") · 音画同步差 \(String(format: "%.3f", info?.audioVideoSyncDiff ?? 0))s")
+                    }
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.white)
+                    .padding(6)
+                    .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .padding(.top, 60)
+                    .padding(.leading, 12)
+                    .allowsHitTesting(false)
+                }
             }
         }
         .statusBarHidden(true)
@@ -332,6 +354,7 @@ struct VRPlayerView: View {
                 Menu {
                     Button("平面") { rebuildPlayer { modeOverride = .plane } }
                     Button("VR 眼镜分屏") { rebuildPlayer { modeOverride = .vrBox } }
+                    Toggle("诊断信息", isOn: $showDiagnostics)
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(.body)
