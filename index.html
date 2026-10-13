@@ -909,6 +909,7 @@
 
         /* WebDAV 目录浏览与文件项 */
         .pl-modal-lg { width: min(600px, 94vw); }
+        .pl-modal-lg .pl-modal-desc { text-align: left; margin-bottom: 14px; }
         .modal-head {
             display: flex; align-items: center; justify-content: space-between;
             margin-bottom: 12px;
@@ -929,6 +930,9 @@
             font-size: 13px; font-family: inherit; background: #fff; color: var(--text);
             transition: border-color .15s, box-shadow .15s;
         }
+        /* 屏蔽通用 .pl-modal input[type="text"] 的 margin-bottom：
+           否则两列网格里文本框比密码框低一截，表单错位 */
+        .pl-modal .webdav-row input { margin-bottom: 0; }
         .webdav-row input:focus, .pl-modal input[type="password"]:focus {
             outline: none; border-color: var(--yellow); box-shadow: 0 0 0 3px rgba(59,108,255,.13);
         }
@@ -945,6 +949,8 @@
             max-height: 320px; overflow-y: auto; border: 1px solid var(--border);
             border-radius: 12px; padding: 6px; background: var(--surface-3);
         }
+        /* 未连接时列表为空：不渲染边框底色，避免悬一条空心胶囊 */
+        .webdav-file-list:empty { display: none; }
         .webdav-item {
             display: flex; align-items: center; gap: 10px; padding: 9px 10px;
             border-radius: 8px; cursor: pointer; font-size: 13px;
