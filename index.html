@@ -73,14 +73,23 @@
             margin: 0; padding: 0; overflow: hidden;
         }
 
-        /* grid pattern when no video loaded */
+        /* ambient gradient wash when no video loaded */
+        body:not(.has-video) {
+            background:
+                radial-gradient(90vw 60vh at 12% -10%, rgba(96,130,255,.14), transparent 60%),
+                radial-gradient(70vw 55vh at 95% 8%, rgba(150,110,255,.10), transparent 60%),
+                radial-gradient(80vw 60vh at 50% 115%, rgba(80,190,255,.10), transparent 65%),
+                linear-gradient(160deg, var(--bg-grad-a), var(--bg-grad-b));
+        }
         body:not(.has-video)::before {
             content: "";
             position: fixed; inset: 0;
             background-image:
-                linear-gradient(var(--surface-2) 1px, transparent 1px),
-                linear-gradient(90deg, var(--surface-2) 1px, transparent 1px);
-            background-size: 48px 48px;
+                linear-gradient(rgba(120,135,165,.07) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(120,135,165,.07) 1px, transparent 1px);
+            background-size: 44px 44px;
+            -webkit-mask-image: radial-gradient(60% 55% at 50% 42%, #000 30%, transparent 100%);
+            mask-image: radial-gradient(60% 55% at 50% 42%, #000 30%, transparent 100%);
             z-index: -1;
         }
 
@@ -460,17 +469,26 @@
         .url-play-btn:hover { border-color: #e8ff47; color: #e8ff47; }
     </style>
     <style>
-        /* ── clean light theme overrides ───────────────────── */
+        /* ── Aether design tokens (spatial glass, light) ───── */
         :root {
-            --bg:        #f4f6f9;
+            --bg:        #eef1f8;
+            --bg-grad-a: #e8ecf7;
+            --bg-grad-b: #f3f0fb;
             --surface:   #ffffff;
-            --surface-2: #e9edf3;
-            --border:    #e3e7ee;
+            --surface-2: #eef1f7;
+            --surface-3: #f7f9fc;
+            --border:    #e4e8f1;
             --border-hi: #c9d2e0;
-            --text:      #1d2735;
-            --muted:     #8a94a6;
-            --yellow:    #2f6bff;   /* accent blue */
+            --text:      #16202e;
+            --muted:     #7d8899;
+            --yellow:    #3b6cff;   /* accent blue */
+            --accent-2:  #7c5cff;   /* violet secondary */
             --red:       #e0492f;
+            --radius-lg: 22px;
+            --radius-md: 14px;
+            --radius-sm: 10px;
+            --shadow-card: 0 24px 70px rgba(29,39,53,.10), 0 2px 8px rgba(29,39,53,.05);
+            --shadow-pop: 0 18px 48px rgba(23,32,46,.18);
         }
 
         body {
@@ -495,20 +513,25 @@
         body.has-playlist .page-content { padding-top: calc(60px + env(safe-area-inset-top)); }
 
         /* ── view toggle ───────────────────────────────────── */
+        .view-toggle {
+            display: inline-flex; gap: 2px; padding: 3px;
+            background: var(--surface-2); border: 1px solid var(--border);
+            border-radius: 12px;
+        }
         .view-btn {
             text-transform: none; letter-spacing: 0;
-            font-size: 13px; font-weight: 500; padding: 8px 18px;
-            border-width: 1px; background: #fff; color: var(--muted);
+            font-size: 13px; font-weight: 500; padding: 7px 16px;
+            border: none; border-radius: 9px;
+            background: transparent; color: var(--muted);
             font-family: inherit;
+            transition: background .18s, color .18s, box-shadow .18s;
         }
-        .view-btn:first-child { border-radius: 10px 0 0 10px; }
-        .view-btn:last-child  { border-radius: 0 10px 10px 0; }
         .view-btn:hover:not(.active) {
-            background: #f2f5fa; color: var(--text); border-color: var(--border-hi);
+            color: var(--text); background: rgba(255,255,255,.7);
         }
         .view-btn.active {
-            background: var(--yellow); color: #fff;
-            border-color: var(--yellow); box-shadow: none;
+            background: linear-gradient(120deg, var(--yellow), var(--accent-2));
+            color: #fff; box-shadow: 0 3px 10px rgba(88,105,255,.32);
         }
 
         /* ── file info ─────────────────────────────────────── */
@@ -580,33 +603,45 @@
         .ghost-btn {
             display: inline-flex; align-items: center; gap: 6px;
             padding: 8px 16px; font-size: 13px; font-family: inherit;
-            color: var(--text); background: #fff;
-            border: 1px solid var(--border-hi); border-radius: 10px;
-            cursor: pointer; transition: border-color .15s, color .15s;
+            color: var(--text); background: rgba(255,255,255,.85);
+            border: 1px solid var(--border-hi); border-radius: 999px;
+            cursor: pointer; transition: border-color .15s, color .15s, box-shadow .15s;
         }
-        .ghost-btn:hover { border-color: var(--yellow); color: var(--yellow); }
+        .ghost-btn:hover { border-color: var(--yellow); color: var(--yellow); box-shadow: 0 3px 12px rgba(59,108,255,.14); }
 
         /* ── hero / drop zone (central panel) ──────────────── */
         .drop-zone {
-            width: min(600px, 92vw);
-            padding: 46px 44px 38px;
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 24px;
-            box-shadow: 0 24px 70px rgba(29,39,53,.08);
+            width: min(640px, 92vw);
+            padding: 44px 42px 34px;
+            background: rgba(255,255,255,.82);
+            backdrop-filter: blur(24px) saturate(1.4); -webkit-backdrop-filter: blur(24px) saturate(1.4);
+            border: 1px solid rgba(255,255,255,.75);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-card);
             cursor: default; color: var(--text); z-index: 40;
         }
         .drop-zone:hover {
-            border-color: var(--border); color: var(--text);
-            box-shadow: 0 24px 70px rgba(29,39,53,.08);
+            border-color: rgba(255,255,255,.75); color: var(--text);
+            box-shadow: var(--shadow-card);
         }
         .drop-zone.drag-over {
             border-color: var(--yellow); color: var(--text);
-            box-shadow: 0 0 0 4px rgba(47,107,255,.15), 0 24px 70px rgba(29,39,53,.10);
+            box-shadow: 0 0 0 4px rgba(59,108,255,.16), var(--shadow-card);
             transform: translate(-50%, -50%);
         }
-        .hero-icon  { font-size: 34px; color: var(--yellow); margin-bottom: 14px; }
-        .hero-title { font-size: 26px; font-weight: 700; letter-spacing: .02em; margin-bottom: 8px; }
+        .hero-icon  {
+            width: 62px; height: 62px; margin: 0 auto 16px;
+            display: grid; place-items: center;
+            font-size: 26px; color: #fff; border-radius: 18px;
+            background: linear-gradient(135deg, var(--yellow), var(--accent-2));
+            box-shadow: 0 10px 26px rgba(88,105,255,.35);
+        }
+        .hero-title {
+            font-size: 27px; font-weight: 800; letter-spacing: .01em; margin-bottom: 8px;
+            background: linear-gradient(120deg, #1b2436, #3b6cff 55%, #7c5cff);
+            -webkit-background-clip: text; background-clip: text;
+            -webkit-text-fill-color: transparent; color: transparent;
+        }
         .hero-sub   { font-size: 13.5px; color: var(--muted); margin-bottom: 26px; }
         .hero-url   { width: 100%; margin: 0; }
         .hero-divider {
@@ -637,34 +672,56 @@
         /* ── url input + play button inside hero ───────────── */
         .url-input-wrapper input {
             flex: 1; width: auto; max-width: none;
-            padding: 11px 14px; font-size: 13px; font-family: inherit;
-            color: var(--text); background: #f5f7fa;
-            border: 1px solid var(--border); border-radius: 10px;
+            padding: 12px 16px; font-size: 13px; font-family: inherit;
+            color: var(--text); background: rgba(244,246,251,.9);
+            border: 1px solid var(--border); border-radius: var(--radius-sm);
+            transition: border-color .18s, box-shadow .18s, background .18s;
         }
-        .url-input-wrapper input:focus { border-color: var(--yellow); background: #fff; }
+        .url-input-wrapper input:focus {
+            outline: none; border-color: var(--yellow); background: #fff;
+            box-shadow: 0 0 0 3px rgba(59,108,255,.14);
+        }
         .url-play-btn {
-            padding: 11px 18px; font-size: 13px; font-weight: 600;
-            color: #fff; background: var(--yellow);
-            border: 1px solid var(--yellow); border-radius: 10px;
-            font-family: inherit; transition: background .15s;
+            padding: 12px 20px; font-size: 13px; font-weight: 650;
+            color: #fff; background: linear-gradient(120deg, var(--yellow), var(--accent-2));
+            border: none; border-radius: var(--radius-sm);
+            font-family: inherit; cursor: pointer;
+            box-shadow: 0 6px 18px rgba(88,105,255,.32);
+            transition: filter .15s, transform .15s, box-shadow .15s;
         }
-        .url-play-btn:hover { background: #2459d8; border-color: #2459d8; color: #fff; }
+        .url-play-btn:hover { filter: brightness(1.07); transform: translateY(-1px); box-shadow: 0 9px 24px rgba(88,105,255,.4); color: #fff; }
+        .url-play-btn:active { transform: translateY(0); filter: brightness(.96); }
         .transcode-btn { margin-top: 14px; width: 100%; }
         .transcode-btn:disabled { opacity: .6; cursor: wait; }
 
         /* ── file open button inside hero ──────────────────── */
+        .hero-file-row { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; }
         .file-input-label {
-            padding: 12px 28px; font-size: 14px; font-weight: 600;
+            display: flex; align-items: center; gap: 12px; text-align: left;
+            padding: 13px 16px; font-size: 14px; font-weight: 600;
             text-transform: none; letter-spacing: 0;
-            border: 1px solid var(--border-hi); border-radius: 12px;
-            box-shadow: none; color: var(--text); background: #fff;
-            font-family: inherit;
+            border: 1px solid var(--border); border-radius: var(--radius-md);
+            box-shadow: 0 1px 3px rgba(29,39,53,.04); color: var(--text); background: rgba(255,255,255,.72);
+            font-family: inherit; cursor: pointer;
+            transition: border-color .18s, box-shadow .18s, transform .18s, background .18s;
         }
+        .hero-btn-icon {
+            flex: 0 0 38px; height: 38px; display: grid; place-items: center;
+            border-radius: 11px; font-size: 15px; color: var(--yellow);
+            background: rgba(59,108,255,.09);
+            transition: background .18s, color .18s;
+        }
+        .hero-btn-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+        .hero-btn-text b { font-size: 14px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .hero-btn-text small { font-size: 11px; font-weight: 400; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .file-input-label:hover {
-            transform: none; box-shadow: none;
-            border-color: var(--yellow); color: var(--yellow);
+            transform: translateY(-1px);
+            border-color: rgba(59,108,255,.45);
+            box-shadow: 0 8px 22px rgba(59,108,255,.12);
+            background: #fff; color: var(--text);
         }
-        .file-input-label:active { transform: none; box-shadow: none; }
+        .file-input-label:hover .hero-btn-icon { background: var(--yellow); color: #fff; }
+        .file-input-label:active { transform: translateY(0); box-shadow: none; }
 
         /* ── error ─────────────────────────────────────────── */
         .error-message {
@@ -857,38 +914,122 @@
             margin-bottom: 12px;
         }
         .modal-head h3 { margin: 0; font-size: 16px; font-weight: 700; }
+        .modal-head h3 i { color: var(--yellow); margin-right: 2px; }
         .modal-close-icon {
             border: 0; background: transparent; font-size: 18px; color: var(--muted);
-            cursor: pointer; padding: 4px; border-radius: 6px;
+            cursor: pointer; padding: 4px 6px; border-radius: 8px;
+            transition: background .15s, color .15s;
         }
-        .modal-close-icon:hover { color: var(--text); }
+        .modal-close-icon:hover { color: var(--text); background: var(--surface-2); }
         .webdav-row { margin-bottom: 10px; }
         .webdav-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .webdav-row input, .pl-modal input[type="password"] {
+            width: 100%; box-sizing: border-box;
+            border: 1px solid var(--border-hi); border-radius: 9px; padding: 9px 12px;
+            font-size: 13px; font-family: inherit; background: #fff; color: var(--text);
+            transition: border-color .15s, box-shadow .15s;
+        }
+        .webdav-row input:focus, .pl-modal input[type="password"]:focus {
+            outline: none; border-color: var(--yellow); box-shadow: 0 0 0 3px rgba(59,108,255,.13);
+        }
         .webdav-nav {
             display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
-            background: rgba(0,0,0,0.04); padding: 6px 10px; border-radius: 8px;
+            background: var(--surface-3); border: 1px solid var(--border);
+            padding: 6px 10px; border-radius: 10px;
         }
         .webdav-path-text {
             font-size: 12px; color: var(--muted); word-break: break-all; flex: 1;
             font-family: 'JetBrains Mono', monospace;
         }
         .webdav-file-list {
-            max-height: 280px; overflow-y: auto; border: 1px solid var(--border-hi);
-            border-radius: 9px; padding: 6px; background: rgba(0,0,0,0.02);
+            max-height: 320px; overflow-y: auto; border: 1px solid var(--border);
+            border-radius: 12px; padding: 6px; background: var(--surface-3);
         }
         .webdav-item {
-            display: flex; align-items: center; gap: 10px; padding: 8px 10px;
-            border-radius: 6px; cursor: pointer; font-size: 13px;
+            display: flex; align-items: center; gap: 10px; padding: 9px 10px;
+            border-radius: 8px; cursor: pointer; font-size: 13px;
             transition: background 0.15s ease;
         }
-        .webdav-item:hover { background: rgba(47, 107, 255, 0.1); }
-        .webdav-item-icon { width: 18px; text-align: center; color: var(--muted); }
-        .webdav-item.is-dir .webdav-item-icon { color: #f59e0b; }
-        .webdav-item.is-video .webdav-item-icon { color: #06b6d4; }
+        .webdav-item:hover { background: rgba(59, 108, 255, .09); }
+        .webdav-item-icon { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 8px; background: var(--surface-2); color: var(--muted); font-size: 12px; flex: none; }
+        .webdav-item.is-dir .webdav-item-icon { color: #e8a23c; background: rgba(232,162,60,.12); }
+        .webdav-item.is-video .webdav-item-icon { color: var(--yellow); background: rgba(59,108,255,.1); }
         .webdav-item-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .webdav-item-size { font-size: 11px; color: var(--muted); }
-        .backup-actions { display: flex; gap: 10px; margin: 16px 0; }
+        .backup-actions { display: flex; gap: 10px; margin: 16px 0; flex-wrap: wrap; }
         .backup-clip-section textarea { height: 90px; }
+
+        /* ── 播放记录 ─────────────────────────────────────── */
+        .history-toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; }
+        .history-search-wrap {
+            flex: 1; display: flex; align-items: center; gap: 8px;
+            border: 1px solid var(--border-hi); border-radius: 10px;
+            padding: 0 12px; background: #fff;
+            transition: border-color .15s, box-shadow .15s;
+        }
+        .history-search-wrap:focus-within { border-color: var(--yellow); box-shadow: 0 0 0 3px rgba(59,108,255,.13); }
+        .history-search-wrap i { color: var(--muted); font-size: 12px; }
+        .history-search-wrap input {
+            flex: 1; border: 0; outline: none; background: transparent;
+            padding: 9px 0; font-size: 13px; font-family: inherit; color: var(--text);
+        }
+        .history-list {
+            max-height: 380px; overflow-y: auto;
+            border: 1px solid var(--border); border-radius: 12px;
+            padding: 6px; background: var(--surface-3);
+        }
+        .history-item {
+            display: flex; align-items: center; gap: 12px;
+            padding: 10px 10px; border-radius: 10px; cursor: pointer;
+            transition: background .15s;
+        }
+        .history-item:hover { background: rgba(59,108,255,.09); }
+        .history-item-thumb {
+            flex: 0 0 44px; height: 44px; border-radius: 10px;
+            display: grid; place-items: center; font-size: 15px;
+            background: linear-gradient(135deg, rgba(59,108,255,.14), rgba(124,92,255,.14));
+            color: var(--yellow);
+        }
+        .history-item-main { flex: 1; min-width: 0; }
+        .history-item-title {
+            font-size: 13.5px; font-weight: 600; color: var(--text);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .history-item-meta {
+            display: flex; align-items: center; gap: 8px; margin-top: 3px;
+            font-size: 11px; color: var(--muted);
+        }
+        .history-item-meta .hi-src {
+            padding: 1px 6px; border-radius: 999px; background: var(--surface-2);
+            color: #5d6878; font-size: 10px; flex: none;
+        }
+        .history-progress {
+            margin-top: 5px; height: 3px; border-radius: 999px;
+            background: var(--surface-2); overflow: hidden;
+        }
+        .history-progress > i {
+            display: block; height: 100%; border-radius: 999px;
+            background: linear-gradient(90deg, var(--yellow), var(--accent-2));
+        }
+        .history-item-right { flex: none; display: flex; align-items: center; gap: 4px; }
+        .history-item-time { font-size: 11px; color: var(--muted); white-space: nowrap; }
+        .history-item-del {
+            border: 0; background: transparent; color: #b6bfcc; cursor: pointer;
+            width: 26px; height: 26px; border-radius: 8px; font-size: 12px;
+            display: grid; place-items: center;
+            opacity: 0; transition: opacity .15s, background .15s, color .15s;
+        }
+        .history-item:hover .history-item-del { opacity: 1; }
+        .history-item-del:hover { background: #fef2f0; color: var(--red); }
+        .history-empty {
+            padding: 36px 12px 30px; text-align: center; color: var(--muted);
+        }
+        .history-empty i { font-size: 30px; color: #c8d1e0; margin-bottom: 12px; display: block; }
+        .history-empty p { font-size: 13px; line-height: 1.7; margin: 0; }
+        .history-empty small { color: #a7b1c2; font-size: 11.5px; }
+        @media (max-width: 640px) {
+            .hero-file-row { grid-template-columns: 1fr; }
+        }
         .progress-bar {
             height: 6px; border: none; border-radius: 999px;
             background: rgba(255,255,255,.16);
@@ -1080,14 +1221,20 @@
         /* ── 位置记录 / 批量添加链接 弹窗 ─────────────── */
         .pl-modal-mask {
             display: none; position: fixed; inset: 0; z-index: 60;
-            background: rgba(10,14,22,.45); backdrop-filter: blur(3px);
+            background: rgba(14,20,34,.42); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
             align-items: center; justify-content: center;
         }
         .pl-modal-mask.active { display: flex; }
         .pl-modal {
-            width: min(400px, 90vw); background: #fff; border-radius: 14px;
-            border: 1px solid rgba(0,0,0,.08); box-shadow: 0 18px 50px rgba(0,0,0,.25);
+            width: min(400px, 90vw);
+            background: rgba(255,255,255,.97); border-radius: 18px;
+            border: 1px solid rgba(255,255,255,.9); box-shadow: var(--shadow-pop);
             padding: 20px 22px 16px; color: var(--text);
+            animation: plModalIn .22s cubic-bezier(.2,.9,.3,1.2);
+        }
+        @keyframes plModalIn {
+            from { opacity: 0; transform: translateY(14px) scale(.97); }
+            to   { opacity: 1; transform: translateY(0) scale(1); }
         }
         .pl-modal h3 { margin: 0 0 6px; font-size: 15px; }
         .pl-modal .pl-modal-desc { font-size: 12.5px; color: var(--muted); margin-bottom: 14px; line-height: 1.6; }
@@ -1095,13 +1242,15 @@
         .pl-modal-btn {
             padding: 8px 14px; font-size: 13px; border-radius: 9px; cursor: pointer;
             border: 1px solid var(--border-hi); background: #fff; color: var(--text);
-            font-family: inherit;
+            font-family: inherit; transition: border-color .15s, background .15s, color .15s;
         }
-        .pl-modal-btn:hover { border-color: var(--yellow); }
-        .pl-modal-btn.primary { background: #2f6bff; border-color: #2f6bff; color: #fff; }
-        .pl-modal-btn.primary:hover { background: #2459dd; }
+        .pl-modal-btn:hover { border-color: var(--yellow); color: var(--yellow); }
+        .pl-modal-btn.primary { background: linear-gradient(120deg, var(--yellow), var(--accent-2)); border-color: transparent; color: #fff; box-shadow: 0 4px 14px rgba(88,105,255,.3); }
+        .pl-modal-btn.primary:hover { filter: brightness(1.07); color: #fff; }
         .pl-modal-btn.danger { background: #d64545; border-color: #d64545; color: #fff; }
-        .pl-modal-btn.danger:hover { background: #bc3737; }
+        .pl-modal-btn.danger:hover { background: #bc3737; color: #fff; }
+        .pl-modal-btn.danger-ghost { color: var(--red); border-color: rgba(224,73,47,.35); }
+        .pl-modal-btn.danger-ghost:hover { border-color: var(--red); background: #fef2f0; color: var(--red); }
         .pl-modal textarea {
             width: 100%; box-sizing: border-box; height: 110px; resize: vertical;
             border: 1px solid var(--border-hi); border-radius: 9px; padding: 8px 10px;
@@ -1116,7 +1265,6 @@
             font-size: 11px; color: var(--muted); word-break: break-all;
             background: rgba(0,0,0,.04); border-radius: 7px; padding: 6px 8px; margin-bottom: 12px;
         }
-        .hero-file-row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
         .control-btn:disabled { opacity: .35; cursor: default; }
 
         /* ── touch behavior ────────────────────────────────── */
@@ -1233,25 +1381,35 @@
                 <p class="pages-notice" id="pagesNotice"><i class="fa-solid fa-circle-info"></i><b>静态托管模式</b> · 支持本地文件、文件夹和 DPL 播放<br>在线代理与服务器转码请使用自托管完整版或桌面版</p>
                 <div class="hero-file-row">
                     <label for="videoFile" class="file-input-label hero-file">
-                        <i class="fa-solid fa-folder-open"></i>&nbsp; 打开本地文件
+                        <span class="hero-btn-icon"><i class="fa-solid fa-folder-open"></i></span>
+                        <span class="hero-btn-text"><b>打开本地文件</b><small>支持多选 · 自动识别全景与 SBS</small></span>
                     </label>
                     <label for="folderInput" class="file-input-label hero-file" id="folderLabel" title="读取整个文件夹，自动排除 50MB 以下的小文件">
-                        <i class="fa-solid fa-folder-tree"></i>&nbsp; 打开文件夹
+                        <span class="hero-btn-icon"><i class="fa-solid fa-folder-tree"></i></span>
+                        <span class="hero-btn-text"><b>打开文件夹</b><small>整个目录连播 · 排除小文件</small></span>
                     </label>
                     <button id="dplBtn" class="file-input-label hero-file" style="display:none" title="读取 PotPlayer 播放列表，自动在磁盘上定位视频文件">
-                        <i class="fa-solid fa-list-check"></i>&nbsp; 打开 DPL 播放列表
+                        <span class="hero-btn-icon"><i class="fa-solid fa-list-check"></i></span>
+                        <span class="hero-btn-text"><b>打开 DPL 播放列表</b><small>PotPlayer 列表 · 磁盘定位</small></span>
                     </button>
                     <button id="heroPlaylistBtn" class="file-input-label hero-file" style="display:none" title="管理播放列表与收藏夹，支持导入导出">
-                        <i class="fa-solid fa-list-ul"></i>&nbsp; 播放列表 / 收藏夹
+                        <span class="hero-btn-icon"><i class="fa-solid fa-list-ul"></i></span>
+                        <span class="hero-btn-text"><b>播放列表 / 收藏夹</b><small>多列表管理 · 导入导出</small></span>
+                    </button>
+                    <button id="historyBtn" class="file-input-label hero-file" title="最近播放记录，点击一键续播">
+                        <span class="hero-btn-icon"><i class="fa-solid fa-clock-rotate-left"></i></span>
+                        <span class="hero-btn-text"><b>播放记录</b><small>最近观看 · 自动续播</small></span>
                     </button>
                     <button id="webdavBtn" class="file-input-label hero-file" title="挂载与浏览局域网或云端 WebDAV 资源">
-                        <i class="fa-solid fa-server"></i>&nbsp; WebDAV 挂载
+                        <span class="hero-btn-icon"><i class="fa-solid fa-server"></i></span>
+                        <span class="hero-btn-text"><b>WebDAV 挂载</b><small>NAS / 云端 · 目录浏览</small></span>
                     </button>
                     <button id="backupBtn" class="file-input-label hero-file" title="跨端备份与同步（与 iOS 版无缝互通）">
-                        <i class="fa-solid fa-cloud-arrow-up"></i>&nbsp; 备份与同步
+                        <span class="hero-btn-icon"><i class="fa-solid fa-cloud-arrow-up"></i></span>
+                        <span class="hero-btn-text"><b>备份与同步</b><small>与 iOS 版 JSON 互通</small></span>
                     </button>
                 </div>
-                <p class="hero-hint">也可以直接把视频文件或 .dpl 播放列表拖到这里</p>
+                <p class="hero-hint"><i class="fa-solid fa-hand-pointer"></i>&nbsp; 也可以直接把视频文件或 .dpl 播放列表拖到这里</p>
                 <button id="heroClose" class="hero-close" style="display:none"><i class="fa-solid fa-xmark"></i>&nbsp; 返回播放</button>
                 <div class="hero-loading" id="heroLoading"><div class="seek-loading-spinner"></div><span id="heroLoadingText">正在检测…</span></div>
                 <div class="error-message" id="errorMessage"></div>
@@ -1520,6 +1678,28 @@
                         <div class="pl-modal-btns">
                             <button class="pl-modal-btn" id="importClipBtn"><i class="fa-solid fa-clipboard-check"></i>&nbsp; 从文本框恢复</button>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 播放记录弹窗 -->
+            <div class="pl-modal-mask" id="historyModalMask">
+                <div class="pl-modal pl-modal-lg">
+                    <div class="modal-head">
+                        <h3><i class="fa-solid fa-clock-rotate-left"></i>&nbsp; 播放记录</h3>
+                        <button class="modal-close-icon" id="historyClose" aria-label="关闭"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                    <div class="history-toolbar">
+                        <div class="history-search-wrap">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                            <input type="search" id="historySearch" placeholder="搜索片名或地址…" spellcheck="false" autocomplete="off">
+                        </div>
+                        <button class="pl-modal-btn danger-ghost" id="historyClearBtn"><i class="fa-solid fa-broom"></i>&nbsp; 清空</button>
+                    </div>
+                    <div class="history-list" id="historyList"></div>
+                    <div class="history-empty" id="historyEmpty" style="display:none">
+                        <i class="fa-regular fa-folder-open"></i>
+                        <p>暂无播放记录<br><small>播放过的视频会自动记录在这里，点击即可续播</small></p>
                     </div>
                 </div>
             </div>
@@ -5074,30 +5254,185 @@
             try { localStorage.setItem(HISTORY_KEY, JSON.stringify(hist)); }
             catch { /* 忽略 */ }
         }
-        function recordPlaybackProgress() {
+        // 上次落盘的「url@秒」指纹：进度没动就不写 localStorage，避免高频写盘
+        let lastRecordedStamp = '';
+        // iOS JSONEncoder 的 Date 默认编码：自 2001-01-01 (UTC) 起的秒数
+        const APPLE_EPOCH_OFFSET = 978307200; // Unix 秒 → Apple 秒
+        function toAppleSeconds(unixMs) {
+            return Math.round(unixMs / 1000 - APPLE_EPOCH_OFFSET);
+        }
+        function fromAppleOrUnixOrISO(v) {
+            // 兼容三种时间戳：ISO 字符串 / Unix 毫秒 / Apple 秒（≈1.7e9 量级）或 Unix 秒
+            if (typeof v === 'string') { const p = Date.parse(v); return Number.isFinite(p) ? p : Date.now(); }
+            if (typeof v !== 'number' || !Number.isFinite(v)) return Date.now();
+            if (v > 1e12) return v;                    // Unix 毫秒
+            if (v > 1e8 && v < 2e9) {                  // Apple 秒 或 Unix 秒：Apple 秒 ≈ 8.2e8，Unix 秒 ≈ 1.7e9
+                return (v < 1.5e9 ? v + APPLE_EPOCH_OFFSET : v) * 1000;
+            }
+            return Date.now();
+        }
+        function recordPlaybackProgress(force) {
             const ref = currentVideoRef();
             if (!ref || !ref.target) return;
             const dur = Math.round(effectiveDuration() || 0);
             const cur = Math.round(effectiveCurrentTime() || 0);
             if (cur <= 0) return;
+            const stamp = ref.target + '@' + cur;
+            if (!force && stamp === lastRecordedStamp) return;
+            lastRecordedStamp = stamp;
             let hist = getPlaybackHistory();
             const existingIdx = hist.findIndex(r => r.url === ref.target);
+            const nowMs = Date.now();
             const rec = {
                 id: existingIdx >= 0 ? hist[existingIdx].id : (Date.now().toString(36) + Math.random().toString(36).slice(2, 7)),
                 url: ref.target,
                 title: ref.name || '视频',
                 position: cur,
                 duration: dur,
-                lastPlayedAt: new Date().toISOString()
+                kind: ref.kind || 'online',
+                lastPlayedAt: nowMs,
+                updatedAt: toAppleSeconds(nowMs),   // iOS BackupFile 兼容字段
             };
             if (existingIdx >= 0) hist[existingIdx] = rec;
             else hist.unshift(rec);
             if (hist.length > 500) hist = hist.slice(0, 500);
             savePlaybackHistory(hist);
+            if (historyModalMask && historyModalMask.classList.contains('active')) renderHistoryList();
         }
-        // 播放暂停或每隔 5 秒记录一次当前进度
-        setInterval(recordPlaybackProgress, 5000);
-        videoPlayer.addEventListener('pause', recordPlaybackProgress);
+        // 播放中每 5 秒检查一次（进度真实变化才落盘）；暂停/结束时强制记录
+        setInterval(() => { if (!videoPlayer.paused) recordPlaybackProgress(false); }, 5000);
+        videoPlayer.addEventListener('pause', () => recordPlaybackProgress(true));
+        videoPlayer.addEventListener('ended', () => recordPlaybackProgress(true));
+
+        // ── 播放记录面板：渲染 / 搜索 / 续播 / 删除 / 清空 ──
+        // 注意：mask 引用必须在此声明，recordPlaybackProgress（定时器）会先于下方 UI 绑定执行
+        const historyModalMask = document.getElementById('historyModalMask');
+        const historyListEl = document.getElementById('historyList');
+        const historyEmptyEl = document.getElementById('historyEmpty');
+        const historySearchEl = document.getElementById('historySearch');
+
+        function historySourceLabel(rec) {
+            if (rec.kind === 'local' || /^[a-z]:[\\/]/i.test(rec.url) || rec.url.startsWith('\\\\')) return '本地';
+            if (/^https?:\/\//i.test(rec.url)) {
+                if (/webdav/i.test(rec.url) || /\/dav\//i.test(rec.url)) return 'WebDAV';
+                return '在线';
+            }
+            return '文件';
+        }
+        function historyRelativeTime(ts) {
+            let t = ts;
+            if (typeof t === 'string') { const p = Date.parse(t); t = Number.isFinite(p) ? p : Date.now(); }
+            if (!t || !Number.isFinite(t)) t = Date.now();
+            const diff = Math.max(0, Date.now() - t);
+            const min = Math.floor(diff / 60000);
+            if (min < 1) return '刚刚';
+            if (min < 60) return min + ' 分钟前';
+            const hr = Math.floor(min / 60);
+            if (hr < 24) return hr + ' 小时前';
+            const day = Math.floor(hr / 24);
+            if (day === 1) return '昨天';
+            if (day < 7) return day + ' 天前';
+            const d = new Date(t);
+            return (d.getMonth() + 1) + '月' + d.getDate() + '日';
+        }
+        function playHistoryRecord(rec) {
+            const isLocal = rec.kind === 'local' || /^[a-z]:[\\/]/i.test(rec.url) || rec.url.startsWith('\\\\');
+            const resume = rec.position > 3 && rec.duration && rec.position < rec.duration - 5 ? rec.position : null;
+            if (isLocal) {
+                if (isDesktopApp) {
+                    playTarget(rec.title, localUrl(rec.url), resume);
+                } else {
+                    showSpatialToast('本地文件记录需在桌面版或重新选择文件后播放');
+                    return;
+                }
+            } else if (/^https?:\/\//i.test(rec.url)) {
+                playTarget(rec.title, rec.url, resume);
+            } else {
+                showSpatialToast('该记录的文件路径暂不可用');
+                return;
+            }
+            if (historyModalMask) historyModalMask.classList.remove('active');
+            dropZone.classList.remove('active');
+            showSpatialToast(resume != null ? `续播「${rec.title}」 ${formatTime(rec.position)}` : `播放「${rec.title}」`);
+        }
+        function deleteHistoryRecord(id) {
+            let hist = getPlaybackHistory();
+            hist = hist.filter(r => r.id !== id);
+            savePlaybackHistory(hist);
+            renderHistoryList();
+        }
+        function renderHistoryList() {
+            if (!historyListEl) return;
+            const q = (historySearchEl.value || '').trim().toLowerCase();
+            let hist = getPlaybackHistory();
+            if (q) hist = hist.filter(r => (r.title || '').toLowerCase().includes(q) || (r.url || '').toLowerCase().includes(q));
+            historyListEl.innerHTML = '';
+            if (!hist.length) {
+                historyListEl.style.display = 'none';
+                historyEmptyEl.style.display = '';
+                if (q && getPlaybackHistory().length) {
+                    historyEmptyEl.querySelector('p').innerHTML = `没有找到与「${q.replace(/</g, '&lt;')}」相关的记录`;
+                } else {
+                    historyEmptyEl.querySelector('p').innerHTML = '暂无播放记录<br><small>播放过的视频会自动记录在这里，点击即可续播</small>';
+                }
+                return;
+            }
+            historyEmptyEl.style.display = 'none';
+            historyListEl.style.display = '';
+            hist.forEach(rec => {
+                const item = document.createElement('div');
+                item.className = 'history-item';
+                const pct = rec.duration > 0 ? Math.min(100, Math.round((rec.position / rec.duration) * 100)) : 0;
+                const watched = pct >= 97;
+                item.innerHTML = `
+                    <div class="history-item-thumb"><i class="fa-solid ${watched ? 'fa-circle-check' : 'fa-play'}"></i></div>
+                    <div class="history-item-main">
+                        <div class="history-item-title"></div>
+                        <div class="history-item-meta">
+                            <span class="hi-src">${historySourceLabel(rec)}</span>
+                            <span>${rec.duration ? formatTime(rec.position) + ' / ' + formatTime(rec.duration) : formatTime(rec.position)}</span>
+                            ${rec.duration ? '<span>· ' + pct + '%</span>' : ''}
+                        </div>
+                        <div class="history-progress"><i style="width:${pct}%"></i></div>
+                    </div>
+                    <div class="history-item-right">
+                        <span class="history-item-time">${historyRelativeTime(rec.lastPlayedAt)}</span>
+                        <button class="history-item-del" title="删除该记录"><i class="fa-solid fa-trash-can"></i></button>
+                    </div>`;
+                item.querySelector('.history-item-title').textContent = rec.title || rec.url;
+                item.addEventListener('click', () => playHistoryRecord(rec));
+                item.querySelector('.history-item-del').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    deleteHistoryRecord(rec.id);
+                });
+                historyListEl.appendChild(item);
+            });
+        }
+        const historyBtn = document.getElementById('historyBtn');
+        if (historyBtn) {
+            historyBtn.addEventListener('click', () => {
+                historySearchEl.value = '';
+                renderHistoryList();
+                historyModalMask.classList.add('active');
+            });
+        }
+        const historyClose = document.getElementById('historyClose');
+        if (historyClose) historyClose.addEventListener('click', () => historyModalMask.classList.remove('active'));
+        if (historyModalMask) historyModalMask.addEventListener('click', (e) => {
+            if (e.target === historyModalMask) historyModalMask.classList.remove('active');
+        });
+        if (historySearchEl) historySearchEl.addEventListener('input', renderHistoryList);
+        const historyClearBtn = document.getElementById('historyClearBtn');
+        if (historyClearBtn) {
+            historyClearBtn.addEventListener('click', async () => {
+                if (!getPlaybackHistory().length) { showSpatialToast('播放记录已是空的'); return; }
+                const ok = await askConfirm('清空播放记录', '将删除全部播放记录，此操作不可撤销。播放列表与收藏夹不受影响。', '清空');
+                if (!ok) return;
+                savePlaybackHistory([]);
+                renderHistoryList();
+                showSpatialToast('已清空播放记录');
+            });
+        }
 
         // ── 跨端备份与同步（100% 对齐 iOS 备份结构）──
         const backupBtn = document.getElementById('backupBtn');
@@ -5162,10 +5497,18 @@
                 }
             } catch {}
 
+            // iOS JSONDecoder 的 Date 默认是「Apple 系统时间戳（秒）」数字，
+            // 导出必须用该格式，否则 iPhone 端解析失败
             const backupObj = {
                 formatVersion: 1,
-                exportedAt: new Date().toISOString(),
-                history: hist,
+                exportedAt: toAppleSeconds(Date.now()),
+                history: hist.map(r => ({
+                    title: r.title || '视频',
+                    url: r.url,
+                    position: r.position || 0,
+                    duration: r.duration || 0,
+                    updatedAt: r.updatedAt || toAppleSeconds(r.lastPlayedAt || Date.now()),
+                })),
                 servers: servers,
                 playlists: lists,
                 settings: {
@@ -5200,9 +5543,19 @@
                 if (!data || (!data.history && !data.playlists && !data.servers)) {
                     throw new Error('不合法的 AetherVR 备份文件');
                 }
-                // 1. 恢复播放记录
+                // 1. 恢复播放记录（iOS 记录用 Apple 秒时间戳，统一归一化）
                 if (Array.isArray(data.history)) {
-                    savePlaybackHistory(data.history);
+                    const normalized = data.history.map((r, i) => ({
+                        id: r.url ? ('imp-' + i) : (Date.now().toString(36) + i),
+                        url: r.url,
+                        title: r.title || '视频',
+                        position: r.position || 0,
+                        duration: r.duration || 0,
+                        kind: /^https?:\/\//i.test(r.url || '') ? 'online' : 'local',
+                        lastPlayedAt: fromAppleOrUnixOrISO(r.updatedAt != null ? r.updatedAt : r.lastPlayedAt),
+                        updatedAt: r.updatedAt != null ? r.updatedAt : toAppleSeconds(Date.now()),
+                    })).filter(r => r.url);
+                    savePlaybackHistory(normalized);
                 }
                 // 2. 恢复服务器记录
                 if (Array.isArray(data.servers)) {
@@ -5228,14 +5581,15 @@
                                 target: it.file,
                                 kind: /^https?:\/\//i.test(it.file) ? 'online' : 'local',
                                 position: it.position || 0,
-                                addedAt: new Date().toISOString()
+                                addedAt: Date.now()
                             }));
-                            saveFavorites();
+                            saveFavs();
+                            renderFavs();
                         } else {
                             const newEntries = (pl.items || []).map(it => ({
                                 file: it.file, title: it.title || it.file, position: it.position || 0
                             }));
-                            openPlaylistTab(pl.name, null, newEntries.map(e => entryToItem(e, false)), newEntries, false);
+                            openPlaylistTab(pl.name, null, newEntries.map(e => entryToItem(e)), newEntries, false);
                         }
                     });
                 }
