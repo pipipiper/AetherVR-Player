@@ -1267,6 +1267,12 @@
             border: 1px solid var(--border-hi); border-radius: 9px; padding: 9px 10px;
             font-size: 13px; font-family: inherit; margin-bottom: 12px;
         }
+        /* WebDAV 表单修正：与通用规则同特异度，必须写在它之后才能生效。
+           去掉 margin-bottom（否则网格内文本框比密码框矮一截），统一内边距 */
+        .pl-modal .webdav-row input[type="text"],
+        .pl-modal .webdav-row input[type="password"] {
+            margin-bottom: 0; padding: 9px 12px;
+        }
         .pl-modal .pl-modal-path {
             font-size: 11px; color: var(--muted); word-break: break-all;
             background: rgba(0,0,0,.04); border-radius: 7px; padding: 6px 8px; margin-bottom: 12px;
