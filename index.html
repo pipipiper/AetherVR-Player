@@ -951,6 +951,31 @@
         }
         /* 未连接时列表为空：不渲染边框底色，避免悬一条空心胶囊 */
         .webdav-file-list:empty { display: none; }
+        /* 最近连接记录（参考 iOS 移动端 ServerHistory） */
+        .webdav-recents { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+        .webdav-recents:empty { display: none; }
+        .webdav-recent-item {
+            display: flex; align-items: center; gap: 10px;
+            padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px;
+            background: var(--surface-3); cursor: pointer;
+            transition: border-color .15s, background .15s;
+        }
+        .webdav-recent-item:hover { border-color: rgba(59,108,255,.45); background: rgba(59,108,255,.05); }
+        .webdav-recent-icon {
+            flex: 0 0 30px; height: 30px; display: grid; place-items: center;
+            border-radius: 9px; background: rgba(59,108,255,.1); color: var(--yellow); font-size: 13px;
+        }
+        .webdav-recent-main { flex: 1; min-width: 0; }
+        .webdav-recent-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .webdav-recent-url { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+        .webdav-recent-del {
+            flex: none; border: 0; background: transparent; color: #b6bfcc; cursor: pointer;
+            width: 26px; height: 26px; border-radius: 8px; font-size: 12px;
+            display: grid; place-items: center;
+            opacity: 0; transition: opacity .15s, background .15s, color .15s;
+        }
+        .webdav-recent-item:hover .webdav-recent-del { opacity: 1; }
+        .webdav-recent-del:hover { background: #fef2f0; color: var(--red); }
         .webdav-item {
             display: flex; align-items: center; gap: 10px; padding: 9px 10px;
             border-radius: 8px; cursor: pointer; font-size: 13px;
@@ -1649,7 +1674,12 @@
                         <button class="modal-close-icon" id="webdavClose"><i class="fa-solid fa-xmark"></i></button>
                     </div>
                     <p class="pl-modal-desc">连接局域网 NAS 或云端 WebDAV，支持直接浏览并一键播放 VR 视频</p>
+                    <!-- 最近连接（存 localStorage，随跨端备份导出） -->
+                    <div class="webdav-recents" id="webdavRecents"></div>
                     <div class="webdav-form" id="webdavForm">
+                        <div class="webdav-row">
+                            <input type="text" id="webdavName" placeholder="连接名称（选填，例：家里 NAS）" spellcheck="false" autocomplete="off">
+                        </div>
                         <div class="webdav-row">
                             <input type="text" id="webdavUrl" placeholder="服务器地址（例：http://192.168.1.100:5005/webdav）" spellcheck="false">
                         </div>
@@ -2810,6 +2840,13 @@
         // ── 播放列表持久化：当前列表写入对应 dpl 文件（防抖）+ localStorage 兜底 ──
         function persistPlaylist() {
             if (!isDesktopApp) return;
+            // 临时列表（拖入文件 / WebDAV 目录起播）只在本次会话有意义：
+            // 对齐 iOS clearTemp——退出即清空，绝不写进兜底存储，重启不复活
+            const active = typeof activePlaylist === 'function' ? activePlaylist() : null;
+            if (active && active.id === TEMP_TAB_ID) {
+                try { localStorage.removeItem(PL_KEY); } catch { /* 忽略 */ }
+                return;
+            }
             try {
                 const data = playlist.map((it) => {
                     const e = itemToDplEntry(it);
@@ -5493,20 +5530,19 @@
                     });
                 });
             }
-            // WebDAV 服务器连接记录
+            // WebDAV 服务器连接记录（对齐 iOS BackupServer：含名称与密码，全部导出）
             const servers = [];
             try {
-                const s = JSON.parse(localStorage.getItem('aethervr-webdav-cfg') || '{}');
-                if (s.url) {
+                getWebdavServers().forEach((s, i) => {
                     servers.push({
-                        id: 'server-' + Date.now(),
+                        id: s.id || ('webdav-' + Date.now().toString(36) + i),
                         type: 'webdav',
                         address: s.url,
                         username: s.user || '',
-                        password: s.pass || '',
-                        name: 'WebDAV 存储'
+                        password: s.pass || null,
+                        name: s.name || null,
                     });
-                }
+                });
             } catch {}
 
             // iOS JSONDecoder 的 Date 默认是「Apple 系统时间戳（秒）」数字，
@@ -5569,20 +5605,35 @@
                     })).filter(r => r.url);
                     savePlaybackHistory(normalized);
                 }
-                // 2. 恢复服务器记录
+                // 2. 恢复服务器记录 → 写入连接记录（localStorage，随下次备份再导出）
                 if (Array.isArray(data.servers)) {
-                    const dav = data.servers.find(s => s.type === 'webdav');
-                    if (dav) {
-                        localStorage.setItem('aethervr-webdav-cfg', JSON.stringify({
-                            url: dav.address, user: dav.username || '', pass: dav.password || ''
+                    const existing = getWebdavServers();
+                    data.servers.filter(s => s.type === 'webdav').forEach(dav => {
+                        const idx = existing.findIndex((x) => x.url === dav.address);
+                        const rec = {
+                            id: (idx >= 0 && existing[idx].id) || ('webdav-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)),
+                            url: dav.address,
+                            user: dav.username || '',
+                            pass: dav.password || (idx >= 0 ? existing[idx].pass : '') || '',
+                            name: dav.name || (idx >= 0 ? existing[idx].name : '') || '',
+                            lastUsedAt: Date.now(),
+                        };
+                        if (idx >= 0) existing.splice(idx, 1);
+                        existing.unshift(rec);
+                    });
+                    const webdav = data.servers.find(s => s.type === 'webdav');
+                    if (webdav) {
+                        localStorage.setItem(WEBDAV_CFG_KEY, JSON.stringify({
+                            url: webdav.address, user: webdav.username || '',
+                            pass: webdav.password || '', name: webdav.name || ''
                         }));
-                        const uInput = document.getElementById('webdavUrl');
-                        const userInput = document.getElementById('webdavUser');
-                        const passInput = document.getElementById('webdavPass');
-                        if (uInput) uInput.value = dav.address;
-                        if (userInput) userInput.value = dav.username || '';
-                        if (passInput) passInput.value = dav.password || '';
+                        if (webdavUrlInput) webdavUrlInput.value = webdav.address;
+                        if (webdavUserInput) webdavUserInput.value = webdav.username || '';
+                        if (webdavPassInput) webdavPassInput.value = webdav.password || '';
+                        if (webdavNameInput) webdavNameInput.value = webdav.name || '';
                     }
+                    saveWebdavServers(existing.slice(0, 20));
+                    renderWebdavRecents();
                 }
                 // 3. 恢复播放列表与收藏夹
                 if (Array.isArray(data.playlists)) {
@@ -5639,6 +5690,7 @@
         const webdavBtn = document.getElementById('webdavBtn');
         const webdavModalMask = document.getElementById('webdavModalMask');
         const webdavClose = document.getElementById('webdavClose');
+        const webdavNameInput = document.getElementById('webdavName');
         const webdavUrlInput = document.getElementById('webdavUrl');
         const webdavUserInput = document.getElementById('webdavUser');
         const webdavPassInput = document.getElementById('webdavPass');
@@ -5647,20 +5699,87 @@
         const webdavUpBtn = document.getElementById('webdavUpBtn');
         const webdavPathText = document.getElementById('webdavPathText');
         const webdavFileList = document.getElementById('webdavFileList');
+        const webdavRecentsEl = document.getElementById('webdavRecents');
+
+        // 连接记录（参考 iOS ServerHistory）：存 localStorage，随跨端备份导出
+        const WEBDAV_CFG_KEY = 'aethervr-webdav-cfg';
+        const WEBDAV_SERVERS_KEY = 'aethervr-webdav-servers';
+        function getWebdavServers() {
+            try { return JSON.parse(localStorage.getItem(WEBDAV_SERVERS_KEY)) || []; }
+            catch { return []; }
+        }
+        function saveWebdavServers(list) {
+            try { localStorage.setItem(WEBDAV_SERVERS_KEY, JSON.stringify(list)); } catch { /* 忽略 */ }
+        }
+        // 保存/更新一条连接记录：以 url 为主键去重，最近使用排最前，最多 20 条
+        function rememberWebdavServer({ name, url, user, pass }) {
+            if (!url) return;
+            let list = getWebdavServers();
+            const idx = list.findIndex((s) => s.url === url);
+            const rec = idx >= 0 ? list[idx] : { id: 'webdav-' + Date.now().toString(36) };
+            rec.url = url;
+            rec.user = user || '';
+            if (pass) rec.pass = pass;          // 留空不覆盖已存密码
+            if (name) rec.name = name;
+            rec.lastUsedAt = Date.now();
+            if (idx >= 0) list.splice(idx, 1);
+            list.unshift(rec);
+            if (list.length > 20) list = list.slice(0, 20);
+            saveWebdavServers(list);
+            renderWebdavRecents();
+        }
+        function renderWebdavRecents() {
+            if (!webdavRecentsEl) return;
+            const list = getWebdavServers();
+            webdavRecentsEl.innerHTML = '';
+            list.forEach((s) => {
+                const el = document.createElement('div');
+                el.className = 'webdav-recent-item';
+                el.innerHTML = `
+                    <div class="webdav-recent-icon"><i class="fa-solid fa-server"></i></div>
+                    <div class="webdav-recent-main">
+                        <div class="webdav-recent-name"></div>
+                        <div class="webdav-recent-url"></div>
+                    </div>
+                    <button class="webdav-recent-del" title="删除该连接记录"><i class="fa-solid fa-trash-can"></i></button>
+                `;
+                el.querySelector('.webdav-recent-name').textContent = s.name || hostnameOfUrl(s.url);
+                el.querySelector('.webdav-recent-url').textContent = s.url + (s.user ? '（' + s.user + '）' : '');
+                el.addEventListener('click', () => {
+                    if (webdavNameInput) webdavNameInput.value = s.name || '';
+                    if (webdavUrlInput) webdavUrlInput.value = s.url;
+                    if (webdavUserInput) webdavUserInput.value = s.user || '';
+                    if (webdavPassInput) webdavPassInput.value = s.pass || '';
+                    fetchWebdavDirectory('/');
+                });
+                el.querySelector('.webdav-recent-del').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    saveWebdavServers(getWebdavServers().filter((x) => x.url !== s.url));
+                    renderWebdavRecents();
+                });
+                webdavRecentsEl.appendChild(el);
+            });
+        }
+        function hostnameOfUrl(u) {
+            try { return new URL(u).hostname; } catch { return u; }
+        }
 
         let currentWebdavPath = '/';
         function loadSavedWebdavConfig() {
             try {
-                const saved = JSON.parse(localStorage.getItem('aethervr-webdav-cfg') || '{}');
+                const saved = JSON.parse(localStorage.getItem(WEBDAV_CFG_KEY) || '{}');
                 if (saved.url && webdavUrlInput) webdavUrlInput.value = saved.url;
                 if (saved.user && webdavUserInput) webdavUserInput.value = saved.user;
                 if (saved.pass && webdavPassInput) webdavPassInput.value = saved.pass;
+                if (saved.name && webdavNameInput) webdavNameInput.value = saved.name;
             } catch {}
+            renderWebdavRecents();
         }
         loadSavedWebdavConfig();
 
         if (webdavBtn) {
             webdavBtn.addEventListener('click', () => {
+                renderWebdavRecents();
                 webdavModalMask.classList.add('active');
             });
         }
@@ -5708,8 +5827,9 @@
             }
             const user = (webdavUserInput.value || '').trim();
             const pass = (webdavPassInput.value || '').trim();
-            // 保存配置
-            localStorage.setItem('aethervr-webdav-cfg', JSON.stringify({ url: baseUrl, user, pass }));
+            const name = (webdavNameInput && webdavNameInput.value || '').trim();
+            // 保存配置 + 连接记录（localStorage，随跨端备份导出）
+            localStorage.setItem(WEBDAV_CFG_KEY, JSON.stringify({ url: baseUrl, user, pass, name }));
 
             let u;
             try { u = new URL(baseUrl); } catch { showSpatialToast('无效的 WebDAV 地址'); return; }
@@ -5736,6 +5856,8 @@
                 const xmlText = await resp.text();
                 const items = parseWebdavXml(xmlText, u.origin);
                 currentWebdavPath = targetPath;
+                // 连接成功 → 写入最近连接记录
+                rememberWebdavServer({ name, url: baseUrl, user, pass });
                 renderWebdavItems(items, u);
             } catch (err) {
                 console.error('WebDAV fetch error:', err);
@@ -5768,6 +5890,18 @@
                 return a.name.localeCompare(b.name, undefined, { numeric: true });
             });
 
+            // 当前目录全部视频 → 临时列表连播队列（对齐 iOS loadTemp：
+            // 从网络目录起播时，整个文件夹的视频进临时列表作为连播队列）
+            const toPlayUrl = (it) => {
+                let playUrl = it.href;
+                if (!/^https?:\/\//i.test(playUrl)) {
+                    playUrl = baseUrlObj.origin + (playUrl.startsWith('/') ? '' : '/') + playUrl;
+                }
+                return playUrl;
+            };
+            const isWebdavVideo = (it) => /\.(mp4|m4v|webm|mov|mkv|avi|ts|m2ts|flv|wmv|3gp|ogv|ogg)$/i.test(it.name);
+            const dirVideos = filtered.filter((it) => !it.isDir && isWebdavVideo(it));
+
             filtered.forEach(item => {
                 const el = document.createElement('div');
                 const isVideo = /\.(mp4|mkv|webm|mov|m4v|ts|flv|avi|wmv)$/i.test(item.name);
@@ -5782,22 +5916,34 @@
                         let sub = currentWebdavPath.replace(/\/$/, '') + '/' + item.name + '/';
                         fetchWebdavDirectory(sub);
                     } else if (isVideo) {
-                        // 构造完整的播放直链
-                        let playUrl = item.href;
-                        if (!/^https?:\/\//i.test(playUrl)) {
-                            playUrl = baseUrlObj.origin + (playUrl.startsWith('/') ? '' : '/') + playUrl;
-                        }
-                        webdavModalMask.classList.remove('active');
-                        detachPlaylistTab();
-                        clearPlaylist();
-                        loadVideoURL(playUrl);
-                        showSpatialToast(`起播 WebDAV：${item.name}`);
+                        playWebdavFromQueue(item, dirVideos, toPlayUrl);
                     } else {
                         showSpatialToast('该文件不是受支持的视频格式');
                     }
                 });
                 webdavFileList.appendChild(el);
             });
+        }
+
+        // WebDAV 起播：整个目录的视频装入「临时列表」页签并连播（参考移动端）
+        function playWebdavFromQueue(item, dirVideos, toPlayUrl) {
+            const queue = dirVideos.map((v) => ({
+                name: v.name,
+                originalPath: v.href,
+                normalizedPath: normalizePath(v.href),
+                url: toPlayUrl(v),
+                file: null, fileHandle: null,
+                status: 'remote', error: '', position: 0,
+            }));
+            const startIdx = Math.max(0, queue.findIndex((q) => q.url === toPlayUrl(item)));
+            webdavModalMask.classList.remove('active');
+            lastDplEntries = null;
+            const t = ensureTempTab();
+            activeTab = 'playlist';
+            activePlId = t.id;
+            renderTabs();
+            setPlaylist(queue, startIdx);
+            showSpatialToast(`起播 WebDAV：${item.name}（同目录 ${queue.length} 个视频已加入临时列表连播）`);
         }
 
         if (webdavConnectBtn) {
