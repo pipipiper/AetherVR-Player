@@ -751,27 +751,144 @@
             padding: 8px 14px;
         }
 
-        /* ── controls: dark floating glass bar ─────────────── */
+        /* ── controls: spatial computing dark floating glass bar ─────────────── */
         .video-container { padding-bottom: 0; }
         .controls {
             height: auto;
-            margin: 0 calc(14px + env(safe-area-inset-right)) calc(14px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left));
-            padding: 10px 14px;
-            background: rgba(18,21,28,.78);
-            backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-            border: 1px solid rgba(255,255,255,.09); border-radius: 16px;
-            gap: 12px;
+            margin: 0 auto calc(16px + env(safe-area-inset-bottom));
+            width: fit-content; max-width: calc(100vw - 32px);
+            padding: 8px 14px;
+            background: rgba(15, 20, 30, 0.75);
+            backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 999px;
+            box-shadow: 0 12px 36px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.18);
+            gap: 10px;
+            z-index: 30;
         }
         .control-btn {
-            width: 36px; height: 36px; border: none; border-radius: 10px;
-            background: transparent; color: #dfe4ec; box-shadow: none; font-size: 14px;
+            width: 38px; height: 38px; border: 1px solid rgba(255,255,255,0.12); border-radius: 50%;
+            background: rgba(255, 255, 255, 0.08); color: #f1f5f9; box-shadow: none; font-size: 13px;
+            display: inline-flex; align-items: center; justify-content: center;
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
         }
         .control-btn:hover {
-            background: rgba(255,255,255,.12); color: #fff;
-            border: none; box-shadow: none; transform: none;
+            background: rgba(255,255,255,0.2); color: #fff;
+            border-color: rgba(255,255,255,0.3); transform: scale(1.05);
         }
-        .control-btn.active { background: rgba(47,107,255,.34); color: #fff; }
-        .control-btn:active { transform: none; box-shadow: none; }
+        .control-btn:active { transform: scale(0.95); }
+        .control-btn.active { background: rgba(6, 182, 212, 0.4); color: #38bdf8; border-color: #38bdf8; }
+        
+        #playPauseBtn {
+            width: 44px; height: 44px;
+            background: linear-gradient(135deg, rgba(6, 182, 212, 0.9), rgba(37, 99, 235, 0.9));
+            color: #fff; font-size: 16px; border: 1px solid rgba(255,255,255,0.3);
+            box-shadow: 0 4px 15px rgba(6, 182, 212, 0.4);
+        }
+        #playPauseBtn:hover {
+            background: linear-gradient(135deg, rgba(6, 182, 212, 1), rgba(37, 99, 235, 1));
+            transform: scale(1.06);
+            box-shadow: 0 6px 20px rgba(6, 182, 212, 0.6);
+        }
+
+        /* 空间侧边栏浮动胶囊（左右两列） */
+        .spatial-side {
+            position: absolute; top: 50%; transform: translateY(-50%);
+            display: flex; flex-direction: column; gap: 10px; z-index: 30;
+        }
+        .spatial-side-left { left: calc(16px + env(safe-area-inset-left)); }
+        .spatial-side-right { right: calc(16px + env(safe-area-inset-right)); }
+        .spatial-btn {
+            width: 40px; height: 40px; border-radius: 50%;
+            background: rgba(15, 20, 30, 0.72);
+            backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            color: #f1f5f9; font-size: 14px; cursor: pointer;
+            display: inline-flex; align-items: center; justify-content: center;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .spatial-btn:hover {
+            background: rgba(255, 255, 255, 0.2); color: #fff;
+            border-color: rgba(255, 255, 255, 0.35); transform: scale(1.08);
+        }
+        .spatial-btn:active { transform: scale(0.92); }
+        .spatial-btn.active {
+            background: rgba(6, 182, 212, 0.35); color: #38bdf8;
+            border-color: #38bdf8; box-shadow: 0 0 12px rgba(6, 182, 212, 0.5);
+        }
+        .spatial-btn .btn-text-badge {
+            font-size: 11px; font-weight: 700; letter-spacing: -0.5px;
+        }
+
+        /* A-B 循环轨道高亮 */
+        .progress-bar { position: relative; }
+        .loop-ab-track {
+            position: absolute; inset: 0; pointer-events: none;
+        }
+        .loop-ab-marker {
+            position: absolute; top: -3px; width: 3px; height: 12px;
+            background: #38bdf8; border-radius: 2px;
+            box-shadow: 0 0 6px #38bdf8;
+        }
+        .loop-ab-range {
+            position: absolute; top: 0; bottom: 0;
+            background: rgba(56, 189, 248, 0.38); border-radius: 999px;
+        }
+
+        /* 空间计算轻量级 Toast */
+        .spatial-toast {
+            position: absolute; bottom: 90px; left: 50%; transform: translateX(-50%);
+            background: rgba(10, 15, 25, 0.88);
+            backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            color: #f1f5f9; padding: 9px 18px; border-radius: 999px;
+            font-size: 13px; font-weight: 600; pointer-events: none;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5); z-index: 50;
+            opacity: 0; transition: opacity 0.25s ease, transform 0.25s ease;
+        }
+        .spatial-toast.active {
+            opacity: 1; transform: translateX(-50%) translateY(-5px);
+        }
+
+        /* WebDAV 目录浏览与文件项 */
+        .pl-modal-lg { width: min(600px, 94vw); }
+        .modal-head {
+            display: flex; align-items: center; justify-content: space-between;
+            margin-bottom: 12px;
+        }
+        .modal-head h3 { margin: 0; font-size: 16px; font-weight: 700; }
+        .modal-close-icon {
+            border: 0; background: transparent; font-size: 18px; color: var(--muted);
+            cursor: pointer; padding: 4px; border-radius: 6px;
+        }
+        .modal-close-icon:hover { color: var(--text); }
+        .webdav-row { margin-bottom: 10px; }
+        .webdav-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .webdav-nav {
+            display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
+            background: rgba(0,0,0,0.04); padding: 6px 10px; border-radius: 8px;
+        }
+        .webdav-path-text {
+            font-size: 12px; color: var(--muted); word-break: break-all; flex: 1;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .webdav-file-list {
+            max-height: 280px; overflow-y: auto; border: 1px solid var(--border-hi);
+            border-radius: 9px; padding: 6px; background: rgba(0,0,0,0.02);
+        }
+        .webdav-item {
+            display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+            border-radius: 6px; cursor: pointer; font-size: 13px;
+            transition: background 0.15s ease;
+        }
+        .webdav-item:hover { background: rgba(47, 107, 255, 0.1); }
+        .webdav-item-icon { width: 18px; text-align: center; color: var(--muted); }
+        .webdav-item.is-dir .webdav-item-icon { color: #f59e0b; }
+        .webdav-item.is-video .webdav-item-icon { color: #06b6d4; }
+        .webdav-item-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .webdav-item-size { font-size: 11px; color: var(--muted); }
+        .backup-actions { display: flex; gap: 10px; margin: 16px 0; }
+        .backup-clip-section textarea { height: 90px; }
         .progress-bar {
             height: 6px; border: none; border-radius: 999px;
             background: rgba(255,255,255,.16);
@@ -1127,6 +1244,12 @@
                     <button id="heroPlaylistBtn" class="file-input-label hero-file" style="display:none" title="管理播放列表与收藏夹，支持导入导出">
                         <i class="fa-solid fa-list-ul"></i>&nbsp; 播放列表 / 收藏夹
                     </button>
+                    <button id="webdavBtn" class="file-input-label hero-file" title="挂载与浏览局域网或云端 WebDAV 资源">
+                        <i class="fa-solid fa-server"></i>&nbsp; WebDAV 挂载
+                    </button>
+                    <button id="backupBtn" class="file-input-label hero-file" title="跨端备份与同步（与 iOS 版无缝互通）">
+                        <i class="fa-solid fa-cloud-arrow-up"></i>&nbsp; 备份与同步
+                    </button>
                 </div>
                 <p class="hero-hint">也可以直接把视频文件或 .dpl 播放列表拖到这里</p>
                 <button id="heroClose" class="hero-close" style="display:none"><i class="fa-solid fa-xmark"></i>&nbsp; 返回播放</button>
@@ -1156,13 +1279,35 @@
             </div>
 
             <div class="video-container" id="videoContainer">
+                <!-- 空间计算悬浮侧边栏（左侧与右侧） -->
+                <div class="spatial-side spatial-side-left" id="spatialSideLeft">
+                    <button class="spatial-btn" id="loopAbBtn" title="A-B 区间循环播放（点击定 A 点，再点定 B 点，三击重置）">
+                        <span class="btn-text-badge" id="loopAbText">A-B</span>
+                    </button>
+                    <button class="spatial-btn" id="recenterBtn" title="视角归零复位（对齐当前正前方）">
+                        <i class="fa-solid fa-location-crosshairs"></i>
+                    </button>
+                </div>
+                <div class="spatial-side spatial-side-right" id="spatialSideRight">
+                    <button class="spatial-btn" id="snapshotBtn" title="所见即所得视角截图（保存当前 VR 画面）">
+                        <i class="fa-solid fa-camera"></i>
+                    </button>
+                </div>
+
                 <div class="controls">
                 <button class="control-btn playlist-ctl" id="prevBtn" title="上一个" style="display:none"><i class="fa-solid fa-backward-step"></i></button>
+                <button class="control-btn" id="stepBackBtn" title="后退 30 秒"><i class="fa-solid fa-rotate-left"></i></button>
                 <button class="control-btn" id="playPauseBtn"><i class="fa-solid fa-play"></i></button>
+                <button class="control-btn" id="stepForwardBtn" title="快进 30 秒"><i class="fa-solid fa-rotate-right"></i></button>
                 <button class="control-btn playlist-ctl" id="nextBtn" title="下一个" style="display:none"><i class="fa-solid fa-forward-step"></i></button>
                 <div class="progress-container">
                     <div class="progress-bar" id="progressBar">
                         <div class="progress-fill" id="progressFill"></div>
+                        <div class="loop-ab-track" id="loopAbTrack" style="display:none">
+                            <div class="loop-ab-marker" id="loopMarkerA"></div>
+                            <div class="loop-ab-range" id="loopRangeFill"></div>
+                            <div class="loop-ab-marker" id="loopMarkerB"></div>
+                        </div>
                     </div>
                 </div>
                 <div class="time-display">
@@ -1326,6 +1471,62 @@
                     </div>
                 </div>
             </div>
+            <!-- WebDAV 挂载与文件浏览弹窗 -->
+            <div class="pl-modal-mask" id="webdavModalMask">
+                <div class="pl-modal pl-modal-lg">
+                    <div class="modal-head">
+                        <h3><i class="fa-solid fa-server"></i>&nbsp; WebDAV 挂载与浏览</h3>
+                        <button class="modal-close-icon" id="webdavClose"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                    <p class="pl-modal-desc">连接局域网 NAS 或云端 WebDAV，支持直接浏览并一键播放 VR 视频</p>
+                    <div class="webdav-form" id="webdavForm">
+                        <div class="webdav-row">
+                            <input type="text" id="webdavUrl" placeholder="服务器地址（例：http://192.168.1.100:5005/webdav）" spellcheck="false">
+                        </div>
+                        <div class="webdav-row webdav-row-2">
+                            <input type="text" id="webdavUser" placeholder="用户名（选填）" spellcheck="false">
+                            <input type="password" id="webdavPass" placeholder="密码（选填）">
+                        </div>
+                        <div class="pl-modal-btns" style="margin-bottom: 10px;">
+                            <button class="pl-modal-btn primary" id="webdavConnectBtn"><i class="fa-solid fa-plug"></i>&nbsp; 连接并读取</button>
+                        </div>
+                    </div>
+                    <!-- 目录面包屑导航 -->
+                    <div class="webdav-nav" id="webdavNav" style="display:none">
+                        <button class="pl-modal-btn" id="webdavUpBtn"><i class="fa-solid fa-arrow-up"></i>&nbsp; 上级目录</button>
+                        <span class="webdav-path-text" id="webdavPathText">/</span>
+                    </div>
+                    <!-- 文件列表容器 -->
+                    <div class="webdav-file-list" id="webdavFileList"></div>
+                </div>
+            </div>
+
+            <!-- 跨端备份与同步弹窗（与 iOS 格式 100% 对齐） -->
+            <div class="pl-modal-mask" id="backupModalMask">
+                <div class="pl-modal">
+                    <div class="modal-head">
+                        <h3><i class="fa-solid fa-cloud-arrow-up"></i>&nbsp; 跨端备份与同步</h3>
+                        <button class="modal-close-icon" id="backupClose"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                    <p class="pl-modal-desc">完全兼容 iOS 原生版 <code>AetherVR-完整备份.json</code> 结构，跨平台无缝同步播放列表与播放记录。</p>
+                    <div class="backup-actions">
+                        <button class="pl-modal-btn primary" id="exportBackupBtn"><i class="fa-solid fa-file-export"></i>&nbsp; 导出完整备份 (.json)</button>
+                        <button class="pl-modal-btn" id="importBackupBtn"><i class="fa-solid fa-file-import"></i>&nbsp; 从文件导入备份</button>
+                        <input type="file" id="backupFileInput" accept=".json,application/json,text/plain" style="display:none">
+                    </div>
+                    <div class="backup-clip-section">
+                        <p class="pl-modal-desc" style="margin-top: 14px; margin-bottom: 6px;">或直接粘贴备份 JSON 文本一键恢复：</p>
+                        <textarea id="backupClipText" placeholder="在此粘贴从 iOS 或其他设备拷贝的 AetherVR 备份 JSON 文本…" spellcheck="false"></textarea>
+                        <div class="pl-modal-btns">
+                            <button class="pl-modal-btn" id="importClipBtn"><i class="fa-solid fa-clipboard-check"></i>&nbsp; 从文本框恢复</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 空间计算全景 Toast 提示容器 -->
+            <div class="spatial-toast" id="spatialToast"></div>
+
             <input type="file" id="grantFileInput" accept="video/*" style="display:none">
             <input type="file" id="grantDirInput" webkitdirectory multiple style="display:none">
             </div>
@@ -3110,8 +3311,8 @@
                     camera = new THREE.PerspectiveCamera(baseFov, width / height, 0.1, 1000);
                     camera.position.set(0, 0, 0);
 
-                    // Renderer
-                    renderer = new THREE.WebGLRenderer({ canvas: vrCanvas, antialias: true });
+                    // Renderer (开启 preserveDrawingBuffer 以支持 VR 全景高清所见即所得视角截图)
+                    renderer = new THREE.WebGLRenderer({ canvas: vrCanvas, antialias: true, preserveDrawingBuffer: true });
                     renderer.setSize(width, height);
                     renderer.setPixelRatio(window.devicePixelRatio);
 
@@ -4379,6 +4580,15 @@
 
         // Progress bar
         videoPlayer.addEventListener('timeupdate', () => {
+            // A-B 区间循环检测：若到达或越过 B 点，无缝回跳 A 点
+            if (loopPointA !== null && loopPointB !== null && !scrubbing && !transcodeRestarting) {
+                const curTime = effectiveCurrentTime();
+                if (curTime >= loopPointB || curTime < loopPointA - 0.5) {
+                    seekToGlobal(loopPointA);
+                    return;
+                }
+            }
+
             // 拖动预览 / 转码快进重启期间不覆盖进度显示（旧流的进度会把条拽回去）
             if (scrubbing || transcodeRestarting) return;
             const dur = effectiveDuration();
@@ -4694,6 +4904,550 @@
         }
 
         // (video 'error' handling lives in the detailed listener added earlier)
+
+        // ══════════════════════════════════════════════════════════════
+        // 空间计算与交互增强：A-B 循环、截图、视角复位、快进/快退、WebDAV、跨端同步
+        // ══════════════════════════════════════════════════════════════
+        const spatialToast = document.getElementById('spatialToast');
+        let toastTimer = null;
+        function showSpatialToast(msg) {
+            if (!spatialToast) return;
+            spatialToast.textContent = msg;
+            spatialToast.classList.add('active');
+            if (toastTimer) clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => {
+                spatialToast.classList.remove('active');
+            }, 2000);
+        }
+
+        // ── A-B 区间循环 ──
+        let loopPointA = null;
+        let loopPointB = null;
+        const loopAbBtn = document.getElementById('loopAbBtn');
+        const loopAbText = document.getElementById('loopAbText');
+        const loopAbTrack = document.getElementById('loopAbTrack');
+        const loopMarkerA = document.getElementById('loopMarkerA');
+        const loopMarkerB = document.getElementById('loopMarkerB');
+        const loopRangeFill = document.getElementById('loopRangeFill');
+
+        function updateLoopAbUI() {
+            const dur = effectiveDuration();
+            if (loopPointA === null) {
+                loopAbBtn.classList.remove('active');
+                loopAbText.textContent = 'A-B';
+                loopAbTrack.style.display = 'none';
+            } else if (loopPointB === null) {
+                loopAbBtn.classList.add('active');
+                loopAbText.textContent = 'B?';
+                if (dur > 0) {
+                    loopAbTrack.style.display = 'block';
+                    const leftPct = (loopPointA / dur) * 100;
+                    loopMarkerA.style.left = leftPct + '%';
+                    loopMarkerB.style.display = 'none';
+                    loopRangeFill.style.display = 'none';
+                }
+            } else {
+                loopAbBtn.classList.add('active');
+                loopAbText.textContent = 'A-B 🔁';
+                if (dur > 0) {
+                    loopAbTrack.style.display = 'block';
+                    const leftPct = (loopPointA / dur) * 100;
+                    const rightPct = (loopPointB / dur) * 100;
+                    loopMarkerA.style.left = leftPct + '%';
+                    loopMarkerB.style.display = 'block';
+                    loopMarkerB.style.left = rightPct + '%';
+                    loopRangeFill.style.display = 'block';
+                    loopRangeFill.style.left = leftPct + '%';
+                    loopRangeFill.style.width = (rightPct - leftPct) + '%';
+                }
+            }
+        }
+
+        function toggleLoopAb() {
+            const cur = effectiveCurrentTime();
+            if (loopPointA === null) {
+                loopPointA = cur;
+                loopPointB = null;
+                showSpatialToast(`已标记 A 点：${formatTime(cur)}`);
+            } else if (loopPointB === null) {
+                if (cur <= loopPointA + 0.3) {
+                    showSpatialToast('B 点必须在 A 点之后');
+                    return;
+                }
+                loopPointB = cur;
+                showSpatialToast(`A-B 循环已开启：${formatTime(loopPointA)} - ${formatTime(loopPointB)}`);
+                seekToGlobal(loopPointA);
+            } else {
+                loopPointA = null;
+                loopPointB = null;
+                showSpatialToast('已取消 A-B 循环');
+            }
+            updateLoopAbUI();
+        }
+        if (loopAbBtn) {
+            loopAbBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                toggleLoopAb();
+            });
+        }
+
+        // ── 视角归零复位 ──
+        const recenterBtn = document.getElementById('recenterBtn');
+        if (recenterBtn) {
+            recenterBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                rotation.x = 0;
+                rotation.y = 0;
+                if (camera) {
+                    camera.rotation.set(0, 0, 0);
+                    camera.fov = baseFov;
+                    camera.updateProjectionMatrix();
+                }
+                showSpatialToast('视角已复位正前方');
+            });
+        }
+
+        // ── 所见即所得视角截图 ──
+        const snapshotBtn = document.getElementById('snapshotBtn');
+        if (snapshotBtn) {
+            snapshotBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                try {
+                    let dataUrl = '';
+                    if (isVrMode && renderer) {
+                        renderer.render(scene, camera);
+                        dataUrl = renderer.domElement.toDataURL('image/png');
+                    } else if (videoPlayer && videoPlayer.videoWidth > 0) {
+                        const snapCanvas = document.createElement('canvas');
+                        snapCanvas.width = videoPlayer.videoWidth;
+                        snapCanvas.height = videoPlayer.videoHeight;
+                        const ctx = snapCanvas.getContext('2d');
+                        ctx.drawImage(videoPlayer, 0, 0, snapCanvas.width, snapCanvas.height);
+                        dataUrl = snapCanvas.toDataURL('image/png');
+                    } else {
+                        showSpatialToast('无正在播放的画面');
+                        return;
+                    }
+                    const a = document.createElement('a');
+                    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+                    a.download = `AetherVR_Snapshot_${ts}.png`;
+                    a.href = dataUrl;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    showSpatialToast('📷 视角截图已保存');
+                } catch (err) {
+                    console.error('Snapshot failed:', err);
+                    showSpatialToast('截图失败：' + (err.message || '画布跨域受限'));
+                }
+            });
+        }
+
+        // ── 步进快进/快退 30 秒 ──
+        const stepBackBtn = document.getElementById('stepBackBtn');
+        const stepForwardBtn = document.getElementById('stepForwardBtn');
+        if (stepBackBtn) {
+            stepBackBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const cur = effectiveCurrentTime();
+                seekToGlobal(Math.max(0, cur - 30));
+                showSpatialToast('⏪ 快退 30 秒');
+            });
+        }
+        if (stepForwardBtn) {
+            stepForwardBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const cur = effectiveCurrentTime();
+                const dur = effectiveDuration() || Infinity;
+                seekToGlobal(Math.min(dur, cur + 30));
+                showSpatialToast('⏩ 快进 30 秒');
+            });
+        }
+
+        // ── 播放记录持久化（对齐 iOS PlaybackRecord 格式）──
+        const HISTORY_KEY = 'aethervr-history-v1';
+        function getPlaybackHistory() {
+            try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || []; }
+            catch { return []; }
+        }
+        function savePlaybackHistory(hist) {
+            try { localStorage.setItem(HISTORY_KEY, JSON.stringify(hist)); }
+            catch { /* 忽略 */ }
+        }
+        function recordPlaybackProgress() {
+            const ref = currentVideoRef();
+            if (!ref || !ref.target) return;
+            const dur = Math.round(effectiveDuration() || 0);
+            const cur = Math.round(effectiveCurrentTime() || 0);
+            if (cur <= 0) return;
+            let hist = getPlaybackHistory();
+            const existingIdx = hist.findIndex(r => r.url === ref.target);
+            const rec = {
+                id: existingIdx >= 0 ? hist[existingIdx].id : (Date.now().toString(36) + Math.random().toString(36).slice(2, 7)),
+                url: ref.target,
+                title: ref.name || '视频',
+                position: cur,
+                duration: dur,
+                lastPlayedAt: new Date().toISOString()
+            };
+            if (existingIdx >= 0) hist[existingIdx] = rec;
+            else hist.unshift(rec);
+            if (hist.length > 500) hist = hist.slice(0, 500);
+            savePlaybackHistory(hist);
+        }
+        // 播放暂停或每隔 5 秒记录一次当前进度
+        setInterval(recordPlaybackProgress, 5000);
+        videoPlayer.addEventListener('pause', recordPlaybackProgress);
+
+        // ── 跨端备份与同步（100% 对齐 iOS 备份结构）──
+        const backupBtn = document.getElementById('backupBtn');
+        const backupModalMask = document.getElementById('backupModalMask');
+        const backupClose = document.getElementById('backupClose');
+        const exportBackupBtn = document.getElementById('exportBackupBtn');
+        const importBackupBtn = document.getElementById('importBackupBtn');
+        const backupFileInput = document.getElementById('backupFileInput');
+        const importClipBtn = document.getElementById('importClipBtn');
+        const backupClipText = document.getElementById('backupClipText');
+
+        if (backupBtn) {
+            backupBtn.addEventListener('click', () => {
+                backupModalMask.classList.add('active');
+            });
+        }
+        if (backupClose) {
+            backupClose.addEventListener('click', () => {
+                backupModalMask.classList.remove('active');
+            });
+        }
+        if (backupModalMask) {
+            backupModalMask.addEventListener('click', (e) => {
+                if (e.target === backupModalMask) backupModalMask.classList.remove('active');
+            });
+        }
+
+        function exportCompleteBackupJSON() {
+            const hist = getPlaybackHistory();
+            // 聚合播放列表（包含收藏夹）
+            const lists = [];
+            if (favorites && favorites.length) {
+                lists.push({
+                    name: '收藏夹',
+                    items: favorites.map((f, i) => ({ file: f.target, title: f.name, position: f.position || 0 }))
+                });
+            }
+            if (playlists && playlists.length) {
+                playlists.forEach(pl => {
+                    lists.push({
+                        name: pl.name,
+                        items: (pl.items || []).map(it => {
+                            const e = itemToDplEntry(it);
+                            return { file: e.file, title: e.title || it.name, position: e.position || 0 };
+                        })
+                    });
+                });
+            }
+            // WebDAV 服务器连接记录
+            const servers = [];
+            try {
+                const s = JSON.parse(localStorage.getItem('aethervr-webdav-cfg') || '{}');
+                if (s.url) {
+                    servers.push({
+                        id: 'server-' + Date.now(),
+                        type: 'webdav',
+                        address: s.url,
+                        username: s.user || '',
+                        password: s.pass || '',
+                        name: 'WebDAV 存储'
+                    });
+                }
+            } catch {}
+
+            const backupObj = {
+                formatVersion: 1,
+                exportedAt: new Date().toISOString(),
+                history: hist,
+                servers: servers,
+                playlists: lists,
+                settings: {
+                    defaultProjection: { string: "vr360" },
+                    defaultHardwareDecode: { bool: true },
+                    rememberPosition: { bool: true },
+                    autoPlayNext: { bool: true }
+                }
+            };
+            return JSON.stringify(backupObj, null, 2);
+        }
+
+        if (exportBackupBtn) {
+            exportBackupBtn.addEventListener('click', () => {
+                const json = exportCompleteBackupJSON();
+                const blob = new Blob([json], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.download = `AetherVR-完整备份.json`;
+                a.href = url;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+                showSpatialToast('✅ 完整备份已导出');
+            });
+        }
+
+        function restoreFromBackupJSON(rawText) {
+            try {
+                const data = JSON.parse(rawText);
+                if (!data || (!data.history && !data.playlists && !data.servers)) {
+                    throw new Error('不合法的 AetherVR 备份文件');
+                }
+                // 1. 恢复播放记录
+                if (Array.isArray(data.history)) {
+                    savePlaybackHistory(data.history);
+                }
+                // 2. 恢复服务器记录
+                if (Array.isArray(data.servers)) {
+                    const dav = data.servers.find(s => s.type === 'webdav');
+                    if (dav) {
+                        localStorage.setItem('aethervr-webdav-cfg', JSON.stringify({
+                            url: dav.address, user: dav.username || '', pass: dav.password || ''
+                        }));
+                        const uInput = document.getElementById('webdavUrl');
+                        const userInput = document.getElementById('webdavUser');
+                        const passInput = document.getElementById('webdavPass');
+                        if (uInput) uInput.value = dav.address;
+                        if (userInput) userInput.value = dav.username || '';
+                        if (passInput) passInput.value = dav.password || '';
+                    }
+                }
+                // 3. 恢复播放列表与收藏夹
+                if (Array.isArray(data.playlists)) {
+                    data.playlists.forEach(pl => {
+                        if (pl.name === '收藏夹') {
+                            favorites = (pl.items || []).map(it => ({
+                                name: it.title || it.file,
+                                target: it.file,
+                                kind: /^https?:\/\//i.test(it.file) ? 'online' : 'local',
+                                position: it.position || 0,
+                                addedAt: new Date().toISOString()
+                            }));
+                            saveFavorites();
+                        } else {
+                            const newEntries = (pl.items || []).map(it => ({
+                                file: it.file, title: it.title || it.file, position: it.position || 0
+                            }));
+                            openPlaylistTab(pl.name, null, newEntries.map(e => entryToItem(e, false)), newEntries, false);
+                        }
+                    });
+                }
+                showSpatialToast('🎉 备份数据已恢复成功！');
+                if (backupModalMask) backupModalMask.classList.remove('active');
+            } catch (err) {
+                console.error(err);
+                showError('导入备份失败：' + (err.message || 'JSON 解析错误'));
+            }
+        }
+
+        if (importBackupBtn && backupFileInput) {
+            importBackupBtn.addEventListener('click', () => backupFileInput.click());
+            backupFileInput.addEventListener('change', (e) => {
+                const file = e.target.files && e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                    restoreFromBackupJSON(evt.target.result);
+                };
+                reader.readAsText(file);
+                e.target.value = '';
+            });
+        }
+        if (importClipBtn && backupClipText) {
+            importClipBtn.addEventListener('click', () => {
+                const text = backupClipText.value.trim();
+                if (!text) { showSpatialToast('请先在输入框粘贴 JSON'); return; }
+                restoreFromBackupJSON(text);
+                backupClipText.value = '';
+            });
+        }
+
+        // ── WebDAV 挂载与目录浏览 ──
+        const webdavBtn = document.getElementById('webdavBtn');
+        const webdavModalMask = document.getElementById('webdavModalMask');
+        const webdavClose = document.getElementById('webdavClose');
+        const webdavUrlInput = document.getElementById('webdavUrl');
+        const webdavUserInput = document.getElementById('webdavUser');
+        const webdavPassInput = document.getElementById('webdavPass');
+        const webdavConnectBtn = document.getElementById('webdavConnectBtn');
+        const webdavNav = document.getElementById('webdavNav');
+        const webdavUpBtn = document.getElementById('webdavUpBtn');
+        const webdavPathText = document.getElementById('webdavPathText');
+        const webdavFileList = document.getElementById('webdavFileList');
+
+        let currentWebdavPath = '/';
+        function loadSavedWebdavConfig() {
+            try {
+                const saved = JSON.parse(localStorage.getItem('aethervr-webdav-cfg') || '{}');
+                if (saved.url && webdavUrlInput) webdavUrlInput.value = saved.url;
+                if (saved.user && webdavUserInput) webdavUserInput.value = saved.user;
+                if (saved.pass && webdavPassInput) webdavPassInput.value = saved.pass;
+            } catch {}
+        }
+        loadSavedWebdavConfig();
+
+        if (webdavBtn) {
+            webdavBtn.addEventListener('click', () => {
+                webdavModalMask.classList.add('active');
+            });
+        }
+        if (webdavClose) {
+            webdavClose.addEventListener('click', () => {
+                webdavModalMask.classList.remove('active');
+            });
+        }
+        if (webdavModalMask) {
+            webdavModalMask.addEventListener('click', (e) => {
+                if (e.target === webdavModalMask) webdavModalMask.classList.remove('active');
+            });
+        }
+
+        function parseWebdavXml(xmlStr, baseOrigin) {
+            const parser = new DOMParser();
+            const xml = parser.parseFromString(xmlStr, 'application/xml');
+            const responses = xml.querySelectorAll('response, D\\:response');
+            const items = [];
+            responses.forEach(resp => {
+                const hrefEl = resp.querySelector('href, D\\:href');
+                if (!hrefEl) return;
+                let href = hrefEl.textContent.trim();
+                try { href = decodeURIComponent(href); } catch {}
+                const prop = resp.querySelector('propstat prop, D\\:propstat D\\:prop, prop, D\\:prop');
+                let isDir = false;
+                let size = 0;
+                if (prop) {
+                    const rtype = prop.querySelector('resourcetype, D\\:resourcetype');
+                    if (rtype && rtype.querySelector('collection, D\\:collection')) isDir = true;
+                    const len = prop.querySelector('getcontentlength, D\\:getcontentlength');
+                    if (len) size = parseInt(len.textContent, 10) || 0;
+                }
+                const name = href.replace(/\/$/, '').split('/').pop() || href;
+                items.push({ href, name, isDir, size });
+            });
+            return items;
+        }
+
+        async function fetchWebdavDirectory(targetPath) {
+            const baseUrl = (webdavUrlInput.value || '').trim();
+            if (!baseUrl) {
+                showSpatialToast('请输入 WebDAV 服务器地址');
+                return;
+            }
+            const user = (webdavUserInput.value || '').trim();
+            const pass = (webdavPassInput.value || '').trim();
+            // 保存配置
+            localStorage.setItem('aethervr-webdav-cfg', JSON.stringify({ url: baseUrl, user, pass }));
+
+            let u;
+            try { u = new URL(baseUrl); } catch { showSpatialToast('无效的 WebDAV 地址'); return; }
+            // 拼接目标路径
+            let fullPath = u.pathname.replace(/\/$/, '') + '/' + targetPath.replace(/^\//, '');
+            fullPath = fullPath.replace(/\/+/g, '/');
+            u.pathname = fullPath;
+            if (!u.pathname.endsWith('/') && targetPath.endsWith('/')) u.pathname += '/';
+
+            webdavFileList.innerHTML = '<div style="padding:16px;text-align:center;color:var(--muted);"><i class="fa-solid fa-spinner fa-spin"></i> 正在读取 WebDAV 目录…</div>';
+            webdavConnectBtn.disabled = true;
+
+            try {
+                // 通过服务端内置 WebDAV 代理接口或直连
+                const resp = await fetch('/api/webdav/list', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: u.href, username: user, password: pass })
+                });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    throw new Error(err.error || `HTTP ${resp.status}`);
+                }
+                const xmlText = await resp.text();
+                const items = parseWebdavXml(xmlText, u.origin);
+                currentWebdavPath = targetPath;
+                renderWebdavItems(items, u);
+            } catch (err) {
+                console.error('WebDAV fetch error:', err);
+                webdavFileList.innerHTML = `<div style="padding:16px;color:#ef4444;text-align:center;"><i class="fa-solid fa-circle-exclamation"></i> 连接失败：${err.message || '网络错误'}</div>`;
+            } finally {
+                webdavConnectBtn.disabled = false;
+            }
+        }
+
+        function renderWebdavItems(items, baseUrlObj) {
+            webdavFileList.innerHTML = '';
+            webdavNav.style.display = 'flex';
+            webdavPathText.textContent = currentWebdavPath;
+
+            // 过滤掉当前目录本身
+            const currentNorm = baseUrlObj.pathname.replace(/\/$/, '');
+            const filtered = items.filter(it => {
+                const norm = it.href.replace(/\/$/, '');
+                return norm !== currentNorm && norm !== currentNorm.slice(baseUrlObj.origin.length);
+            });
+
+            if (!filtered.length) {
+                webdavFileList.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);">空目录</div>';
+                return;
+            }
+
+            // 目录在前，文件在后
+            filtered.sort((a, b) => {
+                if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+                return a.name.localeCompare(b.name, undefined, { numeric: true });
+            });
+
+            filtered.forEach(item => {
+                const el = document.createElement('div');
+                const isVideo = /\.(mp4|mkv|webm|mov|m4v|ts|flv|avi|wmv)$/i.test(item.name);
+                el.className = `webdav-item ${item.isDir ? 'is-dir' : (isVideo ? 'is-video' : '')}`;
+                el.innerHTML = `
+                    <div class="webdav-item-icon"><i class="fa-solid ${item.isDir ? 'fa-folder' : (isVideo ? 'fa-film' : 'fa-file')}"></i></div>
+                    <div class="webdav-item-name" title="${item.name}">${item.name}</div>
+                    <div class="webdav-item-size">${item.isDir ? '' : formatFileSize(item.size)}</div>
+                `;
+                el.addEventListener('click', () => {
+                    if (item.isDir) {
+                        let sub = currentWebdavPath.replace(/\/$/, '') + '/' + item.name + '/';
+                        fetchWebdavDirectory(sub);
+                    } else if (isVideo) {
+                        // 构造完整的播放直链
+                        let playUrl = item.href;
+                        if (!/^https?:\/\//i.test(playUrl)) {
+                            playUrl = baseUrlObj.origin + (playUrl.startsWith('/') ? '' : '/') + playUrl;
+                        }
+                        webdavModalMask.classList.remove('active');
+                        detachPlaylistTab();
+                        clearPlaylist();
+                        loadVideoURL(playUrl);
+                        showSpatialToast(`起播 WebDAV：${item.name}`);
+                    } else {
+                        showSpatialToast('该文件不是受支持的视频格式');
+                    }
+                });
+                webdavFileList.appendChild(el);
+            });
+        }
+
+        if (webdavConnectBtn) {
+            webdavConnectBtn.addEventListener('click', () => {
+                fetchWebdavDirectory('/');
+            });
+        }
+        if (webdavUpBtn) {
+            webdavUpBtn.addEventListener('click', () => {
+                if (currentWebdavPath === '/' || !currentWebdavPath) return;
+                const parts = currentWebdavPath.replace(/\/$/, '').split('/').filter(Boolean);
+                parts.pop();
+                const parent = '/' + (parts.length ? parts.join('/') + '/' : '');
+                fetchWebdavDirectory(parent);
+            });
+        }
 
         // Clean up object URL when page unloads
         window.addEventListener('beforeunload', () => {

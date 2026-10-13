@@ -592,6 +592,7 @@ async function proxyVideo(target, req, res, redirects = 0) {  let u;
     "User-Agent": req.headers["user-agent"] || "Mozilla/5.0",
     "Accept": req.headers.accept || "*/*",
   };
+  if (req.headers.authorization) headers.Authorization = req.headers.authorization;
   if (req.headers.range) headers.Range = req.headers.range;
   const options = {
     protocol: u.protocol,
@@ -757,7 +758,87 @@ const requestHandler = async (req, res) => {
         proxy: true,
         probe: FFPROBE_AVAILABLE,
         transcode: VIDEO_ENCODER_AVAILABLE,
+        webdav: true,
       }));
+      return;
+    }
+    // ── WebDAV 代理与目录浏览 ──────────────────────────────────────────
+    if (urlPath === "/api/webdav/list") {
+      if (req.method !== "POST") {
+        res.writeHead(405, { "Allow": "POST" }).end("Method not allowed");
+        return;
+      }
+      try {
+        const body = await readJson(req, 16384);
+        const { url: rawUrl, username = "", password = "" } = body;
+        if (!rawUrl) {
+          res.writeHead(400, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "Missing WebDAV url" }));
+          return;
+        }
+        const u = new URL(rawUrl);
+        const resolved = await resolveSafeTarget(u);
+        const lib = u.protocol === "https:" ? https : http;
+        const headers = {
+          "Host": u.host,
+          "User-Agent": "AetherVR-WebDAV-Client/1.0",
+          "Depth": "1",
+          "Content-Type": "application/xml; charset=utf-8",
+        };
+        if (username || password) {
+          headers["Authorization"] = "Basic " + Buffer.from(`${username}:${password}`).toString("base64");
+        }
+        const options = {
+          method: "PROPFIND",
+          protocol: u.protocol,
+          hostname: resolved.address,
+          family: resolved.family,
+          port: u.port || (u.protocol === "https:" ? 443 : 80),
+          path: `${u.pathname}${u.search}`,
+          headers,
+          timeout: 15000,
+        };
+        if (u.protocol === "https:" && !net.isIP(u.hostname)) options.servername = u.hostname;
+
+        const propfindBody = `<?xml version="1.0" encoding="utf-8" ?>
+<D:propfind xmlns:D="DAV:">
+  <D:prop>
+    <D:displayname/>
+    <D:resourcetype/>
+    <D:getcontentlength/>
+    <D:getlastmodified/>
+  </D:prop>
+</D:propfind>`;
+        headers["Content-Length"] = Buffer.byteLength(propfindBody);
+
+        const preq = lib.request(options, (pres) => {
+          let xml = "";
+          pres.setEncoding("utf8");
+          pres.on("data", (chunk) => { xml += chunk; });
+          pres.on("end", () => {
+            if (pres.statusCode >= 200 && pres.statusCode < 300) {
+              res.writeHead(200, { "Content-Type": "application/xml; charset=utf-8" });
+              res.end(xml);
+            } else {
+              res.writeHead(pres.statusCode, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ error: `WebDAV 服务器返回 ${pres.statusCode}`, status: pres.statusCode }));
+            }
+          });
+        });
+        preq.on("timeout", () => { preq.destroy(); res.writeHead(504).end(JSON.stringify({ error: "WebDAV 连接超时" })); });
+        preq.on("error", (e) => {
+          if (!res.headersSent) {
+            res.writeHead(502, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "连接 WebDAV 失败：" + e.message }));
+          }
+        });
+        preq.write(propfindBody);
+        preq.end();
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: err.message }));
+        }
+      }
       return;
     }
     if (urlPath === "/transcode/status") {
