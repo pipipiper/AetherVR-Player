@@ -148,3 +148,18 @@ test("file drop → playback chain is intact", () => {
   // 存在 file 时必须有兜底播放路径（pathForFile 失败也不至于无法播放）
   assert.match(html, /if \(item\.file\) \{\s*\n\s*loadVideoFile\(item\.file\)/);
 });
+
+test("player controls expose a stop button and a usable progress bar", () => {
+  // 停止按钮必须存在且绑定逻辑
+  assert.match(html, /id="stopBtn"/, "stop button markup missing");
+  assert.match(html, /function stopPlayback\(\)/, "stopPlayback must exist");
+  assert.match(html, /stopBtn\.addEventListener\('click'/, "stop button must be wired");
+  // 进度条不能太细：轨道高度 ≥ 10px
+  const pb = html.match(/\.progress-bar\s*\{[^}]*height:\s*(\d+)px/);
+  assert.ok(pb, "progress bar height must be declared");
+  assert.ok(Number(pb[1]) >= 10, `progress bar too thin: ${pb[1]}px`);
+  // 控制栏分两行：进度条独占一行，按钮分列两侧
+  assert.match(html, /class="controls-progress-row"/);
+  assert.match(html, /class="controls-main-row"/);
+  assert.match(html, /class="controls-side right"/);
+});

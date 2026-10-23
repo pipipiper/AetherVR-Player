@@ -295,14 +295,40 @@
         .sbs-options input[type="radio"] { cursor: pointer; accent-color: var(--yellow); }
 
         /* ── controls bar ────────────────────────────────────── */
+        /* 控制栏：进度条独占一行（加粗），按钮分列两侧（参考手机端布局） */
         .controls {
             background: var(--bg);
             border-top: 2px solid var(--border);
-            padding: 0 16px;
-            display: flex; align-items: center; gap: 10px;
+            padding: 8px 16px 10px;
+            display: flex; flex-direction: column; gap: 8px;
             position: absolute; bottom: 0; left: 0; right: 0;
-            z-index: 30; height: 56px;
+            z-index: 30;
         }
+        /* 第一行：时间 + 进度条 */
+        .controls-progress-row {
+            display: flex; align-items: center; gap: 12px; width: 100%;
+        }
+        /* 第二行：左侧工具 / 中间播放控制 / 右侧工具 */
+        .controls-main-row {
+            display: flex; align-items: center; gap: 14px; width: 100%;
+        }
+        .controls-side {
+            display: flex; align-items: center; gap: 10px; flex: 1;
+        }
+        .controls-side.right { justify-content: flex-end; }
+        .controls-center {
+            display: flex; align-items: center; gap: 12px; flex: none;
+        }
+
+        /* 主播放键与停止键的强调样式 */
+        .control-btn.is-primary {
+            background: var(--yellow); border-color: var(--yellow); color: #16233a;
+            width: 40px; height: 40px;
+        }
+        .control-btn.is-primary:hover { filter: brightness(1.08); }
+        .control-btn.is-stop { color: var(--red); border-color: rgba(239,68,68,.45); }
+        .control-btn.is-stop:hover { background: rgba(239,68,68,.12); border-color: var(--red); }
+        .control-btn.is-stop:disabled { opacity: .38; cursor: not-allowed; }
 
         .control-btn {
             background: transparent;
@@ -333,27 +359,37 @@
             display: flex; align-items: center;
         }
 
+        /* 进度条：轨道更粗、圆角，hover 时再加粗，便于精确拖动 */
+        .progress-container { flex: 1; min-width: 120px; }
         .progress-bar {
-            width: 100%; height: 20px;
+            width: 100%; height: 14px;
             background: var(--surface-2);
             border: 2px solid var(--border);
+            border-radius: 8px;
             cursor: pointer; position: relative;
+            transition: height .12s ease, border-color .12s ease;
+            overflow: hidden;
         }
-        .progress-bar:hover { border-color: var(--yellow); }
+        .progress-bar:hover { border-color: var(--yellow); height: 18px; }
+        .progress-bar:hover .progress-fill { background: var(--yellow); }
 
         .progress-fill {
             height: 100%;
             background: var(--yellow);
+            border-radius: 6px;
             width: 0%;
+            transition: width .08s linear;
         }
 
         /* ── time display ────────────────────────────────────── */
         .time-display {
             color: var(--muted);
             font-family: 'JetBrains Mono', monospace;
-            font-size: 0.7em;
-            letter-spacing: 0.05em;
-            min-width: 96px; text-align: center;
+            font-size: 0.76em;
+            letter-spacing: 0.04em;
+            min-width: 104px; text-align: center;
+            flex: none;
+            white-space: nowrap;
         }
 
         /* ── volume ──────────────────────────────────────────── */
@@ -1717,44 +1753,61 @@
                 </div>
 
                 <div class="controls">
-                <button class="control-btn playlist-ctl" id="prevBtn" title="上一个" style="display:none"><i class="fa-solid fa-backward-step"></i></button>
-                <button class="control-btn" id="stepBackBtn" title="后退 30 秒"><i class="fa-solid fa-rotate-left"></i></button>
-                <button class="control-btn" id="playPauseBtn"><i class="fa-solid fa-play"></i></button>
-                <button class="control-btn" id="stepForwardBtn" title="快进 30 秒"><i class="fa-solid fa-rotate-right"></i></button>
-                <button class="control-btn playlist-ctl" id="nextBtn" title="下一个" style="display:none"><i class="fa-solid fa-forward-step"></i></button>
-                <div class="progress-container">
-                    <div class="progress-bar" id="progressBar">
-                        <div class="progress-fill" id="progressFill"></div>
-                        <div class="loop-ab-track" id="loopAbTrack" style="display:none">
-                            <div class="loop-ab-marker" id="loopMarkerA"></div>
-                            <div class="loop-ab-range" id="loopRangeFill"></div>
-                            <div class="loop-ab-marker" id="loopMarkerB"></div>
+                    <!-- 第一行：进度条 + 时间（进度条加粗，便于精确拖动） -->
+                    <div class="controls-progress-row">
+                        <div class="progress-container">
+                            <div class="progress-bar" id="progressBar">
+                                <div class="progress-fill" id="progressFill"></div>
+                                <div class="loop-ab-track" id="loopAbTrack" style="display:none">
+                                    <div class="loop-ab-marker" id="loopMarkerA"></div>
+                                    <div class="loop-ab-range" id="loopRangeFill"></div>
+                                    <div class="loop-ab-marker" id="loopMarkerB"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="time-display">
+                            <span id="currentTime">0:00</span> / <span id="duration">0:00</span>
+                        </div>
+                    </div>
+
+                    <!-- 第二行：左侧工具 / 中间播放控制 / 右侧工具 -->
+                    <div class="controls-main-row">
+                        <div class="controls-side">
+                            <div class="volume-control">
+                                <i class="fa-solid fa-volume-high"></i>
+                                <input type="range" class="volume-slider" id="volumeSlider" min="0" max="100" value="100">
+                            </div>
+                            <div class="speed-control">
+                                <i class="fa-solid fa-gauge-high"></i>
+                                <select id="speedSelect" class="speed-select">
+                                    <option value="2">2x</option>
+                                    <option value="1.5">1.5x</option>
+                                    <option value="1" selected>1x</option>
+                                    <option value="0.5">0.5x</option>
+                                    <option value="0.25">0.25x</option>
+                                </select>
+                            </div>
+                            <button class="control-btn" id="favBtn" title="收藏当前视频" style="display:none"><i class="fa-solid fa-star"></i></button>
+                            <button class="control-btn" id="addToListBtn" title="把当前视频加入播放列表" style="display:none"><i class="fa-solid fa-square-plus"></i></button>
+                        </div>
+
+                        <div class="controls-center">
+                            <button class="control-btn playlist-ctl" id="prevBtn" title="上一个" style="display:none"><i class="fa-solid fa-backward-step"></i></button>
+                            <button class="control-btn" id="stepBackBtn" title="后退 30 秒"><i class="fa-solid fa-rotate-left"></i></button>
+                            <button class="control-btn is-primary" id="playPauseBtn" title="播放 / 暂停"><i class="fa-solid fa-play"></i></button>
+                            <button class="control-btn is-stop" id="stopBtn" title="停止播放"><i class="fa-solid fa-stop"></i></button>
+                            <button class="control-btn" id="stepForwardBtn" title="快进 30 秒"><i class="fa-solid fa-rotate-right"></i></button>
+                            <button class="control-btn playlist-ctl" id="nextBtn" title="下一个" style="display:none"><i class="fa-solid fa-forward-step"></i></button>
+                        </div>
+
+                        <div class="controls-side right">
+                            <button class="control-btn playlist-ctl" id="playlistBtn" title="播放列表" style="display:none"><i class="fa-solid fa-list-ul"></i></button>
+                            <button class="control-btn" id="diagnosticsBtn" title="播放诊断"><i class="fa-solid fa-chart-line"></i></button>
+                            <button class="control-btn" id="fullscreenBtn" title="全屏"><i class="fa-solid fa-expand"></i></button>
                         </div>
                     </div>
                 </div>
-                <div class="time-display">
-                    <span id="currentTime">0:00</span> / <span id="duration">0:00</span>
-                </div>
-                <div class="volume-control">
-                    <span style="color: white;"><i class="fa-solid fa-volume-high"></i></span>
-                    <input type="range" class="volume-slider" id="volumeSlider" min="0" max="100" value="100">
-                </div>
-                <div class="speed-control">
-                    <span style="color: white;"><i class="fa-solid fa-gauge-high"></i></span>
-                    <select id="speedSelect" class="speed-select">
-                        <option value="2">2x</option>
-                        <option value="1.5">1.5x</option>
-                        <option value="1" selected>1x</option>
-                        <option value="0.5">0.5x</option>
-                        <option value="0.25">0.25x</option>
-                    </select>
-                </div>
-                <button class="control-btn" id="favBtn" title="收藏当前视频" style="display:none"><i class="fa-solid fa-star"></i></button>
-                <button class="control-btn" id="addToListBtn" title="把当前视频加入播放列表" style="display:none"><i class="fa-solid fa-square-plus"></i></button>
-                <button class="control-btn playlist-ctl" id="playlistBtn" title="播放列表" style="display:none"><i class="fa-solid fa-list-ul"></i></button>
-                <button class="control-btn" id="diagnosticsBtn" title="播放诊断"><i class="fa-solid fa-chart-line"></i></button>
-                <button class="control-btn" id="fullscreenBtn"><i class="fa-solid fa-expand"></i></button>
-            </div>
+
                 <section class="diagnostics-panel" id="diagnosticsPanel" role="dialog" aria-label="播放诊断" aria-hidden="true">
                     <div class="diagnostics-head">
                         <span class="diagnostics-title">播放诊断</span>
@@ -5039,6 +5092,32 @@
         });
 
         // Play/Pause button - works in both normal and VR mode
+        // 停止播放：暂停 + 回到开头 + 释放画面（保留播放列表）
+        const stopBtn = document.getElementById('stopBtn');
+        function stopPlayback() {
+            try {
+                videoPlayer.pause();
+                videoPlayer.currentTime = 0;
+            } catch { /* 元数据未就绪时忽略 */ }
+            playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
+            bigPlayBtn.classList.add('show');
+            if (stopBtn) stopBtn.disabled = true;
+        }
+        if (stopBtn) {
+            stopBtn.disabled = true;
+            stopBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                stopPlayback();
+            });
+        }
+        // 有视频加载后才允许点停止
+        videoPlayer.addEventListener('loadedmetadata', () => {
+            if (stopBtn) stopBtn.disabled = false;
+        });
+        videoPlayer.addEventListener('play', () => {
+            if (stopBtn) stopBtn.disabled = false;
+        });
+
         playPauseBtn.addEventListener('click', (e) => {
             e.stopPropagation(); // Prevent event bubbling
             if (videoPlayer.paused) {
