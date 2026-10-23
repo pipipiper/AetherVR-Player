@@ -968,14 +968,16 @@
         .webdav-recent-main { flex: 1; min-width: 0; }
         .webdav-recent-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .webdav-recent-url { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
-        .webdav-recent-del {
+        .webdav-recent-del, .webdav-recent-edit {
             flex: none; border: 0; background: transparent; color: #b6bfcc; cursor: pointer;
             width: 26px; height: 26px; border-radius: 8px; font-size: 12px;
             display: grid; place-items: center;
             opacity: 0; transition: opacity .15s, background .15s, color .15s;
         }
-        .webdav-recent-item:hover .webdav-recent-del { opacity: 1; }
+        .webdav-recent-item:hover .webdav-recent-del,
+        .webdav-recent-item:hover .webdav-recent-edit { opacity: 1; }
         .webdav-recent-del:hover { background: #fef2f0; color: var(--red); }
+        .webdav-recent-edit:hover { background: var(--surface-2); color: var(--text); }
         .webdav-item {
             display: flex; align-items: center; gap: 10px; padding: 9px 10px;
             border-radius: 8px; cursor: pointer; font-size: 13px;
@@ -989,6 +991,50 @@
         .webdav-item-size { font-size: 11px; color: var(--muted); }
         .backup-actions { display: flex; gap: 10px; margin: 16px 0; flex-wrap: wrap; }
         .backup-clip-section textarea { height: 90px; }
+        /* WebDAV 云端备份与同步专区 */
+        .webdav-backup-card {
+            border: 1px solid var(--border); border-radius: 12px;
+            background: var(--surface-3); padding: 12px; margin: 12px 0;
+            display: flex; flex-direction: column; gap: 8px; font-size: 13px;
+        }
+        .webdav-backup-head {
+            display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--text);
+            margin-bottom: 4px;
+        }
+        .webdav-backup-head i { color: var(--yellow); }
+        .webdav-backup-badge {
+            font-size: 10px; font-weight: 500; padding: 2px 6px; border-radius: 6px;
+            background: rgba(59,108,255,.12); color: var(--yellow); margin-left: auto;
+        }
+        .webdav-backup-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+        .webdav-backup-row label { color: var(--muted); font-size: 12px; white-space: nowrap; }
+        .webdav-select {
+            flex: 1; height: 32px; border: 1px solid var(--border-hi); border-radius: 8px;
+            padding: 0 8px; font-size: 12px; background: #fff; color: var(--text); outline: none;
+        }
+        .webdav-mini-input {
+            flex: 1; height: 32px; border: 1px solid var(--border-hi); border-radius: 8px;
+            padding: 0 8px; font-size: 12px; background: #fff; color: var(--text); outline: none;
+        }
+        .webdav-backup-btns { display: flex; gap: 8px; margin-top: 4px; }
+        .webdav-backup-btns button { flex: 1; padding: 7px; font-size: 12px; justify-content: center; }
+        .webdav-backup-status { font-size: 11px; color: var(--muted); word-break: break-all; min-height: 16px; }
+        .webdav-backup-status.success { color: #10b981; }
+        .webdav-backup-status.error { color: #ef4444; }
+
+        /* ── WebDAV 文件项操作菜单 ──────────────────────── */
+        .webdav-item-actions {
+            display: flex; align-items: center; gap: 4px; opacity: 0;
+            transition: opacity .15s; margin-left: auto;
+        }
+        .webdav-item:hover .webdav-item-actions { opacity: 1; }
+        .webdav-act-btn {
+            border: 0; background: transparent; color: var(--muted); cursor: pointer;
+            width: 26px; height: 26px; border-radius: 6px; font-size: 12px;
+            display: grid; place-items: center; transition: background .15s, color .15s;
+        }
+        .webdav-act-btn:hover { background: var(--surface-2); color: var(--text); }
+        .webdav-act-btn.del:hover { background: #fef2f0; color: var(--red); }
 
         /* ── 播放记录 ─────────────────────────────────────── */
         .history-toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; }
@@ -1713,6 +1759,36 @@
                         <button class="pl-modal-btn primary" id="exportBackupBtn"><i class="fa-solid fa-file-export"></i>&nbsp; 导出完整备份 (.json)</button>
                         <button class="pl-modal-btn" id="importBackupBtn"><i class="fa-solid fa-file-import"></i>&nbsp; 从文件导入备份</button>
                         <input type="file" id="backupFileInput" accept=".json,application/json,text/plain" style="display:none">
+                    </div>
+                    <!-- WebDAV 云端备份与同步（对齐 iOS） -->
+                    <div class="webdav-backup-card">
+                        <div class="webdav-backup-head">
+                            <i class="fa-solid fa-server"></i>
+                            <span>WebDAV 云端同步</span>
+                            <span class="webdav-backup-badge" id="webdavAutoBackupBadge">自动备份</span>
+                        </div>
+                        <div class="webdav-backup-row">
+                            <label>目标服务器：</label>
+                            <select id="webdavBackupServerSelect" class="webdav-select"></select>
+                        </div>
+                        <div class="webdav-backup-row">
+                            <label>备份文件夹：</label>
+                            <input type="text" id="webdavBackupFolderInput" class="webdav-mini-input" placeholder="根目录 (选填，例：backup)">
+                        </div>
+                        <div class="webdav-backup-row">
+                            <label>自动策略：</label>
+                            <select id="webdavBackupFreqSelect" class="webdav-select">
+                                <option value="disabled">关闭</option>
+                                <option value="onLaunch">每次打开页面</option>
+                                <option value="hourly">每小时</option>
+                                <option value="daily">每天</option>
+                            </select>
+                        </div>
+                        <div class="webdav-backup-btns">
+                            <button class="pl-modal-btn" id="webdavUploadBackupBtn"><i class="fa-solid fa-cloud-arrow-up"></i>&nbsp; 立即上传备份</button>
+                            <button class="pl-modal-btn" id="webdavDownloadBackupBtn"><i class="fa-solid fa-cloud-arrow-down"></i>&nbsp; 检查并恢复</button>
+                        </div>
+                        <div class="webdav-backup-status" id="webdavBackupStatus"></div>
                     </div>
                     <div class="backup-clip-section">
                         <p class="pl-modal-desc" style="margin-top: 14px; margin-bottom: 6px;">或直接粘贴备份 JSON 文本一键恢复：</p>
@@ -5575,7 +5651,10 @@
                 const blob = new Blob([json], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
-                a.download = `AetherVR-完整备份.json`;
+                const d = new Date();
+                const pad = (n) => String(n).padStart(2, '0');
+                const ts = `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+                a.download = `AetherVR-备份-${ts}.json`;
                 a.href = url;
                 document.body.appendChild(a);
                 a.click();
@@ -5686,6 +5765,253 @@
             });
         }
 
+        // ── WebDAV 云端自动备份与同步逻辑（对齐 iOS） ──
+        const WEBDAV_BACKUP_FREQ_KEY = 'aethervr-webdav-backup-freq';
+        const WEBDAV_BACKUP_SERVER_KEY = 'aethervr-webdav-backup-server';
+        const WEBDAV_BACKUP_FOLDER_KEY = 'aethervr-webdav-backup-folder';
+        const WEBDAV_BACKUP_LAST_TIME_KEY = 'aethervr-webdav-backup-last-time';
+        const WEBDAV_BACKUP_LAST_STATUS_KEY = 'aethervr-webdav-backup-last-status';
+
+        const webdavBackupServerSelect = document.getElementById('webdavBackupServerSelect');
+        const webdavBackupFolderInput = document.getElementById('webdavBackupFolderInput');
+        const webdavBackupFreqSelect = document.getElementById('webdavBackupFreqSelect');
+        const webdavUploadBackupBtn = document.getElementById('webdavUploadBackupBtn');
+        const webdavDownloadBackupBtn = document.getElementById('webdavDownloadBackupBtn');
+        const webdavBackupStatus = document.getElementById('webdavBackupStatus');
+
+        function loadWebdavBackupSettings() {
+            if (!webdavBackupServerSelect) return;
+            const servers = getWebdavServers();
+            webdavBackupServerSelect.innerHTML = '';
+            if (!servers.length) {
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = '暂无已存服务器 (请先连接)';
+                webdavBackupServerSelect.appendChild(opt);
+            } else {
+                servers.forEach((s) => {
+                    const opt = document.createElement('option');
+                    opt.value = s.url;
+                    opt.textContent = (s.name ? s.name + ' (' + hostnameOfUrl(s.url) + ')' : s.url);
+                    webdavBackupServerSelect.appendChild(opt);
+                });
+            }
+            const savedServer = localStorage.getItem(WEBDAV_BACKUP_SERVER_KEY);
+            if (savedServer && servers.some(s => s.url === savedServer)) {
+                webdavBackupServerSelect.value = savedServer;
+            } else if (servers.length) {
+                webdavBackupServerSelect.value = servers[0].url;
+            }
+            if (webdavBackupFolderInput) {
+                webdavBackupFolderInput.value = localStorage.getItem(WEBDAV_BACKUP_FOLDER_KEY) || '';
+            }
+            if (webdavBackupFreqSelect) {
+                webdavBackupFreqSelect.value = localStorage.getItem(WEBDAV_BACKUP_FREQ_KEY) || 'disabled';
+            }
+            const lastStatus = localStorage.getItem(WEBDAV_BACKUP_LAST_STATUS_KEY);
+            if (webdavBackupStatus && lastStatus) {
+                webdavBackupStatus.textContent = lastStatus;
+                webdavBackupStatus.className = 'webdav-backup-status ' + (lastStatus.includes('成功') ? 'success' : (lastStatus.includes('失败') ? 'error' : ''));
+            }
+        }
+
+        if (webdavBackupServerSelect) {
+            webdavBackupServerSelect.addEventListener('change', () => {
+                localStorage.setItem(WEBDAV_BACKUP_SERVER_KEY, webdavBackupServerSelect.value);
+            });
+        }
+        if (webdavBackupFolderInput) {
+            webdavBackupFolderInput.addEventListener('input', () => {
+                localStorage.setItem(WEBDAV_BACKUP_FOLDER_KEY, webdavBackupFolderInput.value.trim());
+            });
+        }
+        if (webdavBackupFreqSelect) {
+            webdavBackupFreqSelect.addEventListener('change', () => {
+                localStorage.setItem(WEBDAV_BACKUP_FREQ_KEY, webdavBackupFreqSelect.value);
+            });
+        }
+
+        async function uploadBackupToWebDAV(isAuto = false) {
+            const servers = getWebdavServers();
+            if (!servers.length) {
+                const msg = '备份失败：未保存任何 WebDAV 服务器';
+                if (webdavBackupStatus) {
+                    webdavBackupStatus.textContent = msg;
+                    webdavBackupStatus.className = 'webdav-backup-status error';
+                }
+                if (!isAuto) showSpatialToast(msg);
+                return;
+            }
+            const targetUrl = webdavBackupServerSelect ? webdavBackupServerSelect.value : (localStorage.getItem(WEBDAV_BACKUP_SERVER_KEY) || servers[0].url);
+            const server = servers.find(s => s.url === targetUrl) || servers[0];
+            const folder = (webdavBackupFolderInput ? webdavBackupFolderInput.value : (localStorage.getItem(WEBDAV_BACKUP_FOLDER_KEY) || '')).trim().replace(/^\/+|\/+$/g, '');
+
+            const json = exportCompleteBackupJSON();
+            const d = new Date();
+            const pad = (n) => String(n).padStart(2, '0');
+            const ts = `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+            const filename = `AetherVR-自动备份-${ts}.json`;
+
+            let destUrl = server.url.replace(/\/$/, '') + '/';
+            if (folder) destUrl += folder + '/';
+            destUrl += filename;
+
+            if (webdavBackupStatus) {
+                webdavBackupStatus.textContent = `正在上传备份至 ${server.name || hostnameOfUrl(server.url)}…`;
+                webdavBackupStatus.className = 'webdav-backup-status';
+            }
+
+            try {
+                const resp = await fetch('/api/webdav/op', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        op: 'upload',
+                        url: destUrl,
+                        content: json,
+                        username: server.user || '',
+                        password: server.pass || ''
+                    })
+                });
+                const res = await resp.json();
+                if (!resp.ok || !res.success) throw new Error(res.error || '上传失败');
+
+                const nowTime = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+                const successMsg = `备份成功于 ${nowTime} (${folder ? folder + '/' : ''}${filename})`;
+                localStorage.setItem(WEBDAV_BACKUP_LAST_TIME_KEY, String(Date.now()));
+                localStorage.setItem(WEBDAV_BACKUP_LAST_STATUS_KEY, successMsg);
+                if (webdavBackupStatus) {
+                    webdavBackupStatus.textContent = successMsg;
+                    webdavBackupStatus.className = 'webdav-backup-status success';
+                }
+                showSpatialToast('✅ WebDAV 云端备份已完成！');
+            } catch (err) {
+                const errMsg = '备份失败：' + err.message;
+                localStorage.setItem(WEBDAV_BACKUP_LAST_STATUS_KEY, errMsg);
+                if (webdavBackupStatus) {
+                    webdavBackupStatus.textContent = errMsg;
+                    webdavBackupStatus.className = 'webdav-backup-status error';
+                }
+                if (!isAuto) alert(errMsg);
+            }
+        }
+
+        async function downloadBackupFromWebDAV() {
+            const servers = getWebdavServers();
+            if (!servers.length) {
+                alert('未保存任何 WebDAV 服务器');
+                return;
+            }
+            const targetUrl = webdavBackupServerSelect ? webdavBackupServerSelect.value : (localStorage.getItem(WEBDAV_BACKUP_SERVER_KEY) || servers[0].url);
+            const server = servers.find(s => s.url === targetUrl) || servers[0];
+            const folder = (webdavBackupFolderInput ? webdavBackupFolderInput.value : (localStorage.getItem(WEBDAV_BACKUP_FOLDER_KEY) || '')).trim().replace(/^\/+|\/+$/g, '');
+
+            let listUrl = server.url.replace(/\/$/, '') + '/';
+            if (folder) listUrl += folder + '/';
+
+            if (webdavBackupStatus) {
+                webdavBackupStatus.textContent = '正在检索 WebDAV 备份文件…';
+                webdavBackupStatus.className = 'webdav-backup-status';
+            }
+
+            try {
+                const resp = await fetch('/api/webdav/list', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        url: listUrl,
+                        username: server.user || '',
+                        password: server.pass || ''
+                    })
+                });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    throw new Error(err.error || `HTTP ${resp.status}`);
+                }
+                const xmlText = await resp.text();
+                const items = parseWebdavXml(xmlText, new URL(server.url).origin);
+                // 筛选备份文件
+                const backupFiles = items.filter(it => !it.isDir && it.name.startsWith('AetherVR-') && it.name.endsWith('.json'));
+                if (!backupFiles.length) {
+                    throw new Error('该目录下未找到任何 AetherVR 备份文件');
+                }
+                // 按修改时间/文件名降序排，最新排最前
+                backupFiles.sort((a, b) => b.name.localeCompare(a.name));
+                const latest = backupFiles[0];
+
+                if (!confirm(`在 WebDAV 找到最新的备份文件：\n「${latest.name}」\n是否立即下载并恢复全量数据？`)) {
+                    if (webdavBackupStatus) webdavBackupStatus.textContent = '已取消恢复';
+                    return;
+                }
+
+                // 读取备份文件内容
+                let fileGetUrl = latest.href;
+                if (!/^https?:\/\//i.test(fileGetUrl)) {
+                    fileGetUrl = new URL(server.url).origin + (fileGetUrl.startsWith('/') ? '' : '/') + fileGetUrl;
+                }
+                const getResp = await fetch('/api/webdav/op', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        op: 'read',
+                        url: fileGetUrl,
+                        username: server.user || '',
+                        password: server.pass || ''
+                    })
+                });
+                const getRes = await getResp.json();
+                if (!getResp.ok || !getRes.success) throw new Error(getRes.error || '下载备份内容失败');
+
+                restoreFromBackupJSON(getRes.data);
+                if (webdavBackupStatus) {
+                    webdavBackupStatus.textContent = `成功恢复自「${latest.name}」`;
+                    webdavBackupStatus.className = 'webdav-backup-status success';
+                }
+            } catch (err) {
+                const msg = '获取云端备份失败：' + err.message;
+                if (webdavBackupStatus) {
+                    webdavBackupStatus.textContent = msg;
+                    webdavBackupStatus.className = 'webdav-backup-status error';
+                }
+                alert(msg);
+            }
+        }
+
+        if (webdavUploadBackupBtn) webdavUploadBackupBtn.addEventListener('click', () => uploadBackupToWebDAV(false));
+        if (webdavDownloadBackupBtn) webdavDownloadBackupBtn.addEventListener('click', () => downloadBackupFromWebDAV());
+
+        // 检查自动备份触发策略
+        function checkAutoBackupTrigger() {
+            const freq = localStorage.getItem(WEBDAV_BACKUP_FREQ_KEY) || 'disabled';
+            if (freq === 'disabled') return;
+            const lastTime = parseInt(localStorage.getItem(WEBDAV_BACKUP_LAST_TIME_KEY) || '0', 10);
+            const now = Date.now();
+            const elapsed = (now - lastTime) / 1000;
+
+            let shouldRun = false;
+            if (freq === 'onLaunch') {
+                shouldRun = elapsed > 30; // 距离上次至少30秒
+            } else if (freq === 'hourly') {
+                shouldRun = elapsed >= 3600;
+            } else if (freq === 'daily') {
+                shouldRun = elapsed >= 86400;
+            }
+
+            if (shouldRun) {
+                console.log(`[AutoBackup] Triggering ${freq} backup...`);
+                uploadBackupToWebDAV(true);
+            }
+        }
+
+        // 打开备份弹窗时刷新 WebDAV 设置
+        if (backupBtn) {
+            backupBtn.addEventListener('click', () => {
+                loadWebdavBackupSettings();
+            });
+        }
+        // 页面启动时检查自动备份
+        setTimeout(checkAutoBackupTrigger, 2500);
+
         // ── WebDAV 挂载与目录浏览 ──
         const webdavBtn = document.getElementById('webdavBtn');
         const webdavModalMask = document.getElementById('webdavModalMask');
@@ -5742,6 +6068,7 @@
                         <div class="webdav-recent-url"></div>
                     </div>
                     <button class="webdav-recent-del" title="删除该连接记录"><i class="fa-solid fa-trash-can"></i></button>
+                    <button class="webdav-recent-edit" title="编辑连接（修改名称、地址、账号密码）"><i class="fa-solid fa-pencil"></i></button>
                 `;
                 el.querySelector('.webdav-recent-name').textContent = s.name || hostnameOfUrl(s.url);
                 el.querySelector('.webdav-recent-url').textContent = s.url + (s.user ? '（' + s.user + '）' : '');
@@ -5756,6 +6083,26 @@
                     e.stopPropagation();
                     saveWebdavServers(getWebdavServers().filter((x) => x.url !== s.url));
                     renderWebdavRecents();
+                });
+                el.querySelector('.webdav-recent-edit').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const newUrl = prompt(`修改「${s.name || s.url}」的 WebDAV 服务器地址：`, s.url);
+                    if (!newUrl || newUrl.trim() === '') return;
+                    const cleanUrl = newUrl.trim();
+                    const newName = prompt(`修改连接别名（选填）：`, s.name || '');
+                    const servers = getWebdavServers();
+                    const target = servers.find((x) => x.id === s.id || x.url === s.url);
+                    if (target) {
+                        target.url = cleanUrl;
+                        if (newName !== null) target.name = newName.trim();
+                        saveWebdavServers(servers);
+                        if (webdavUrlInput && webdavUrlInput.value === s.url) {
+                            webdavUrlInput.value = cleanUrl;
+                            if (webdavNameInput) webdavNameInput.value = target.name || '';
+                        }
+                        renderWebdavRecents();
+                        showSpatialToast('✅ 连接记录已更新');
+                    }
                 });
                 webdavRecentsEl.appendChild(el);
             });
@@ -5910,8 +6257,14 @@
                     <div class="webdav-item-icon"><i class="fa-solid ${item.isDir ? 'fa-folder' : (isVideo ? 'fa-film' : 'fa-file')}"></i></div>
                     <div class="webdav-item-name" title="${item.name}">${item.name}</div>
                     <div class="webdav-item-size">${item.isDir ? '' : formatFileSize(item.size)}</div>
+                    <div class="webdav-item-actions">
+                        <button class="webdav-act-btn rename" title="重命名"><i class="fa-solid fa-pencil"></i></button>
+                        <button class="webdav-act-btn del" title="删除"><i class="fa-solid fa-trash-can"></i></button>
+                    </div>
                 `;
-                el.addEventListener('click', () => {
+                el.addEventListener('click', (e) => {
+                    // 若点击的是重命名或删除按钮，则不触发点按播放/进目录
+                    if (e.target.closest('.webdav-item-actions')) return;
                     if (item.isDir) {
                         let sub = currentWebdavPath.replace(/\/$/, '') + '/' + item.name + '/';
                         fetchWebdavDirectory(sub);
@@ -5919,6 +6272,79 @@
                         playWebdavFromQueue(item, dirVideos, toPlayUrl);
                     } else {
                         showSpatialToast('该文件不是受支持的视频格式');
+                    }
+                });
+                // 重命名
+                el.querySelector('.webdav-act-btn.rename').addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const newName = prompt(`修改「${item.name}」的名称：`, item.name);
+                    if (!newName || newName.trim() === '' || newName.trim() === item.name) return;
+                    const cleanNew = newName.trim();
+                    const oldHref = item.href;
+                    // 构造新的目标完整 URL
+                    let destUrl = oldHref;
+                    if (!/^https?:\/\//i.test(destUrl)) {
+                        destUrl = baseUrlObj.origin + (destUrl.startsWith('/') ? '' : '/') + destUrl;
+                    }
+                    const destObj = new URL(destUrl);
+                    let normPath = destObj.pathname.replace(/\/$/, '');
+                    const parent = normPath.substring(0, normPath.lastIndexOf('/'));
+                    destObj.pathname = (parent === '' ? '/' : parent) + '/' + cleanNew + (item.isDir ? '/' : '');
+
+                    let srcUrl = oldHref;
+                    if (!/^https?:\/\//i.test(srcUrl)) {
+                        srcUrl = baseUrlObj.origin + (srcUrl.startsWith('/') ? '' : '/') + srcUrl;
+                    }
+
+                    try {
+                        const user = (webdavUserInput.value || '').trim();
+                        const pass = (webdavPassInput.value || '').trim();
+                        const resp = await fetch('/api/webdav/op', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                op: 'move',
+                                url: srcUrl,
+                                destUrl: destObj.href,
+                                username: user,
+                                password: pass
+                            })
+                        });
+                        const res = await resp.json();
+                        if (!resp.ok || !res.success) throw new Error(res.error || '重命名失败');
+                        showSpatialToast('✅ 重命名成功');
+                        fetchWebdavDirectory(currentWebdavPath);
+                    } catch (err) {
+                        alert('重命名失败：' + err.message);
+                    }
+                });
+                // 删除
+                el.querySelector('.webdav-act-btn.del').addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    if (!confirm(`确定要从 WebDAV 服务器彻底删除「${item.name}」吗？\n此操作不可恢复。`)) return;
+                    let targetUrl = item.href;
+                    if (!/^https?:\/\//i.test(targetUrl)) {
+                        targetUrl = baseUrlObj.origin + (targetUrl.startsWith('/') ? '' : '/') + targetUrl;
+                    }
+                    try {
+                        const user = (webdavUserInput.value || '').trim();
+                        const pass = (webdavPassInput.value || '').trim();
+                        const resp = await fetch('/api/webdav/op', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                op: 'delete',
+                                url: targetUrl,
+                                username: user,
+                                password: pass
+                            })
+                        });
+                        const res = await resp.json();
+                        if (!resp.ok || !res.success) throw new Error(res.error || '删除失败');
+                        showSpatialToast('✅ 删除成功');
+                        fetchWebdavDirectory(currentWebdavPath);
+                    } catch (err) {
+                        alert('删除失败：' + err.message);
                     }
                 });
                 webdavFileList.appendChild(el);

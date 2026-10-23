@@ -762,7 +762,7 @@ const requestHandler = async (req, res) => {
       }));
       return;
     }
-    // ── WebDAV 代理与目录浏览 ──────────────────────────────────────────
+    // ── WebDAV 代理：目录浏览、文件上传(备份/同步)、重命名与删除 ─────────────
     if (urlPath === "/api/webdav/list") {
       if (req.method !== "POST") {
         res.writeHead(405, { "Allow": "POST" }).end("Method not allowed");
@@ -832,6 +832,97 @@ const requestHandler = async (req, res) => {
           }
         });
         preq.write(propfindBody);
+        preq.end();
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: err.message }));
+        }
+      }
+      return;
+    }
+    // WebDAV 操作桥接：PUT (上传备份)、DELETE (删除)、MOVE (重命名)
+    if (urlPath === "/api/webdav/op") {
+      if (req.method !== "POST") {
+        res.writeHead(405, { "Allow": "POST" }).end("Method not allowed");
+        return;
+      }
+      try {
+        const body = await readJson(req, 10 * 1024 * 1024); // 最多 10MB 备份文件
+        const { op, url: rawUrl, destUrl: rawDestUrl, content = "", username = "", password = "" } = body;
+        if (!rawUrl || !op) {
+          res.writeHead(400, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "Missing required parameters" }));
+          return;
+        }
+        const u = new URL(rawUrl);
+        const resolved = await resolveSafeTarget(u);
+        const lib = u.protocol === "https:" ? https : http;
+        const headers = {
+          "Host": u.host,
+          "User-Agent": "AetherVR-WebDAV-Client/1.0",
+        };
+        if (username || password) {
+          headers["Authorization"] = "Basic " + Buffer.from(`${username}:${password}`).toString("base64");
+        }
+
+        let method = "GET";
+        let reqBody = null;
+        if (op === "upload") {
+          method = "PUT";
+          headers["Content-Type"] = "application/json; charset=utf-8";
+          reqBody = Buffer.from(content, "utf8");
+          headers["Content-Length"] = reqBody.length;
+        } else if (op === "delete") {
+          method = "DELETE";
+        } else if (op === "move") {
+          method = "MOVE";
+          if (!rawDestUrl) {
+            res.writeHead(400, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "Missing destUrl for move" }));
+            return;
+          }
+          headers["Destination"] = rawDestUrl;
+          headers["Overwrite"] = "T";
+        } else if (op === "read") {
+          method = "GET";
+        } else {
+          res.writeHead(400, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "Unsupported op: " + op }));
+          return;
+        }
+
+        const options = {
+          method,
+          protocol: u.protocol,
+          hostname: resolved.address,
+          family: resolved.family,
+          port: u.port || (u.protocol === "https:" ? 443 : 80),
+          path: `${u.pathname}${u.search}`,
+          headers,
+          timeout: 15000,
+        };
+        if (u.protocol === "https:" && !net.isIP(u.hostname)) options.servername = u.hostname;
+
+        const preq = lib.request(options, (pres) => {
+          let respData = "";
+          pres.setEncoding("utf8");
+          pres.on("data", (chunk) => { respData += chunk; });
+          pres.on("end", () => {
+            if (pres.statusCode >= 200 && pres.statusCode < 300) {
+              res.writeHead(200, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ success: true, status: pres.statusCode, data: respData }));
+            } else {
+              res.writeHead(pres.statusCode, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ error: `WebDAV 服务器返回 ${pres.statusCode}`, status: pres.statusCode, details: respData }));
+            }
+          });
+        });
+        preq.on("timeout", () => { preq.destroy(); res.writeHead(504).end(JSON.stringify({ error: "WebDAV 操作超时" })); });
+        preq.on("error", (e) => {
+          if (!res.headersSent) {
+            res.writeHead(502, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "WebDAV 操作失败：" + e.message }));
+          }
+        });
+        if (reqBody) preq.write(reqBody);
         preq.end();
       } catch (err) {
         if (!res.headersSent) {
