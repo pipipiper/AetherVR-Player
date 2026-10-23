@@ -52,8 +52,11 @@ test("core modules are defined exactly once (no accidental deletion or duplicati
     "fetchWebdavDirectory", "parseWebdavXml", "renderWebdavItems",
     "playWebdavFromQueue",
     "stripExt", "posterKindOf", "posterKeyOf", "buildPosterWall",
-    "renderPosterWall", "scanPosterWall", "renderPickerLevel",
-    "openPosterWallFolderPicker",
+    "renderPosterWall",
+    // 海报墙（对齐 iOS）：来源隔离 / 多文件夹增量 / 导出导入
+    "posterWallSources", "pwLoadSource", "pwSaveSource", "pwMergeScan",
+    "pwSwitchSource", "pwScan", "pwRenderPicker", "pwRenderMovies",
+    "pwShowBackupMenu", "pwShowFolderManager",
   ];
   for (const name of required) {
     const defs = html.match(new RegExp(`function ${name}\\s*\\(`, "g")) || [];
@@ -77,4 +80,30 @@ test("no duplicated top-level const declarations in inline script", () => {
       assert.equal(count, 1, `const ${name} declared ${count} times in one script block`);
     }
   }
+});
+
+test("poster wall persists scan progress incrementally (not only on completion)", () => {
+  // 用户反馈：扫描到一半退出会全部丢失。
+  // 要求：增量渲染时就要落库，且退出路径要冲刷未落库进度。
+  assert.match(html, /function pwPersistProgress/, "must have throttled persist");
+  assert.match(html, /function pwFlushPersist/, "must have flush");
+  assert.match(html, /pwPersistProgress\(list, rootPath\)/, "persist must run inside incremental emit");
+  // 关键退出路径都要冲刷
+  const flushCalls = (html.match(/pwFlushPersist\(\)/g) || []).length;
+  assert.ok(flushCalls >= 4, `expected flushes on close/switch/abort/unload, got ${flushCalls}`);
+  // 节流时间不超过 2s，否则丢失窗口太大
+  const throttle = html.match(/pwPersistTimer = setTimeout\([\s\S]*?\},\s*(\d+)\)/);
+  assert.ok(throttle, "throttle timeout must exist");
+  assert.ok(Number(throttle[1]) <= 2000, `throttle ${throttle[1]}ms too long`);
+});
+
+test("poster wall keeps each source (incl. multiple WebDAV) fully separate", () => {
+  // 每个来源独立 key：webdav|<serverId> / smb|<id>
+  assert.match(html, /id: 'webdav\|' \+ \(s\.id \|\| s\.url\)/);
+  assert.match(html, /id: 'smb\|' \+ \(s\.id \|\| s\.host\)/);
+  // 每来源一个独立存储键
+  assert.match(html, /const PW_STORE_PREFIX = 'aethervr-poster-source-v1\|'/);
+  assert.match(html, /function pwStoreKey\(sourceId\) \{ return PW_STORE_PREFIX \+ sourceId; \}/);
+  // 增量合并按 rootPath 替换，保留其它文件夹
+  assert.match(html, /snap\.movies = \(snap\.movies \|\| \[\]\)\.filter\(\(m\) => m\.rootPath !== rootPath\)/);
 });

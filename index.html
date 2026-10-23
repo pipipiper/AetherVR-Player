@@ -1127,6 +1127,24 @@
         }
         .poster-scan-bar .pl-modal-btn { min-width: 200px; justify-content: center; }
 
+        /* 海报墙来源状态条 */
+        .poster-wall-statusbar {
+            display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+            padding: 7px 12px; margin-bottom: 8px;
+            border-radius: 9px; font-size: 12px;
+            background: var(--surface-3); border: 1px solid var(--border);
+            color: var(--muted);
+        }
+        .poster-wall-statusbar:empty { display: none; }
+        .poster-wall-statusbar b { color: var(--text); font-weight: 600; }
+        .poster-wall-statusbar .pw-chip {
+            display: inline-flex; align-items: center; gap: 4px;
+            padding: 2px 8px; border-radius: 999px;
+            background: rgba(59,108,255,.10); color: var(--yellow);
+            font-size: 11px;
+        }
+        .poster-wall-statusbar .pw-chip.is-smb { background: rgba(16,185,129,.12); color: #10b981; }
+
         /* 扫描状态条（后台静默扫描，不遮挡内容） */
         .poster-scan-status {
             display: flex; align-items: center; gap: 8px;
@@ -1873,18 +1891,28 @@
                         <h3><i class="fa-solid fa-rectangle-list"></i>&nbsp; 海报墙</h3>
                         <button class="modal-close-icon" id="posterWallClose"><i class="fa-solid fa-xmark"></i></button>
                     </div>
+                    <!-- 来源选择（WebDAV / SMB 各自独立结果） -->
                     <div class="webdav-backup-row" style="margin-bottom:10px;">
-                        <label>服务器：</label>
+                        <label>来源：</label>
                         <select id="posterWallServerSelect" class="webdav-select"></select>
                     </div>
+                    <!-- 当前来源状态条 -->
+                    <div class="poster-wall-statusbar" id="posterWallStatusBar"></div>
                     <div class="webdav-nav" id="posterWallNav">
                         <button class="pl-modal-btn" id="posterWallUpBtn"><i class="fa-solid fa-arrow-up"></i>&nbsp; 上级目录</button>
                         <span class="webdav-path-text" id="posterWallPathText">/</span>
-                        <button class="pl-modal-btn" id="posterWallRescanBtn" title="重新选择扫描根目录">
-                            <i class="fa-solid fa-folder-tree"></i>&nbsp; 重选
+                        <button class="pl-modal-btn" id="posterWallScanHereBtn" title="扫描当前目录（结果并入当前来源）">
+                            <i class="fa-solid fa-radar"></i>&nbsp; 扫描此目录
+                        </button>
+                        <button class="pl-modal-btn" id="posterWallFilesBtn" title="管理已扫描的文件夹">
+                            <i class="fa-solid fa-folder"></i>&nbsp; 文件夹
+                        </button>
+                        <button class="pl-modal-btn" id="posterWallBackupBtn" title="导出 / 导入扫描结果备份">
+                            <i class="fa-solid fa-cloud-arrow-up"></i>&nbsp; 备份
                         </button>
                     </div>
                     <div class="webdav-file-list" id="posterWallBody"></div>
+                    <input type="file" id="posterWallImportInput" accept=".json,application/json" style="display:none">
                 </div>
             </div>
 
@@ -6317,10 +6345,18 @@
                 });
             }
 
+            // 排序前统一兜底：nfo 异步回填 title 时可能为空/undefined，
+            // 直接 localeCompare 会抛 "Cannot read properties of undefined"
+            const safeName = (v) => (typeof v === 'string' ? v : (v == null ? '' : String(v)));
+            movies.forEach((m) => {
+                if (!m.title) m.title = safeName(m.rawTitle) || '未命名影片';
+            });
             const movieList = [...movies.values()].sort((a, b) =>
-                a.title.localeCompare(b.title, undefined, { numeric: true }));
-            folders.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-            others.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+                safeName(a.title).localeCompare(safeName(b.title), undefined, { numeric: true }));
+            folders.sort((a, b) =>
+                safeName(a.name).localeCompare(safeName(b.name), undefined, { numeric: true }));
+            others.sort((a, b) =>
+                safeName(a.name).localeCompare(safeName(b.name), undefined, { numeric: true }));
             return { movies: movieList, folders, others };
         }
 
@@ -6926,59 +6962,70 @@
         }
 
 
-        // ── 海报墙（独立入口）──────────────────────────────────
-        // 与 WebDAV 文件浏览完全分离：这里只做封面视角的聚合浏览
+        // ── 海报墙（独立入口，逻辑对齐 iOS）──────────────────────
+        // 核心约定：
+        //  1. 每个来源（WebDAV / SMB × 服务器）各自保存扫描结果，切换来源互不干扰
+        //  2. 同一来源可扫多个文件夹，结果累加不覆盖（增量）
+        //  3. 结果持久化 localStorage，可导出/导入备份
         const posterWallBtn = document.getElementById('posterWallBtn');
         const posterWallMask = document.getElementById('posterWallMask');
         const posterWallClose = document.getElementById('posterWallClose');
         const posterWallServerSelect = document.getElementById('posterWallServerSelect');
+        const posterWallStatusBar = document.getElementById('posterWallStatusBar');
         const posterWallNav = document.getElementById('posterWallNav');
         const posterWallUpBtn = document.getElementById('posterWallUpBtn');
         const posterWallPathText = document.getElementById('posterWallPathText');
         const posterWallBody = document.getElementById('posterWallBody');
+        const posterWallImportInput = document.getElementById('posterWallImportInput');
 
-        let posterWallPath = '/';
+        /// 当前选中的来源 id（"webdav|uuid" 或 "smb|uuid"）
+        let posterWallSourceId = '';
+        /// 目录选择器当前路径
         let posterWallPickPath = '/';
-        let posterWallServerUrl = '';
-
-        function posterWallBaseUrl() {
-            const servers = getWebdavServers();
-            const chosen = servers.find((s) => s.url === posterWallServerUrl) || servers[0];
-            return chosen || null;
-        }
-
-        /// 把海报墙里的相对路径拼成完整 URL（含 /dav 兜底）
-        function posterWallUrlFor(baseUrl, subPath) {
-            let url = baseUrl.replace(/\/$/, '') + '/';
-            if (subPath && subPath !== '/') url += subPath.replace(/^\//, '');
-            try {
-                const u = new URL(url);
-                if (u.pathname === '/' || u.pathname === '') u.pathname = '/dav/';
-                return u.href;
-            } catch { return url; }
-        }
-
-        /// 远程条目 → 播放地址
-        function posterWallToUrl(href) {
-            try {
-                const base = new URL(posterWallBaseUrl()?.url || location.origin);
-                if (/^https?:\/\//i.test(href)) return href;
-                return base.origin + (href.startsWith('/') ? '' : '/') + href;
-            } catch {
-                return href;
-            }
-        }
-
-        /// 递归扫描：从根目录往下收集所有层级的文件，再统一聚合。
-        /// VR 片源常被切成多段（cd1/cd2…），聚合时按「影片主名」合并为一部。
-        /// 海报墙扫描状态（后台静默、增量吐片、可缓存）
-        const POSTER_CACHE_KEY = 'aethervr-poster-wall-cache-v1';
+        /// 扫描中断标记
         let posterScanAbort = null;
 
-        /// 读取扫描缓存
-        function loadPosterCache(serverUrl, rootPath) {
+        // ── 来源模型 ──────────────────────────────────────
+        /// 汇总所有可用来源（WebDAV + SMB）
+        function posterWallSources() {
+            const list = [];
+            getWebdavServers().forEach((s) => {
+                list.push({
+                    id: 'webdav|' + (s.id || s.url),
+                    kind: 'webdav',
+                    name: s.name || hostnameOfUrl(s.url),
+                    url: s.url, user: s.user || '', pass: s.pass || '',
+                });
+            });
+            // Web 端暂不提供 SMB（浏览器无法直接访问 SMB 协议），
+            // 仅当宿主环境注入了 getSmbServers 时才纳入来源列表
+            const smbList = (typeof getSmbServers === 'function') ? getSmbServers() : [];
+            smbList.forEach((s) => {
+                list.push({
+                    id: 'smb|' + (s.id || s.host),
+                    kind: 'smb',
+                    name: s.name || s.host,
+                    host: s.host, port: s.port || 445,
+                    share: s.share || '', user: s.user || '', pass: s.pass || '',
+                });
+            });
+            return list;
+        }
+
+        function posterWallCurrentSource() {
+            const list = posterWallSources();
+            return list.find((x) => x.id === posterWallSourceId) || list[0] || null;
+        }
+
+        // ── 每来源独立存储 ────────────────────────────────
+        const PW_STORE_PREFIX = 'aethervr-poster-source-v1|';
+
+        function pwStoreKey(sourceId) { return PW_STORE_PREFIX + sourceId; }
+
+        /// 读取某来源快照 { sourceId, kind, name, roots:[], movies:[], updatedAt }
+        function pwLoadSource(sourceId) {
             try {
-                const raw = localStorage.getItem(POSTER_CACHE_KEY + '|' + serverUrl + '|' + rootPath);
+                const raw = localStorage.getItem(pwStoreKey(sourceId));
                 if (!raw) return null;
                 const obj = JSON.parse(raw);
                 if (!obj || !Array.isArray(obj.movies)) return null;
@@ -6986,23 +7033,50 @@
             } catch { return null; }
         }
 
-        function savePosterCache(serverUrl, rootPath, movies) {
-            try {
-                localStorage.setItem(
-                    POSTER_CACHE_KEY + '|' + serverUrl + '|' + rootPath,
-                    JSON.stringify({ scannedAt: Date.now(), movies })
-                );
-                // 同时记录最近扫描根目录，方便下次直达
-                localStorage.setItem('aethervr-poster-root|' + serverUrl, rootPath);
-            } catch { /* 容量超限忽略 */ }
+        function pwSaveSource(snap) {
+            try { localStorage.setItem(pwStoreKey(snap.sourceId), JSON.stringify(snap)); }
+            catch (e) { console.warn('海报墙缓存写入失败（可能超出配额）', e); }
         }
 
-        /// 把缓存里的影片快照还原成卡片可用的结构
-        function restoreCachedMovies(cached) {
-            return (cached.movies || []).map((m) => ({
+        /// 增量并入：同 rootPath 替换，其它 rootPath 保留
+        function pwMergeScan(sourceId, meta, rootPath, movies) {
+            const snap = pwLoadSource(sourceId) || {
+                sourceId, kind: meta.kind, name: meta.name,
+                roots: [], movies: [], updatedAt: Date.now(),
+            };
+            snap.kind = meta.kind;
+            snap.name = meta.name;
+            snap.roots = (snap.roots || []).filter((r) => r !== rootPath);
+            snap.roots.push(rootPath);
+            snap.movies = (snap.movies || []).filter((m) => m.rootPath !== rootPath);
+            snap.movies.push(...movies.map((m) => pwSnapshotMovie(m, rootPath)));
+            snap.updatedAt = Date.now();
+            pwSaveSource(snap);
+            return snap;
+        }
+
+        function pwSnapshotMovie(m, rootPath) {
+            return {
                 key: m.key,
                 title: m.title,
-                rawTitle: m.title,
+                rootPath,
+                videos: (m.videos || []).map((v) => ({ name: v.name, href: v.href, size: v.size })),
+                poster: m.poster ? { name: m.poster.name, href: m.poster.href } : null,
+                posterUrl: m.posterUrl || '',
+                thumbs: m.thumbs || [],
+                fanartUrl: m.fanart || '',
+                nfo: m.nfo ? { name: m.nfo.name, href: m.nfo.href } : null,
+                nfoUrl: m.nfoUrl || '',
+                size: m.size || 0,
+            };
+        }
+
+        /// 快照 → 卡片可用结构
+        function pwRestoreMovies(snap) {
+            return (snap.movies || []).map((m) => ({
+                key: m.key,
+                title: m.title || '未命名影片',
+                rawTitle: m.title || '',
                 videos: (m.videos || []).map((v) => ({ ...v })),
                 poster: m.poster ? { ...m.poster } : null,
                 posterUrl: m.posterUrl || '',
@@ -7012,50 +7086,290 @@
                 nfoUrl: m.nfoUrl || '',
                 size: m.size || 0,
                 meta: null,
+                rootPath: m.rootPath || '',
             }));
         }
 
-        /// 后台静默扫描：边扫边渲染，扫到一部立刻显示一部
-        async function scanPosterWall(rootPath) {
-            const server = posterWallBaseUrl();
-            if (!server) return;
+        function pwRemoveRoot(sourceId, rootPath) {
+            const snap = pwLoadSource(sourceId);
+            if (!snap) return;
+            snap.movies = (snap.movies || []).filter((m) => m.rootPath !== rootPath);
+            snap.roots = (snap.roots || []).filter((r) => r !== rootPath);
+            snap.updatedAt = Date.now();
+            pwSaveSource(snap);
+        }
 
-            const MAX_DIRS = 2000;
-            const MAX_DEPTH = 10;
-            const CONCURRENCY = 4;
+        // ── 渲染 ─────────────────────────────────────────
+        function pwRenderStatusBar(snap) {
+            if (!posterWallStatusBar) return;
+            const src = posterWallCurrentSource();
+            if (!src) { posterWallStatusBar.innerHTML = ''; return; }
+            const movieCount = snap ? (snap.movies || []).length : 0;
+            const rootCount = snap ? (snap.roots || []).length : 0;
+            const kindChip = `<span class="pw-chip ${src.kind === 'smb' ? 'is-smb' : ''}">`
+                + `<i class="fa-solid ${src.kind === 'smb' ? 'fa-network-wired' : 'fa-globe'}"></i>`
+                + `${src.kind === 'smb' ? 'SMB' : 'WebDAV'}</span>`;
+            posterWallStatusBar.innerHTML = kindChip
+                + `<span><b>${src.name}</b></span>`
+                + `<span>·</span><span>${movieCount} 部影片</span>`
+                + `<span>·</span><span>${rootCount} 个文件夹</span>`;
+        }
 
-            // 取消上一次扫描
+        /// 渲染来源下拉框
+        function pwRenderSourceSelect() {
+            if (!posterWallServerSelect) return;
+            const list = posterWallSources();
+            posterWallServerSelect.innerHTML = '';
+            if (!list.length) {
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = '暂无可用来源（请先连接 WebDAV 或 SMB）';
+                posterWallServerSelect.appendChild(opt);
+                posterWallSourceId = '';
+                return;
+            }
+            list.forEach((src) => {
+                const opt = document.createElement('option');
+                opt.value = src.id;
+                // 多个同类来源可能同名，附上地址后缀便于区分
+                const addr = src.kind === 'smb'
+                    ? (src.host || '')
+                    : (src.url || '');
+                const shortAddr = addr.replace(/^https?:\/\//i, '').replace(/\/$/, '');
+                opt.textContent = (src.kind === 'smb' ? '[SMB] ' : '[WebDAV] ')
+                    + src.name + (shortAddr && shortAddr !== src.name ? `  ·  ${shortAddr}` : '');
+                posterWallServerSelect.appendChild(opt);
+            });
+            if (!list.some((x) => x.id === posterWallSourceId)) {
+                posterWallSourceId = list[0].id;
+            }
+            posterWallServerSelect.value = posterWallSourceId;
+        }
+
+        /// 切换来源：只加载该来源自己的结果
+        function pwSwitchSource(nextId) {
             if (posterScanAbort) posterScanAbort.aborted = true;
-            const abortToken = { aborted: false };
-            posterScanAbort = abortToken;
-
-            // 先用缓存秒开（若有）
-            const cached = loadPosterCache(server.url, rootPath);
-            if (cached && cached.movies && cached.movies.length) {
-                renderPosterWall(restoreCachedMovies(cached), posterWallToUrl, {
-                    container: posterWallBody,
-                    onEnterFolder: () => {},
-                });
+            pwFlushPersist();   // 切换前先把进度落库
+            posterWallSourceId = nextId;
+            posterWallPickPath = '/';
+            const snap = pwLoadSource(posterWallSourceId);
+            pwRenderStatusBar(snap);
+            if (!snap || !(snap.movies || []).length) {
+                // 没扫过 → 引导选择文件夹
+                pwShowEmptyGuide();
             } else {
-                posterWallBody.innerHTML = '<div class="poster-scan-status" id="posterScanStatus">'
-                    + '<i class="fa-solid fa-radar fa-spin"></i> 正在后台扫描…</div>';
+                pwRenderMovies(pwRestoreMovies(snap));
+            }
+        }
+
+        function pwShowEmptyGuide() {
+            if (!posterWallBody) return;
+            const src = posterWallCurrentSource();
+            if (!src) {
+                posterWallNav.style.display = 'none';
+                posterWallBody.innerHTML = `<div class="pw-empty">`
+                    + `<i class="fa-solid fa-rectangle-list"></i>`
+                    + `<p><b>还没有文件来源</b><br><small>请先在「浏览」里连接 WebDAV 或 SMB</small></p></div>`;
+                return;
+            }
+            posterWallNav.style.display = 'none';
+            posterWallBody.innerHTML = `<div class="pw-empty">`
+                + `<i class="fa-solid fa-rectangle-list"></i>`
+                + `<p><b>选择文件夹，扫描成海报墙</b><br>`
+                + `<small>后台静默扫描，扫到一部立刻显示一部；同一片子的多个分段会自动合并</small></p>`
+                + `<button class="pl-modal-btn primary" id="pwChooseFolderBtn">`
+                + `<i class="fa-solid fa-folder"></i>&nbsp; 选择文件夹</button></div>`;
+            const btn = document.getElementById('pwChooseFolderBtn');
+            if (btn) btn.addEventListener('click', () => pwOpenFolderPicker());
+        }
+
+        /// 把影片数组渲染成封面墙
+        function pwRenderMovies(movies) {
+            if (!posterWallBody) return;
+            posterWallNav.style.display = 'flex';
+            renderPosterWall(movies, posterWallToUrl, {
+                container: posterWallBody,
+                onEnterFolder: () => {},
+            });
+        }
+
+        // ── 目录选择器 ───────────────────────────────────
+        async function pwOpenFolderPicker() {
+            const src = posterWallCurrentSource();
+            if (!src) { pwShowEmptyGuide(); return; }
+            posterWallNav.style.display = 'flex';
+            posterWallPickPath = '/';
+            await pwRenderPicker('/');
+        }
+
+        /// 列出 SMB 共享（作为一级目录）
+        async function pwListSmbRoot(src) {
+            // 前端无法直接访问 SMB；通过后端桥接（若可用）
+            try {
+                const resp = await fetch('/api/webdav/list', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        url: `smb://${src.host}:${src.port}/`,
+                        username: src.user || '', password: src.pass || '',
+                    }),
+                });
+                if (!resp.ok) return [];
+                const xmlText = await resp.text();
+                return parseWebdavXml(xmlText, `smb://${src.host}`);
+            } catch { return []; }
+        }
+
+        async function pwRenderPicker(path) {
+            const src = posterWallCurrentSource();
+            if (!src) return;
+            posterWallPickPath = path;
+            posterWallPathText.textContent = path;
+            posterWallBody.innerHTML = `<div class="poster-scan-status">`
+                + `<i class="fa-solid fa-spinner fa-spin"></i> 读取目录…</div>`;
+
+            let items = [];
+            try {
+                if (src.kind === 'webdav') {
+                    const resp = await fetch('/api/webdav/list', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            url: posterWallUrlFor(src.url, path),
+                            username: src.user || '', password: src.pass || '',
+                        }),
+                    });
+                    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                    const xmlText = await resp.text();
+                    const baseObj = new URL(posterWallUrlFor(src.url, path));
+                    const all = parseWebdavXml(xmlText, baseObj.origin);
+                    const curNorm = baseObj.pathname.replace(/\/$/, '');
+                    items = all.filter((it) => {
+                        const norm = it.href.replace(/\/$/, '');
+                        return norm !== curNorm && norm !== curNorm.slice(baseObj.origin.length);
+                    });
+                } else {
+                    items = await pwListSmbRoot(src);
+                }
+            } catch (err) {
+                posterWallBody.innerHTML = `<div class="pw-empty"><i class="fa-solid fa-triangle-exclamation"></i>`
+                    + `<p>读取失败：${err.message}</p></div>`;
+                return;
             }
 
+            const folders = items.filter((it) => it.isDir)
+                .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { numeric: true }));
+
+            posterWallBody.innerHTML = '';
+            const wrap = document.createElement('div');
+            wrap.className = 'pw-picker';
+            if (!folders.length) {
+                wrap.innerHTML = `<div class="pw-empty" style="padding:16px;">`
+                    + `<p><small>该目录没有子文件夹，可直接扫描当前目录</small></p></div>`;
+            } else {
+                folders.forEach((f) => {
+                    const row = document.createElement('div');
+                    row.className = 'webdav-item is-dir';
+                    row.innerHTML = `<div class="webdav-item-icon"><i class="fa-solid fa-folder"></i></div>`
+                        + `<div class="webdav-item-name">${f.name}</div>`
+                        + `<div class="webdav-item-size"><i class="fa-solid fa-chevron-right"></i></div>`;
+                    row.addEventListener('click', () => {
+                        const next = path.replace(/\/$/, '') + '/' + f.name + '/';
+                        pwRenderPicker(next);
+                    });
+                    wrap.appendChild(row);
+                });
+            }
+            posterWallBody.appendChild(wrap);
+
+            const bar = document.createElement('div');
+            bar.className = 'poster-scan-bar';
+            bar.innerHTML = `<button class="pl-modal-btn primary" id="pwScanHereBtn">`
+                + `<i class="fa-solid fa-radar"></i>&nbsp; 扫描当前目录</button>`;
+            posterWallBody.appendChild(bar);
+            const scanBtn = bar.querySelector('#pwScanHereBtn');
+            if (scanBtn) scanBtn.addEventListener('click', () => pwScan(posterWallPickPath));
+        }
+
+        /// 扫描进度实时落库（节流）。
+        /// 用户强烈要求：扫描到一半退出不能全丢。这里每次增量渲染后
+        /// 把当前已聚合结果并入该来源快照，最多 1.5s 落一次盘。
+        let pwPersistTimer = null;
+        let pwPersistPending = null;
+        function pwPersistProgress(movies, rootPath) {
+            const src = posterWallCurrentSource();
+            if (!src || !movies) return;
+            pwPersistPending = { movies, rootPath, src };
+            if (pwPersistTimer) return;
+            pwPersistTimer = setTimeout(() => {
+                pwPersistTimer = null;
+                const job = pwPersistPending;
+                pwPersistPending = null;
+                if (!job) return;
+                try {
+                    pwMergeScan(posterWallSourceId, job.src, job.rootPath, job.movies);
+                } catch (e) {
+                    console.warn('扫描进度落库失败', e);
+                }
+            }, 1500);
+        }
+
+        /// 立即冲刷未落库的进度（关闭/切换来源/中断时调用）
+        function pwFlushPersist() {
+            if (pwPersistTimer) {
+                clearTimeout(pwPersistTimer);
+                pwPersistTimer = null;
+            }
+            const job = pwPersistPending;
+            pwPersistPending = null;
+            if (!job) return;
+            try {
+                pwMergeScan(posterWallSourceId, job.src, job.rootPath, job.movies);
+            } catch (e) {
+                console.warn('冲刷扫描进度失败', e);
+            }
+        }
+
+        // ── 扫描（后台静默增量）────────────────────────────
+        async function pwScan(rootPath) {
+            const src = posterWallCurrentSource();
+            if (!src) return;
+
+            if (posterScanAbort) posterScanAbort.aborted = true;
+            const token = { aborted: false };
+            posterScanAbort = token;
+
+            posterWallNav.style.display = 'flex';
+            posterWallPathText.textContent = rootPath;
+
+            // 已有结果先显示（增量：不丢旧内容）
+            const existingSnap = pwLoadSource(posterWallSourceId);
+            const existingMovies = existingSnap ? pwRestoreMovies(existingSnap) : [];
+            if (existingMovies.length) {
+                pwRenderMovies(existingMovies);
+                const st = document.createElement('div');
+                st.className = 'poster-scan-status';
+                st.id = 'posterScanStatus';
+                st.innerHTML = `<i class="fa-solid fa-radar fa-spin"></i> 后台扫描中…`;
+                posterWallBody.insertBefore(st, posterWallBody.firstChild);
+            } else {
+                posterWallBody.innerHTML = `<div class="poster-scan-status" id="posterScanStatus">`
+                    + `<i class="fa-solid fa-radar fa-spin"></i> 正在后台扫描…</div>`;
+            }
+
+            const MAX_DIRS = 2000, MAX_DEPTH = 10, CONCURRENCY = 4;
             let visited = 0;
             let allEntries = [];
             const queue = [{ path: rootPath, depth: 0 }];
             const seen = new Set();
             let knownKeys = new Set();
             let lastCount = -1;
-            let currentScanPath = rootPath;
 
             const statusEl = () => document.getElementById('posterScanStatus');
             const updateStatus = () => {
                 const el = statusEl();
-                if (el) {
-                    el.innerHTML = `<i class="fa-solid fa-radar fa-spin"></i> 扫描中 · `
-                        + `${visited} 目录 · ${allEntries.length} 文件`;
-                }
+                if (el) el.innerHTML = `<i class="fa-solid fa-radar fa-spin"></i> 扫描中 · `
+                    + `${visited} 目录 · ${allEntries.length} 文件`;
             };
 
             const listDir = async (path) => {
@@ -7063,14 +7377,13 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        url: posterWallUrlFor(server.url, path),
-                        username: server.user || '',
-                        password: server.pass || '',
+                        url: posterWallUrlFor(src.url, path),
+                        username: src.user || '', password: src.pass || '',
                     }),
                 });
                 if (!resp.ok) return [];
                 const xmlText = await resp.text();
-                const baseObj = new URL(posterWallUrlFor(server.url, path));
+                const baseObj = new URL(posterWallUrlFor(src.url, path));
                 const items = parseWebdavXml(xmlText, baseObj.origin);
                 const curNorm = baseObj.pathname.replace(/\/$/, '');
                 return items.filter((it) => {
@@ -7079,7 +7392,7 @@
                 });
             };
 
-            // 增量渲染：有新增影片才重绘，避免闪烁
+            // 实时合并：已有 ∪ 本次扫描
             const emitIfChanged = (force) => {
                 const { movies } = buildPosterWall(allEntries, posterWallToUrl);
                 const keys = new Set(movies.map((m) => m.key));
@@ -7088,35 +7401,43 @@
                 if (!force && !hasNew && movies.length === lastCount) return;
                 keys.forEach((k) => knownKeys.add(k));
                 lastCount = movies.length;
-                renderPosterWall(allEntries, posterWallToUrl, {
-                    container: posterWallBody,
-                    onEnterFolder: () => {},
+
+                const merged = new Map();
+                existingMovies.forEach((m) => merged.set(m.key, m));
+                movies.forEach((m) => merged.set(m.key, m));
+                const list = [...merged.values()].sort((a, b) =>
+                    String(a.title || '').localeCompare(String(b.title || ''), undefined, { numeric: true }));
+
+                renderPosterWall(list, posterWallToUrl, {
+                    container: posterWallBody, onEnterFolder: () => {},
                 });
+                // 状态条重新插到最上方
+                let st = document.getElementById('posterScanStatus');
+                if (!st) {
+                    st = document.createElement('div');
+                    st.className = 'poster-scan-status';
+                    st.id = 'posterScanStatus';
+                    posterWallBody.insertBefore(st, posterWallBody.firstChild);
+                }
                 updateStatus();
+
+                // ★ 实时落库（节流 1.5s）：扫描中途退出也不会丢失已扫内容
+                pwPersistProgress(list, rootPath);
             };
 
             while (queue.length) {
-                if (abortToken.aborted) return;
+                if (token.aborted) { pwFlushPersist(); return; }
                 if (visited > MAX_DIRS) break;
-
                 const batch = queue.splice(0, CONCURRENCY);
                 const results = await Promise.all(batch.map(async (job) => {
-                    currentScanPath = job.path;
                     visited += 1;
                     updateStatus();
-                    try {
-                        return { job, items: await listDir(job.path) };
-                    } catch {
-                        return { job, items: [] };
-                    }
+                    try { return { job, items: await listDir(job.path) }; }
+                    catch { return { job, items: [] }; }
                 }));
-
                 for (const { job, items } of results) {
                     for (const it of items) {
-                        if (!seen.has(it.href)) {
-                            seen.add(it.href);
-                            allEntries.push(it);
-                        }
+                        if (!seen.has(it.href)) { seen.add(it.href); allEntries.push(it); }
                         if (it.isDir && job.depth + 1 <= MAX_DEPTH) {
                             const sub = job.path.replace(/\/$/, '') + '/' + it.name + '/';
                             if (!seen.has('DIR:' + sub)) {
@@ -7126,172 +7447,228 @@
                         }
                     }
                 }
-                // 每扫完一批就尝试增量吐片（扫一个出一个）
                 emitIfChanged(false);
             }
 
-            if (abortToken.aborted) return;
+            if (token.aborted) { pwFlushPersist(); return; }
 
-            // 收尾：强制最终渲染 + 写缓存
             emitIfChanged(true);
             const { movies: finalMovies } = buildPosterWall(allEntries, posterWallToUrl);
-            if (finalMovies.length) {
-                savePosterCache(server.url, rootPath, finalMovies.map((m) => ({
-                    key: m.key,
-                    title: m.title,
-                    videos: m.videos.map((v) => ({ name: v.name, href: v.href, size: v.size })),
-                    poster: m.poster ? { name: m.poster.name, href: m.poster.href } : null,
-                    posterUrl: m.posterUrl,
-                    thumbs: m.thumbs,
-                    fanartUrl: m.fanart,
-                    nfo: m.nfo ? { name: m.nfo.name, href: m.nfo.href } : null,
-                    nfoUrl: m.nfoUrl,
-                    size: m.size,
-                })));
-            }
-            const el = statusEl();
-            if (el) {
-                el.innerHTML = finalMovies.length
-                    ? `<i class="fa-solid fa-circle-check"></i> 扫描完成 · ${finalMovies.length} 部影片`
+
+            // 增量并入该来源（同 rootPath 替换，其它保留）
+            const snap = pwMergeScan(posterWallSourceId, src, rootPath, finalMovies);
+            pwRenderStatusBar(snap);
+            pwRenderMovies(pwRestoreMovies(snap));
+
+            const st = statusEl();
+            if (st) {
+                st.innerHTML = finalMovies.length
+                    ? `<i class="fa-solid fa-circle-check"></i> 已扫描 ${finalMovies.length} 部（该来源共 ${snap.movies.length} 部）`
                     : '<i class="fa-solid fa-circle-info"></i> 未识别到影片';
                 setTimeout(() => { const e = statusEl(); if (e) e.remove(); }, 4000);
             }
         }
 
-        /// 打开文件夹选择器（只列目录）
-        async function openPosterWallFolderPicker() {
-            const server = posterWallBaseUrl();
-            if (!server) {
-                posterWallBody.innerHTML = '<div style="padding:24px;text-align:center;color:var(--muted);">'
-                    + '还没有保存 WebDAV 服务器<br><small>请先在「浏览」里连接一次服务器</small></div>';
-                posterWallNav.style.display = 'none';
-                return;
-            }
-            posterWallPickPath = '/';
-            await renderPickerLevel('/');
-        }
-
-        async function renderPickerLevel(path) {
-            posterWallPickPath = path;
-            posterWallNav.style.display = 'flex';
-            posterWallPathText.textContent = path;
-            posterWallBody.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);">'
-                + '<i class="fa-solid fa-spinner fa-spin"></i> 读取目录…</div>';
-            const server = posterWallBaseUrl();
-            try {
-                const resp = await fetch('/api/webdav/list', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        url: posterWallUrlFor(server.url, path),
-                        username: server.user || '',
-                        password: server.pass || '',
-                    }),
+        // ── 文件夹管理 / 备份 ──────────────────────────────
+        function pwShowFolderManager() {
+            const snap = pwLoadSource(posterWallSourceId);
+            const roots = snap ? (snap.roots || []) : [];
+            const mask = document.createElement('div');
+            mask.className = 'pl-modal-mask active';
+            mask.style.zIndex = '10070';
+            const rows = roots.length
+                ? roots.map((r) => `
+                    <div class="pw-root-row">
+                        <i class="fa-solid fa-folder"></i>
+                        <span class="pw-root-path" title="${r}">${r}</span>
+                        <button class="webdav-act-btn del" data-root="${encodeURIComponent(r)}" title="移除该文件夹的结果">
+                            <i class="fa-solid fa-trash-can"></i>
+                        </button>
+                    </div>`).join('')
+                : `<p class="pl-modal-desc" style="text-align:center;">还没有扫描过任何文件夹</p>`;
+            mask.innerHTML = `
+                <div class="pl-modal" style="max-width:600px;">
+                    <div class="modal-head">
+                        <h3><i class="fa-solid fa-folder"></i>&nbsp; 已扫描的文件夹</h3>
+                        <button class="modal-close-icon" data-close><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                    <p class="pl-modal-desc">移除某个文件夹只会删掉它扫出的影片，其它文件夹不受影响。</p>
+                    <div class="pw-root-list">${rows}</div>
+                </div>`;
+            mask.querySelector('[data-close]').addEventListener('click', () => mask.remove());
+            mask.addEventListener('click', (e) => { if (e.target === mask) mask.remove(); });
+            mask.querySelectorAll('[data-root]').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    const root = decodeURIComponent(btn.dataset.root);
+                    pwRemoveRoot(posterWallSourceId, root);
+                    mask.remove();
+                    const s2 = pwLoadSource(posterWallSourceId);
+                    pwRenderStatusBar(s2);
+                    if (s2 && (s2.movies || []).length) pwRenderMovies(pwRestoreMovies(s2));
+                    else pwShowEmptyGuide();
                 });
-                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-                const xmlText = await resp.text();
-                const baseObj = new URL(posterWallUrlFor(server.url, path));
-                const items = parseWebdavXml(xmlText, baseObj.origin);
-                const curNorm = baseObj.pathname.replace(/\/$/, '');
-                const folders = items.filter((it) => it.isDir && (() => {
-                    const norm = it.href.replace(/\/$/, '');
-                    return norm !== curNorm && norm !== curNorm.slice(baseObj.origin.length);
-                })());
-
-                posterWallBody.innerHTML = '';
-                const wrap = document.createElement('div');
-                wrap.className = 'webdav-file-list';
-                if (!folders.length) {
-                    wrap.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);">该目录没有子文件夹，可直接扫描当前目录</div>';
-                } else {
-                    folders.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-                    folders.forEach((f) => {
-                        const row = document.createElement('div');
-                        row.className = 'webdav-item is-dir';
-                        row.innerHTML = `<div class="webdav-item-icon"><i class="fa-solid fa-folder"></i></div>`
-                            + `<div class="webdav-item-name">${f.name}</div>`
-                            + `<div class="webdav-item-size"><i class="fa-solid fa-chevron-right"></i></div>`;
-                        row.addEventListener('click', () => {
-                            const next = path.replace(/\/$/, '') + '/' + f.name + '/';
-                            renderPickerLevel(next);
-                        });
-                        wrap.appendChild(row);
-                    });
-                }
-                posterWallBody.appendChild(wrap);
-
-                // 底部：扫描当前目录按钮
-                const bar = document.createElement('div');
-                bar.className = 'poster-scan-bar';
-                bar.innerHTML = `<button class="pl-modal-btn primary" id="posterScanHereBtn">`
-                    + `<i class="fa-solid fa-radar"></i>&nbsp; 扫描当前目录</button>`;
-                posterWallBody.appendChild(bar);
-                bar.querySelector('#posterScanHereBtn').addEventListener('click', () => {
-                    scanPosterWall(posterWallPickPath);
-                });
-            } catch (err) {
-                posterWallBody.innerHTML = `<div style="padding:20px;color:#ef4444;text-align:center;">`
-                    + `加载失败：${err.message}</div>`;
-            }
-        }
-
-        function renderPosterWallServers() {
-            if (!posterWallServerSelect) return;
-            const servers = getWebdavServers();
-            posterWallServerSelect.innerHTML = '';
-            if (!servers.length) {
-                const opt = document.createElement('option');
-                opt.value = '';
-                opt.textContent = '暂无可用的 WebDAV 服务器';
-                posterWallServerSelect.appendChild(opt);
-                posterWallServerUrl = '';
-                return;
-            }
-            servers.forEach((s) => {
-                const opt = document.createElement('option');
-                opt.value = s.url;
-                opt.textContent = s.name ? `${s.name} (${hostnameOfUrl(s.url)})` : s.url;
-                posterWallServerSelect.appendChild(opt);
             });
-            if (!servers.some((s) => s.url === posterWallServerUrl)) {
-                posterWallServerUrl = servers[0].url;
-            }
-            posterWallServerSelect.value = posterWallServerUrl;
+            document.body.appendChild(mask);
         }
 
+        function pwShowBackupMenu() {
+            const src = posterWallCurrentSource();
+            const snap = pwLoadSource(posterWallSourceId);
+            const count = snap ? (snap.movies || []).length : 0;
+            const mask = document.createElement('div');
+            mask.className = 'pl-modal-mask active';
+            mask.style.zIndex = '10070';
+            mask.innerHTML = `
+                <div class="pl-modal" style="max-width:560px;">
+                    <div class="modal-head">
+                        <h3><i class="fa-solid fa-cloud-arrow-up"></i>&nbsp; 扫描结果备份</h3>
+                        <button class="modal-close-icon" data-close><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                    <p class="pl-modal-desc">
+                        当前来源「<b>${src ? src.name : '—'}</b>」共 <b>${count}</b> 部影片。
+                        导出后可在其他设备/浏览器导入，避免重新扫描。
+                    </p>
+                    <div class="pl-modal-btns" style="flex-direction:column;gap:8px;">
+                        <button class="pl-modal-btn primary" data-export ${count ? '' : 'disabled'}>
+                            <i class="fa-solid fa-file-export"></i>&nbsp; 导出扫描结果 (.json)
+                        </button>
+                        <button class="pl-modal-btn" data-import>
+                            <i class="fa-solid fa-file-import"></i>&nbsp; 导入扫描结果 (.json)
+                        </button>
+                        <button class="pl-modal-btn danger-ghost" data-clear ${count ? '' : 'disabled'}>
+                            <i class="fa-solid fa-trash"></i>&nbsp; 清空当前来源结果
+                        </button>
+                    </div>
+                </div>`;
+            mask.querySelector('[data-close]').addEventListener('click', () => mask.remove());
+            mask.addEventListener('click', (e) => { if (e.target === mask) mask.remove(); });
+
+            mask.querySelector('[data-export]').addEventListener('click', () => {
+                const s = pwLoadSource(posterWallSourceId);
+                if (!s) return;
+                const blob = new Blob([JSON.stringify(s, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                const d = new Date();
+                const pad = (n) => String(n).padStart(2, '0');
+                a.download = `AetherVR-海报墙-${(src ? src.name : 'export')}-`
+                    + `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}`
+                    + `-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.json`;
+                a.href = url;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+                mask.remove();
+                showSpatialToast('✅ 扫描结果已导出');
+            });
+
+            mask.querySelector('[data-import]').addEventListener('click', () => {
+                mask.remove();
+                if (posterWallImportInput) posterWallImportInput.click();
+            });
+
+            mask.querySelector('[data-clear]').addEventListener('click', () => {
+                if (!confirm('确定清空当前来源的扫描结果吗？此操作不可撤销。')) return;
+                try { localStorage.removeItem(pwStoreKey(posterWallSourceId)); } catch {}
+                mask.remove();
+                pwRenderStatusBar(null);
+                pwShowEmptyGuide();
+            });
+
+            document.body.appendChild(mask);
+        }
+
+        if (posterWallImportInput) {
+            posterWallImportInput.addEventListener('change', (e) => {
+                const file = e.target.files && e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                    try {
+                        const snap = JSON.parse(evt.target.result);
+                        if (!snap || !snap.sourceId || !Array.isArray(snap.movies)) {
+                            throw new Error('不是有效的海报墙导出文件');
+                        }
+                        // 按 rootPath 合并进对应来源（不覆盖其它文件夹）
+                        const target = pwLoadSource(snap.sourceId) || {
+                            sourceId: snap.sourceId, kind: snap.kind, name: snap.name,
+                            roots: [], movies: [], updatedAt: Date.now(),
+                        };
+                        (snap.roots || []).forEach((root) => {
+                            target.roots = (target.roots || []).filter((r) => r !== root);
+                            target.roots.push(root);
+                            target.movies = (target.movies || []).filter((m) => m.rootPath !== root);
+                            target.movies.push(...(snap.movies || []).filter((m) => m.rootPath === root));
+                        });
+                        target.updatedAt = Date.now();
+                        pwSaveSource(target);
+
+                        // 若导入的就是当前来源，立刻刷新
+                        if (snap.sourceId === posterWallSourceId) {
+                            pwRenderStatusBar(target);
+                            pwRenderMovies(pwRestoreMovies(target));
+                        }
+                        pwRenderSourceSelect();
+                        showSpatialToast(`✅ 已导入 ${snap.movies.length} 部影片`);
+                    } catch (err) {
+                        alert('导入失败：' + err.message);
+                    }
+                };
+                reader.readAsText(file);
+                e.target.value = '';
+            });
+        }
+
+        // ── 入口与事件绑定 ─────────────────────────────────
         if (posterWallBtn) {
             posterWallBtn.addEventListener('click', () => {
                 posterWallMask.classList.add('active');
-                renderPosterWallServers();
-                const server = posterWallBaseUrl();
-                // 上次扫过的根目录 → 直接增量扫描，不必重新选
-                const lastRoot = server ? localStorage.getItem('aethervr-poster-root|' + server.url) : null;
-                if (lastRoot) {
-                    posterWallNav.style.display = 'flex';
-                    posterWallPathText.textContent = lastRoot;
-                    scanPosterWall(lastRoot);
+                pwRenderSourceSelect();
+                const snap = pwLoadSource(posterWallSourceId);
+                pwRenderStatusBar(snap);
+                if (snap && (snap.movies || []).length) {
+                    pwRenderMovies(pwRestoreMovies(snap));
                 } else {
-                    openPosterWallFolderPicker();
+                    pwShowEmptyGuide();
                 }
             });
         }
         if (posterWallClose) {
-            posterWallClose.addEventListener('click', () => posterWallMask.classList.remove('active'));
+            posterWallClose.addEventListener('click', () => {
+                if (posterScanAbort) posterScanAbort.aborted = true;
+                pwFlushPersist();   // 关闭前落库，避免丢进度
+                posterWallMask.classList.remove('active');
+            });
         }
         if (posterWallMask) {
             posterWallMask.addEventListener('click', (e) => {
-                if (e.target === posterWallMask) posterWallMask.classList.remove('active');
+                if (e.target === posterWallMask) {
+                    if (posterScanAbort) posterScanAbort.aborted = true;
+                    pwFlushPersist();
+                    posterWallMask.classList.remove('active');
+                }
             });
         }
         if (posterWallServerSelect) {
             posterWallServerSelect.addEventListener('change', () => {
-                posterWallServerUrl = posterWallServerSelect.value;
-                openPosterWallFolderPicker();
+                pwSwitchSource(posterWallServerSelect.value);
             });
         }
-        if (document.getElementById('posterWallRescanBtn')) {
-            document.getElementById('posterWallRescanBtn').addEventListener('click', () => {
-                openPosterWallFolderPicker();
+        const pwFolderBtn = document.getElementById('posterWallFilesBtn');
+        if (pwFolderBtn) pwFolderBtn.addEventListener('click', pwShowFolderManager);
+        const pwBackupBtn = document.getElementById('posterWallBackupBtn');
+        if (pwBackupBtn) pwBackupBtn.addEventListener('click', pwShowBackupMenu);
+        const pwScanHereBtn = document.getElementById('posterWallScanHereBtn');
+        if (pwScanHereBtn) {
+            pwScanHereBtn.addEventListener('click', () => {
+                // 若当前在引导页，先选文件夹；否则扫描当前浏览路径
+                const snap = pwLoadSource(posterWallSourceId);
+                if (snap && (snap.movies || []).length) {
+                    pwScan(posterWallPickPath || '/');
+                } else {
+                    pwOpenFolderPicker();
+                }
             });
         }
         if (posterWallUpBtn) {
@@ -7299,13 +7676,14 @@
                 if (posterWallPickPath === '/' || !posterWallPickPath) return;
                 const parts = posterWallPickPath.replace(/\/$/, '').split('/').filter(Boolean);
                 parts.pop();
-                const parent = '/' + (parts.length ? parts.join('/') + '/' : '');
-                renderPickerLevel(parent);
+                pwRenderPicker('/' + (parts.length ? parts.join('/') + '/' : ''));
             });
         }
 
         // Clean up object URL when page unloads
         window.addEventListener('beforeunload', () => {
+            // 扫描进度落库后再离开，避免中途退出丢结果
+            try { pwFlushPersist(); } catch {}
             releaseLocalObjectURL();
         });
     </script>
