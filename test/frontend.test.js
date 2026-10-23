@@ -214,6 +214,8 @@ test("cloud browser is embedded directly into the playlist panel", () => {
   assert.match(panel[0], /id="cloudBar"/);
   assert.match(panel[0], /id="cloudBrowserPathBar"/);
   assert.match(panel[0], /id="cloudBrowserFileList"/);
+  // 页签条上收藏夹旁有「云端」页签可直接切换到 WebDAV/SMB 浏览
+  assert.match(panel[0], /id="tabCloud"/);
 });
 
 test("WebDAV playback automatically resolves credentials to prevent 401 decode errors", () => {

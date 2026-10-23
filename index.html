@@ -1932,8 +1932,9 @@
                 <div class="playlist-head">
                     <button class="pl-tab-nav" id="tabScrollLeft" style="display:none" title="向左滚动页签"><i class="fa-solid fa-chevron-left"></i></button>
                     <div class="playlist-tabs" id="playlistTabs" style="display:none">
-                        <!-- 收藏夹固定在最左侧 -->
+                        <!-- 收藏夹固定在最左侧，云端（WebDAV/SMB）紧随其后 -->
                         <button class="pl-tab" id="tabFavs" title="收藏夹"><i class="fa-solid fa-star"></i><span class="pl-tab-name">收藏夹</span></button>
+                        <button class="pl-tab" id="tabCloud" title="WebDAV / SMB 云端文件"><i class="fa-solid fa-cloud"></i><span class="pl-tab-name">云端</span></button>
                         <span id="plTabList" style="display:contents"></span>
                     </div>
                     <button class="pl-tab-nav" id="tabScrollRight" style="display:none" title="向右滚动页签"><i class="fa-solid fa-chevron-right"></i></button>
@@ -3128,6 +3129,7 @@
 
         const playlistTabs = document.getElementById('playlistTabs');
         const tabFavs = document.getElementById('tabFavs');
+        const tabCloud = document.getElementById('tabCloud');
         const plTabList = document.getElementById('plTabList');
         const tabNewList = document.getElementById('tabNewList');
         const tabOpenList = document.getElementById('tabOpenList');
@@ -3374,7 +3376,7 @@
             plTabList.innerHTML = '';
             playlists.forEach((pl) => {
                 const b = document.createElement('button');
-                b.className = 'pl-tab' + (activeTab === 'playlist' && pl.id === activePlId ? ' active' : '');
+                b.className = 'pl-tab' + (activeTab === 'playlist' && pl.id === activePlId && !cloudMode ? ' active' : '');
                 b.title = pl.path || pl.name;
                 const n = document.createElement('span');
                 n.className = 'pl-tab-name';
@@ -3391,7 +3393,9 @@
                 b.addEventListener('click', () => switchTab('playlist', pl.id));
                 plTabList.appendChild(b);
             });
-            tabFavs.classList.toggle('active', activeTab === 'favs');
+            tabFavs.classList.toggle('active', activeTab === 'favs' && !cloudMode);
+            // 云端（WebDAV/SMB）页签：云端浏览模式时高亮
+            if (tabCloud) tabCloud.classList.toggle('active', !!cloudMode);
             if (typeof updateTabScrollBtns === 'function') updateTabScrollBtns();
         }
         function closePlaylistTab(id) {
@@ -3550,6 +3554,8 @@
             renderTabs();
         }
         tabFavs.addEventListener('click', () => switchTab('favs'));
+        // 云端页签：进入 WebDAV/SMB 文件浏览（嵌入本面板）
+        tabCloud.addEventListener('click', () => openCloudBrowser());
 
         // 页签溢出时：纵向滚轮转为横向滚动，且新建/打开按钮固定在滚动区外
         const playlistHeadActions = document.getElementById('playlistHeadActions');
@@ -6950,6 +6956,8 @@
             favTools.style.display = (!show && !isPl && isDesktopApp) ? '' : 'none';
             selectTools.style.display = 'none';
             playlistSummary.style.display = (!show && isPl) ? '' : 'none';
+            // 刷新页签高亮（云端页签在云端模式下点亮）
+            if (typeof renderTabs === 'function') renderTabs();
         }
 
         // 打开播放列表面板并进入云端浏览（连接成功后的列表直接嵌入播放列表）
