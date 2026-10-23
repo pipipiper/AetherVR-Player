@@ -25,6 +25,8 @@ contextBridge.exposeInMainWorld('vrDesktop', {
   // SMB（仅桌面端；浏览器无法直连 SMB 协议）
   smbListShares: (host, user, password) =>
     ipcRenderer.invoke('smb:listShares', { host, user, password }),
+  smbConnectShare: (host, share, user, password) =>
+    ipcRenderer.invoke('smb:connectShare', { host, share, user, password }),
   smbListDir: (dirPath) => ipcRenderer.invoke('smb:listDir', { path: dirPath }),
   platform: process.platform,
 });

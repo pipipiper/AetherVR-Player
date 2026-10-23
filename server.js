@@ -270,13 +270,13 @@ function transcodeFailureMessage(stderr) {
   return diagnostic || text.slice(-1000) || "FFmpeg 未返回错误详情";
 }
 
-function startTranscode(target, ownerIp, res, start = 0) {
+function startTranscode(target, ownerIp, res, start = 0, cred = null) {
   if (hlsSession) stopHlsSession(hlsSession);
   const id = crypto.randomBytes(12).toString("hex");
   const dir = path.join(HLS_ROOT, id);
   fs.mkdirSync(dir, { recursive: true });
 
-  const proxyInput = localProxyInput(target);
+  const proxyInput = localProxyInput(target, cred);
   const proc = spawn(FFMPEG, [
     "-hide_banner", "-loglevel", "info", "-nostdin",
     "-rw_timeout", FFMPEG_RW_TIMEOUT_US,
@@ -760,12 +760,18 @@ const requestHandler = async (req, res) => {
       }
       let target;
       let start = 0;
+      let transcodeCred = "";
       try {
         const body = await readJson(req);
         target = typeof body.url === "string" ? body.url.trim() : "";
         if (!target || target.length > 4096) throw new Error("Invalid video URL");
         const u = new URL(target);
         await resolveSafeTarget(u);
+        // 上游 Basic 认证凭据（用于转码 WebDAV/私有源视频）
+        transcodeCred = encodeUpstreamCred(
+          typeof body.username === "string" ? body.username : "",
+          typeof body.password === "string" ? body.password : ""
+        ) || (typeof body.cred === "string" ? body.cred.trim() : "");
         // 可选：从该秒数开始转码（前端快进重启）。范围钳制到 [0, 12h]。
         const startRaw = Number(body.start);
         if (Number.isFinite(startRaw) && startRaw > 0) {
@@ -778,7 +784,7 @@ const requestHandler = async (req, res) => {
       }
       sweepStaleEntries(transcodeStarts);
       transcodeStarts.set(ip, Date.now());
-      startTranscode(target, ip, res, start);
+      startTranscode(target, ip, res, start, transcodeCred);
       return;
     }
     if (urlPath === "/api/capabilities") {

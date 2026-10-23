@@ -295,122 +295,10 @@
         .sbs-options input[type="radio"] { cursor: pointer; accent-color: var(--yellow); }
 
         /* ── controls bar ────────────────────────────────────── */
-        /* 控制栏：进度条独占一行（加粗），按钮分列两侧（参考手机端布局） */
-        .controls {
-            background: var(--bg);
-            border-top: 2px solid var(--border);
-            padding: 8px 16px 10px;
-            display: flex; flex-direction: column; gap: 8px;
-            position: absolute; bottom: 0; left: 0; right: 0;
-            z-index: 30;
-        }
-        /* 第一行：时间 + 进度条 */
-        .controls-progress-row {
-            display: flex; align-items: center; gap: 12px; width: 100%;
-        }
-        /* 第二行：左侧工具 / 中间播放控制 / 右侧工具 */
-        .controls-main-row {
-            display: flex; align-items: center; gap: 14px; width: 100%;
-        }
-        .controls-side {
-            display: flex; align-items: center; gap: 10px; flex: 1;
-        }
-        .controls-side.right { justify-content: flex-end; }
-        .controls-center {
-            display: flex; align-items: center; gap: 12px; flex: none;
-        }
+        /* 基础重置（具体浮岛玻璃样式见下方空间计算 controls 区段） */
+        .controls { display: flex; }
+        .control-btn { border: none; outline: none; }
 
-        /* 主播放键与停止键的强调样式 */
-        .control-btn.is-primary {
-            background: var(--yellow); border-color: var(--yellow); color: #16233a;
-            width: 40px; height: 40px;
-        }
-        .control-btn.is-primary:hover { filter: brightness(1.08); }
-        .control-btn.is-stop { color: var(--red); border-color: rgba(239,68,68,.45); }
-        .control-btn.is-stop:hover { background: rgba(239,68,68,.12); border-color: var(--red); }
-        .control-btn.is-stop:disabled { opacity: .38; cursor: not-allowed; }
-
-        .control-btn {
-            background: transparent;
-            border: 2px solid var(--border);
-            color: var(--text);
-            font-size: 0.9em;
-            cursor: pointer;
-            padding: 0;
-            width: 34px; height: 34px;
-            display: flex; align-items: center; justify-content: center;
-            box-shadow: 2px 2px 0 var(--border);
-            transition: transform 0.1s, box-shadow 0.1s, background 0.1s, border-color 0.1s, color 0.1s;
-        }
-        .control-btn:hover {
-            background: var(--yellow); color: var(--bg);
-            border-color: var(--yellow);
-            box-shadow: 3px 3px 0 rgba(245,230,66,0.4);
-            transform: translate(-1px,-1px);
-        }
-        .control-btn:active {
-            transform: translate(1px,1px);
-            box-shadow: 1px 1px 0 var(--border);
-        }
-
-        /* ── progress bar ────────────────────────────────────── */
-        .progress-container {
-            flex: 1; min-width: 120px;
-            display: flex; align-items: center;
-        }
-
-        /* 进度条：细轨道 + 亮色填充 + 圆形拖点，悬停时整体提亮。
-           避免"粗黑边框"的笨重观感，改为极简现代风。 */
-        .progress-container { flex: 1; min-width: 120px; display: flex; align-items: center; }
-        .progress-bar {
-            width: 100%; height: 22px;          /* 外层留出足够的可点区域 */
-            display: flex; align-items: center;
-            cursor: pointer; position: relative;
-            background: transparent; border: none;
-        }
-        /* 轨道（细线） */
-        .progress-bar::before {
-            content: ''; position: absolute; left: 0; right: 0;
-            height: 5px; border-radius: 999px;
-            background: rgba(255, 255, 255, .16);
-            transition: height .14s ease;
-        }
-        .progress-bar:hover::before { height: 7px; }
-
-        .progress-fill {
-            position: absolute; left: 0;
-            height: 5px; border-radius: 999px;
-            background: linear-gradient(90deg, var(--yellow), #fff08a);
-            width: 0%;
-            transition: width .08s linear, height .14s ease;
-            box-shadow: 0 0 10px rgba(245, 230, 66, .35);
-            z-index: 1;
-            pointer-events: none;
-        }
-        .progress-bar:hover .progress-fill { height: 7px; }
-
-        /* 拖点：仅悬停时出现，提示可拖动 */
-        .progress-bar::after {
-            content: ''; position: absolute;
-            width: 13px; height: 13px; border-radius: 50%;
-            background: #fff; border: 2px solid var(--yellow);
-            box-shadow: 0 2px 8px rgba(0, 0, 0, .35);
-            left: var(--seek-pct, 0%); transform: translateX(-50%) scale(0);
-            transition: transform .14s ease, left .08s linear;
-            z-index: 2; pointer-events: none;
-        }
-        .progress-bar:hover::after { transform: translateX(-50%) scale(1); }
-
-        /* ── time display ────────────────────────────────────── */
-        .time-display {
-            color: var(--muted);
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.76em;
-            letter-spacing: 0.04em;
-            min-width: 104px; text-align: center;
-            flex: none;
-            white-space: nowrap;
-        }
 
         /* ── volume ──────────────────────────────────────────── */
         .volume-control { display: flex; align-items: center; gap: 8px; color: var(--muted); }
@@ -874,21 +762,120 @@
         .video-container { padding-bottom: 0; }
         .controls {
             height: auto;
+            box-sizing: border-box;
+            position: absolute; bottom: 0; left: 0; right: 0;
             margin: 0 auto calc(16px + env(safe-area-inset-bottom));
-            width: fit-content; max-width: calc(100vw - 32px);
-            padding: 8px 14px;
-            background: rgba(15, 20, 30, 0.75);
-            backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 999px;
-            box-shadow: 0 12px 36px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.18);
-            gap: 10px;
+            width: min(880px, calc(100vw - 48px));
+            padding: 12px 28px 14px;
+            background: rgba(14, 18, 28, 0.86);
+            backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            border-radius: 20px;
+            box-shadow: 0 16px 40px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.15);
+            display: flex; flex-direction: column; gap: 10px;
             z-index: 30;
         }
+
+        /* 第一行：进度条 + 时间（左右留足呼吸边距，彻底解决顶边溢出感） */
+        .controls-progress-row {
+            display: flex; align-items: center; gap: 16px; width: 100%;
+            box-sizing: border-box; padding: 2px 2px;
+        }
+        .progress-container {
+            flex: 1; min-width: 140px; height: 26px;
+            display: flex; align-items: center;
+            cursor: pointer; touch-action: none; position: relative;
+        }
+        .progress-bar {
+            width: 100%; height: 10px;
+            background: rgba(255, 255, 255, 0.16);
+            border-radius: 999px;
+            position: relative;
+            cursor: pointer;
+            transition: height 0.15s cubic-bezier(0.16, 1, 0.3, 1), background 0.15s ease;
+        }
+        .progress-container:hover .progress-bar,
+        .progress-bar.dragging {
+            height: 14px;
+            background: rgba(255, 255, 255, 0.24);
+        }
+        .progress-fill {
+            position: absolute; left: 0; top: 0; bottom: 0;
+            border-radius: 999px;
+            background: linear-gradient(90deg, #38bdf8, #818cf8);
+            width: 0%;
+            pointer-events: none;
+            box-shadow: 0 0 10px rgba(56, 189, 248, 0.5);
+            transition: width 0.06s linear;
+        }
+        /* 滑块拖拽球 */
+        .progress-bar::after {
+            content: ''; position: absolute;
+            top: 50%;
+            width: 14px; height: 14px; border-radius: 50%;
+            background: #ffffff;
+            border: 2px solid #38bdf8;
+            box-shadow: 0 0 10px rgba(56, 189, 248, 0.8), 0 2px 6px rgba(0,0,0,0.4);
+            left: var(--seek-pct, 0%);
+            transform: translate(-50%, -50%) scale(0.65);
+            transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+            z-index: 5; pointer-events: none;
+        }
+        .progress-container:hover .progress-bar::after,
+        .progress-bar.dragging::after {
+            transform: translate(-50%, -50%) scale(1.15);
+        }
+
+        .time-display {
+            color: #cbd5e1;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12.5px;
+            font-weight: 500;
+            letter-spacing: 0.02em;
+            min-width: 96px;
+            text-align: right;
+            flex: none;
+            white-space: nowrap;
+            user-select: none;
+        }
+
+        /* 第二行：左侧工具 / 中间播放控制 / 右侧工具 */
+        .controls-main-row {
+            display: flex; align-items: center; justify-content: space-between; gap: 14px; width: 100%;
+            box-sizing: border-box;
+        }
+        .controls-side {
+            display: flex; align-items: center; gap: 8px; flex: 1;
+        }
+        .controls-side.right { justify-content: flex-end; }
+        .controls-center {
+            display: flex; align-items: center; gap: 10px; flex: none;
+        }
+
+        /* 按钮与音量倍速控件 */
+        .volume-control { display: flex; align-items: center; gap: 8px; color: #94a3b8; }
+        .volume-control i { font-size: 13px; }
+        .volume-slider {
+            width: 70px; height: 4px; accent-color: #38bdf8; cursor: pointer;
+            border-radius: 999px; background: rgba(255,255,255,0.2);
+        }
+        .speed-control { display: flex; align-items: center; gap: 6px; color: #94a3b8; }
+        .speed-control i { font-size: 12px; }
+        .speed-select {
+            background: rgba(255,255,255,0.08);
+            color: #e2e8f0; border: 1px solid rgba(255,255,255,0.14);
+            border-radius: 8px; padding: 3px 8px; font-size: 12px;
+            cursor: pointer; outline: none;
+        }
+        .speed-select:hover { background: rgba(255,255,255,0.15); border-color: rgba(255,255,255,0.28); }
+        .speed-select option { background: #0f172a; color: #e2e8f0; }
+
         .control-btn {
-            width: 38px; height: 38px; border: 1px solid rgba(255,255,255,0.12); border-radius: 50%;
+            width: 36px; height: 36px; border: 1px solid rgba(255,255,255,0.12); border-radius: 50%;
             background: rgba(255, 255, 255, 0.08); color: #f1f5f9; box-shadow: none; font-size: 13px;
             display: inline-flex; align-items: center; justify-content: center;
             transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+            cursor: pointer;
         }
         .control-btn:hover {
             background: rgba(255,255,255,0.2); color: #fff;
@@ -896,17 +883,28 @@
         }
         .control-btn:active { transform: scale(0.95); }
         .control-btn.active { background: rgba(6, 182, 212, 0.4); color: #38bdf8; border-color: #38bdf8; }
-        
-        #playPauseBtn {
+
+        #playPauseBtn, .control-btn.is-primary {
             width: 44px; height: 44px;
-            background: linear-gradient(135deg, rgba(6, 182, 212, 0.9), rgba(37, 99, 235, 0.9));
-            color: #fff; font-size: 16px; border: 1px solid rgba(255,255,255,0.3);
-            box-shadow: 0 4px 15px rgba(6, 182, 212, 0.4);
+            background: linear-gradient(135deg, rgba(6, 182, 212, 0.95), rgba(37, 99, 235, 0.95));
+            color: #fff; font-size: 16px; border: 1px solid rgba(255,255,255,0.35);
+            box-shadow: 0 4px 16px rgba(6, 182, 212, 0.45);
         }
-        #playPauseBtn:hover {
+        #playPauseBtn:hover, .control-btn.is-primary:hover {
             background: linear-gradient(135deg, rgba(6, 182, 212, 1), rgba(37, 99, 235, 1));
-            transform: scale(1.06);
-            box-shadow: 0 6px 20px rgba(6, 182, 212, 0.6);
+            transform: scale(1.07);
+            box-shadow: 0 6px 22px rgba(6, 182, 212, 0.65);
+        }
+        #stopBtn, .control-btn.is-stop {
+            width: 36px; height: 36px;
+            color: #ff6b6b; border: 1px solid rgba(239, 68, 68, 0.35);
+            background: rgba(239, 68, 68, 0.12);
+        }
+        #stopBtn:hover, .control-btn.is-stop:hover {
+            background: rgba(239, 68, 68, 0.26); border-color: #ef4444; color: #fff;
+        }
+        #stopBtn:disabled, .control-btn.is-stop:disabled {
+            opacity: 0.35; cursor: default;
         }
 
         /* 空间侧边栏浮动胶囊（左右两列） */
@@ -1537,6 +1535,60 @@
         .pl-tab-nav:hover { color: #fff; background: rgba(255,255,255,.10); }
         .pl-tab-nav:disabled { color: rgba(154,163,178,.35); cursor: default; background: none; }
 
+        /* ── 云端/网络文件浏览器面板（黑底右侧展示，99% 参考播放列表样式） ── */
+        .cloud-browser-panel {
+            position: fixed; top: 70px; right: 14px; bottom: 84px; z-index: 28;
+            width: 360px; max-width: 86vw;
+            display: none; flex-direction: column;
+            background: rgba(18, 22, 32, 0.94);
+            backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 16px;
+            color: #e8ecf3; overflow: hidden;
+            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.12);
+        }
+        .cloud-browser-panel.active { display: flex; }
+        .cb-head-title {
+            display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0;
+        }
+        .cb-source-select {
+            background: rgba(255, 255, 255, 0.08); color: #fff;
+            border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 6px;
+            padding: 3px 6px; font-size: 12px; font-weight: 600;
+            outline: none; max-width: 170px; cursor: pointer;
+        }
+        .cb-source-select option { background: #121620; color: #fff; }
+        .cb-path-bar {
+            padding: 6px 12px; font-size: 11px; color: #94a3b8;
+            background: rgba(0, 0, 0, 0.25); border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            display: flex; align-items: center; gap: 6px; user-select: text;
+        }
+        .cb-path-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .cb-items {
+            list-style: none; margin: 0; padding: 6px; overflow-y: auto; flex: 1;
+        }
+        .cb-item {
+            display: flex; align-items: center; gap: 8px;
+            padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 12.5px;
+            color: #e2e8f0; transition: background .12s ease;
+        }
+        .cb-item:hover { background: rgba(255, 255, 255, 0.08); }
+        .cb-item.is-dir .cb-item-icon { color: #f59e0b; }
+        .cb-item.is-video .cb-item-icon { color: #38bdf8; }
+        .cb-item-icon { width: 18px; flex: none; text-align: center; font-size: 12px; }
+        .cb-item-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .cb-item-size {
+            flex: none; font-size: 10px; padding: 2px 6px; border-radius: 6px;
+            background: rgba(255, 255, 255, 0.08); color: #94a3b8;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .cb-item-actions { display: none; gap: 4px; flex: none; }
+        .cb-item:hover .cb-item-actions { display: flex; }
+        .cb-empty {
+            padding: 40px 16px; text-align: center; color: #94a3b8; font-size: 13px;
+        }
+        .cb-empty i { font-size: 32px; opacity: 0.35; margin-bottom: 10px; display: block; }
+
         /* ── 条目位置标记（起播跳转点）──────────────────── */
         .pl-pos {
             flex: none; font-size: 10px; padding: 2px 6px; border-radius: 6px;
@@ -1991,41 +2043,80 @@
                     </div>
                 </div>
             </div>
-            <!-- WebDAV 挂载与文件浏览弹窗 -->
-            <div class="pl-modal-mask" id="webdavModalMask">
-                <div class="pl-modal pl-modal-lg">
-                    <div class="modal-head">
-                        <h3><i class="fa-solid fa-server"></i>&nbsp; WebDAV 挂载与浏览</h3>
-                        <button class="modal-close-icon" id="webdavClose"><i class="fa-solid fa-xmark"></i></button>
+            <!-- 统一的网络/云端文件浏览器面板（黑底右侧展示，99% 参考播放列表样式） -->
+            <div class="playlist-panel cloud-browser-panel" id="cloudBrowserPanel">
+                <div class="playlist-head">
+                    <div class="cb-head-title">
+                        <i class="fa-solid fa-folder-tree" style="color:var(--yellow); font-size:13px;"></i>
+                        <select id="cloudSourceSelect" class="cb-source-select" title="切换网络/云端文件源"></select>
                     </div>
-                    <p class="pl-modal-desc" id="webdavDesc">连接局域网 NAS 或云端 WebDAV，支持直接浏览并一键播放 VR 视频</p>
-                    <!-- 最近连接（存 localStorage，随跨端备份导出） -->
-                    <div class="webdav-recents" id="webdavRecents"></div>
-                    <div class="webdav-form" id="webdavForm">
+                    <div class="playlist-head-actions">
+                        <button class="pl-tab-nav" id="cloudBrowserUpBtn" title="返回上级目录"><i class="fa-solid fa-arrow-up"></i></button>
+                        <button class="pl-tab-nav" id="cloudBrowserRefreshBtn" title="刷新目录"><i class="fa-solid fa-rotate-right"></i></button>
+                        <button class="pl-tab-nav" id="cloudBrowserAddBtn" title="连接新服务器 (WebDAV / SMB)"><i class="fa-solid fa-plus"></i></button>
+                        <button class="playlist-close" id="cloudBrowserClose" title="关闭"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                </div>
+                <!-- 目录路径展示栏 -->
+                <div class="cb-path-bar" id="cloudBrowserPathBar" title="当前路径">
+                    <i class="fa-solid fa-folder"></i>
+                    <span class="cb-path-text" id="cloudBrowserPathText">/</span>
+                </div>
+                <!-- 列表项容器（黑底右侧展示，99% 参考播放列表项） -->
+                <div class="cb-items" id="cloudBrowserFileList"></div>
+            </div>
+
+            <!-- 连接/添加新文件源弹窗（仅配置时弹出，连接成功后自动关闭并在右侧展示） -->
+            <div class="pl-modal-mask" id="connectSourceModalMask">
+                <div class="pl-modal">
+                    <div class="modal-head">
+                        <h3><i class="fa-solid fa-network-wired"></i>&nbsp; 连接文件源</h3>
+                        <button class="modal-close-icon" id="connectSourceClose"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                    <p class="pl-modal-desc">连接局域网 NAS、SMB 共享或 WebDAV 服务器，连接后在右侧直接浏览与播放</p>
+                    
+                    <!-- 类型切换页签：WebDAV / SMB -->
+                    <div class="cb-type-tabs" style="display:flex; gap:8px; margin-bottom:12px;">
+                        <button class="pl-modal-btn primary cb-type-btn" id="tabTypeWebdav" style="flex:1; justify-content:center;">WebDAV</button>
+                        <button class="pl-modal-btn cb-type-btn" id="tabTypeSmb" style="flex:1; justify-content:center;">SMB 共享</button>
+                    </div>
+
+                    <!-- WebDAV 表单 -->
+                    <div id="connFormWebdav">
                         <div class="webdav-row">
-                            <input type="text" id="webdavName" placeholder="连接名称（选填，例：家里 NAS）" spellcheck="false" autocomplete="off">
+                            <input type="text" id="webdavName" placeholder="连接名称（选填，例：家里 115）" spellcheck="false" autocomplete="off">
                         </div>
                         <div class="webdav-row">
-                            <input type="text" id="webdavUrl" placeholder="服务器地址（例：http://192.168.1.100:5005/webdav）" spellcheck="false">
+                            <input type="text" id="webdavUrl" placeholder="服务器地址（例：https://nas.local:5006/dav）" spellcheck="false">
                         </div>
                         <div class="webdav-row webdav-row-2">
                             <input type="text" id="webdavUser" placeholder="用户名（选填）" spellcheck="false">
                             <input type="password" id="webdavPass" placeholder="密码（选填）">
                         </div>
-                        <div class="pl-modal-btns" style="margin-bottom: 10px;">
-                            <button class="pl-modal-btn primary" id="webdavConnectBtn"><i class="fa-solid fa-plug"></i>&nbsp; 连接并读取</button>
+                    </div>
+
+                    <!-- SMB 表单 -->
+                    <div id="connFormSmb" style="display:none">
+                        <div class="webdav-row">
+                            <input type="text" id="smbName" placeholder="连接名称（选填，例：群晖影视）" spellcheck="false" autocomplete="off">
+                        </div>
+                        <div class="webdav-row webdav-row-2">
+                            <input type="text" id="smbHost" placeholder="主机 / IP（例：192.168.1.100）" spellcheck="false">
+                            <input type="text" id="smbShare" placeholder="共享名（例：video 或 media）" spellcheck="false">
+                        </div>
+                        <div class="webdav-row webdav-row-2">
+                            <input type="text" id="smbUser" placeholder="用户名（选填）" spellcheck="false">
+                            <input type="password" id="smbPass" placeholder="密码（选填）">
                         </div>
                     </div>
-                    <!-- 目录面包屑导航（连接成功后表单收起，这里提供重新连接入口） -->
-                    <div class="webdav-nav" id="webdavNav" style="display:none">
-                        <button class="pl-modal-btn" id="webdavUpBtn"><i class="fa-solid fa-arrow-up"></i>&nbsp; 上级目录</button>
-                        <span class="webdav-path-text" id="webdavPathText">/</span>
-                        <button class="pl-modal-btn" id="webdavSwitchBtn" title="断开并重新选择服务器">
-                            <i class="fa-solid fa-right-left"></i>&nbsp; 换服务器
-                        </button>
+
+                    <!-- 最近连接记录 -->
+                    <div class="webdav-recents" id="webdavRecents" style="margin-top:10px; max-height:120px; overflow-y:auto;"></div>
+
+                    <div class="pl-modal-btns" style="margin-top: 14px;">
+                        <button class="pl-modal-btn" id="connCancelBtn">取消</button>
+                        <button class="pl-modal-btn primary" id="connSubmitBtn"><i class="fa-solid fa-plug"></i>&nbsp; 连接并读取</button>
                     </div>
-                    <!-- 文件列表容器 -->
-                    <div class="webdav-file-list" id="webdavFileList"></div>
                 </div>
             </div>
 
@@ -4528,13 +4619,47 @@
             }
         });
 
+        // ── WebDAV 凭据自动匹配（确保播放 / 探测 / 转码全部带上合法 Basic 认证）──
+        function findMatchingWebdavAuth(rawUrl) {
+            if (!rawUrl) return null;
+            if (activeUpstreamAuth && (activeUpstreamAuth.username || activeUpstreamAuth.password)) {
+                return activeUpstreamAuth;
+            }
+            try {
+                const u = new URL(rawUrl, location.href);
+                const servers = (typeof getWebdavServers === 'function') ? getWebdavServers() : [];
+                for (const s of servers) {
+                    if (!s || !s.url) continue;
+                    try {
+                        const su = new URL(s.url, location.href);
+                        if (su.origin === u.origin) {
+                            const suPath = su.pathname.replace(/\/+$/, '');
+                            if (!suPath || u.pathname.startsWith(suPath)) {
+                                if (s.user || s.pass) {
+                                    return { username: s.user || '', password: s.pass || '' };
+                                }
+                            }
+                        }
+                    } catch (e) {}
+                }
+            } catch (e) {}
+            return null;
+        }
+
         // Network playback: route cross-origin URLs through the local proxy
         function toPlayableURL(url) {
             try {
                 const u = new URL(url, location.href);
                 if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
-                if (u.origin === location.origin) return u.href;
-                return backendUrl('proxy?url=' + encodeURIComponent(u.href));
+                if (u.origin === location.origin && !u.pathname.startsWith('/proxy')) return u.href;
+                let target = 'proxy?url=' + encodeURIComponent(u.href);
+                const auth = findMatchingWebdavAuth(u.href);
+                if (auth && (auth.username || auth.password)) {
+                    const rawCred = (auth.username || '') + ':' + (auth.password || '');
+                    const cred = btoa(unescape(encodeURIComponent(rawCred)));
+                    target += '&cred=' + encodeURIComponent(cred);
+                }
+                return backendUrl(target);
             } catch (e) { return null; }
         }
 
@@ -5153,10 +5278,16 @@
             transcodeBtn.disabled = true;
             transcodeBtn.textContent = '正在启动转码（8K 实时转码约需十几秒）…';
             try {
+                const transcodeAuth = findMatchingWebdavAuth(remoteUrl);
+                const payload = { url: remoteUrl };
+                if (transcodeAuth && (transcodeAuth.username || transcodeAuth.password)) {
+                    payload.username = transcodeAuth.username || '';
+                    payload.password = transcodeAuth.password || '';
+                }
                 const resp = await fetch(backendUrl('transcode'), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url: remoteUrl })
+                    body: JSON.stringify(payload)
                 });
                 const data = await resp.json();
                 if (!resp.ok || !data.playlist) {
@@ -5358,11 +5489,19 @@
             transcodeRestarting = true;
             ignoreMediaError = true;
             showLoadSpin('正在跳转到 ' + formatTime(t) + '，转码加载中…');
-            const doFetch = () => fetch(backendUrl('transcode'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url: transcodeSrcUrl, start: t })
-            });
+            const doFetch = () => {
+                const transcodeAuth = findMatchingWebdavAuth(transcodeSrcUrl);
+                const payload = { url: transcodeSrcUrl, start: t };
+                if (transcodeAuth && (transcodeAuth.username || transcodeAuth.password)) {
+                    payload.username = transcodeAuth.username || '';
+                    payload.password = transcodeAuth.password || '';
+                }
+                return fetch(backendUrl('transcode'), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+            };
             try {
                 let resp = await doFetch();
                 if (resp.status === 429 && !isRetry) {
@@ -6611,32 +6750,67 @@
             }
         }
 
-        // ── WebDAV 挂载与目录浏览 ──
+        // ── WebDAV & SMB 统一右侧文件浏览器（黑底右侧展示，99% 参考播放列表） ──
         const webdavBtn = document.getElementById('webdavBtn');
-        const webdavModalMask = document.getElementById('webdavModalMask');
-        const webdavClose = document.getElementById('webdavClose');
+        const connectSourceModalMask = document.getElementById('connectSourceModalMask');
+        const connectSourceClose = document.getElementById('connectSourceClose');
+        const connCancelBtn = document.getElementById('connCancelBtn');
+        const connSubmitBtn = document.getElementById('connSubmitBtn');
+        const tabTypeWebdav = document.getElementById('tabTypeWebdav');
+        const tabTypeSmb = document.getElementById('tabTypeSmb');
+        const connFormWebdav = document.getElementById('connFormWebdav');
+        const connFormSmb = document.getElementById('connFormSmb');
+
         const webdavNameInput = document.getElementById('webdavName');
         const webdavUrlInput = document.getElementById('webdavUrl');
         const webdavUserInput = document.getElementById('webdavUser');
         const webdavPassInput = document.getElementById('webdavPass');
-        const webdavConnectBtn = document.getElementById('webdavConnectBtn');
-        const webdavNav = document.getElementById('webdavNav');
-        const webdavUpBtn = document.getElementById('webdavUpBtn');
-        const webdavPathText = document.getElementById('webdavPathText');
-        const webdavFileList = document.getElementById('webdavFileList');
+        const smbNameInput = document.getElementById('smbName');
+        const smbHostInput = document.getElementById('smbHost');
+        const smbShareInput = document.getElementById('smbShare');
+        const smbUserInput = document.getElementById('smbUser');
+        const smbPassInput = document.getElementById('smbPass');
         const webdavRecentsEl = document.getElementById('webdavRecents');
 
-        // 连接记录（参考 iOS ServerHistory）：存 localStorage，随跨端备份导出
+        // 右侧浮动抽屉文件浏览器
+        const cloudBrowserPanel = document.getElementById('cloudBrowserPanel');
+        const cloudSourceSelect = document.getElementById('cloudSourceSelect');
+        const cloudBrowserUpBtn = document.getElementById('cloudBrowserUpBtn');
+        const cloudBrowserRefreshBtn = document.getElementById('cloudBrowserRefreshBtn');
+        const cloudBrowserAddBtn = document.getElementById('cloudBrowserAddBtn');
+        const cloudBrowserClose = document.getElementById('cloudBrowserClose');
+        const cloudBrowserPathText = document.getElementById('cloudBrowserPathText');
+        const cloudBrowserFileList = document.getElementById('cloudBrowserFileList');
+
+        // 向后兼容旧引用，避免任何潜在 null 报错
+        const webdavModalMask = connectSourceModalMask;
+        const webdavClose = connectSourceClose;
+        const webdavConnectBtn = connSubmitBtn;
+        const webdavNav = { style: {} };
+        const webdavUpBtn = cloudBrowserUpBtn;
+        const webdavPathText = cloudBrowserPathText;
+        const webdavFileList = cloudBrowserFileList;
+
+        // 存储键
         const WEBDAV_CFG_KEY = 'aethervr-webdav-cfg';
         const WEBDAV_SERVERS_KEY = 'aethervr-webdav-servers';
+        const SMB_SERVERS_KEY = 'aethervr-smb-servers';
+
+        let currentConnType = 'webdav'; // 'webdav' | 'smb'
+        let currentCloudSource = null;   // { kind: 'webdav'|'smb', id, name, url/host, ... }
+        let currentWebdavPath = '/';
+        let currentSmbPath = '/';
+        let currentSmbMountRoot = '';    // 本地挂载根或 UNC 根
+        let webdavLastItems = null;
+        let webdavLastBase = null;
+
         function getWebdavServers() {
             try { return JSON.parse(localStorage.getItem(WEBDAV_SERVERS_KEY)) || []; }
             catch { return []; }
         }
         function saveWebdavServers(list) {
-            try { localStorage.setItem(WEBDAV_SERVERS_KEY, JSON.stringify(list)); } catch { /* 忽略 */ }
+            try { localStorage.setItem(WEBDAV_SERVERS_KEY, JSON.stringify(list)); } catch {}
         }
-        // 保存/更新一条连接记录：以 url 为主键去重，最近使用排最前，最多 20 条
         function rememberWebdavServer({ name, url, user, pass }) {
             if (!url) return;
             let list = getWebdavServers();
@@ -6644,7 +6818,7 @@
             const rec = idx >= 0 ? list[idx] : { id: 'webdav-' + Date.now().toString(36) };
             rec.url = url;
             rec.user = user || '';
-            if (pass) rec.pass = pass;          // 留空不覆盖已存密码
+            if (pass) rec.pass = pass;
             if (name) rec.name = name;
             rec.lastUsedAt = Date.now();
             if (idx >= 0) list.splice(idx, 1);
@@ -6652,70 +6826,39 @@
             if (list.length > 20) list = list.slice(0, 20);
             saveWebdavServers(list);
             renderWebdavRecents();
+            renderCloudSourceSelect();
         }
-        function renderWebdavRecents() {
-            if (!webdavRecentsEl) return;
-            const list = getWebdavServers();
-            webdavRecentsEl.innerHTML = '';
-            list.forEach((s) => {
-                const el = document.createElement('div');
-                el.className = 'webdav-recent-item';
-                el.innerHTML = `
-                    <div class="webdav-recent-icon"><i class="fa-solid fa-server"></i></div>
-                    <div class="webdav-recent-main">
-                        <div class="webdav-recent-name"></div>
-                        <div class="webdav-recent-url"></div>
-                    </div>
-                    <button class="webdav-recent-del" title="删除该连接记录"><i class="fa-solid fa-trash-can"></i></button>
-                    <button class="webdav-recent-edit" title="编辑连接（修改名称、地址、账号密码）"><i class="fa-solid fa-pencil"></i></button>
-                `;
-                el.querySelector('.webdav-recent-name').textContent = s.name || hostnameOfUrl(s.url);
-                el.querySelector('.webdav-recent-url').textContent = s.url + (s.user ? '（' + s.user + '）' : '');
-                el.addEventListener('click', () => {
-                    if (webdavNameInput) webdavNameInput.value = s.name || '';
-                    if (webdavUrlInput) webdavUrlInput.value = s.url;
-                    if (webdavUserInput) webdavUserInput.value = s.user || '';
-                    if (webdavPassInput) webdavPassInput.value = s.pass || '';
-                    fetchWebdavDirectory('/');
-                });
-                el.querySelector('.webdav-recent-del').addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    saveWebdavServers(getWebdavServers().filter((x) => x.url !== s.url));
-                    renderWebdavRecents();
-                });
-                el.querySelector('.webdav-recent-edit').addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const newUrl = prompt(`修改「${s.name || s.url}」的 WebDAV 服务器地址：`, s.url);
-                    if (!newUrl || newUrl.trim() === '') return;
-                    const cleanUrl = newUrl.trim();
-                    const newName = prompt(`修改连接别名（选填）：`, s.name || '');
-                    const servers = getWebdavServers();
-                    const target = servers.find((x) => x.id === s.id || x.url === s.url);
-                    if (target) {
-                        target.url = cleanUrl;
-                        if (newName !== null) target.name = newName.trim();
-                        saveWebdavServers(servers);
-                        if (webdavUrlInput && webdavUrlInput.value === s.url) {
-                            webdavUrlInput.value = cleanUrl;
-                            if (webdavNameInput) webdavNameInput.value = target.name || '';
-                        }
-                        renderWebdavRecents();
-                        showSpatialToast('✅ 连接记录已更新');
-                    }
-                });
-                webdavRecentsEl.appendChild(el);
-            });
+
+        function getSmbServers() {
+            try { return JSON.parse(localStorage.getItem(SMB_SERVERS_KEY)) || []; }
+            catch { return []; }
         }
+        function saveSmbServers(list) {
+            try { localStorage.setItem(SMB_SERVERS_KEY, JSON.stringify(list)); } catch {}
+        }
+        function rememberSmbServer({ name, host, share, user, pass, port = 445 }) {
+            if (!host) return;
+            let list = getSmbServers();
+            const cleanShare = (share || '').replace(/^[\\/]+|[\\/]+$/g, '');
+            const idx = list.findIndex((s) => s.host === host && s.share === cleanShare);
+            const rec = idx >= 0 ? list[idx] : { id: 'smb-' + Date.now().toString(36) };
+            rec.host = host;
+            rec.share = cleanShare;
+            rec.user = user || '';
+            if (pass) rec.pass = pass;
+            if (name) rec.name = name;
+            rec.port = port;
+            rec.lastUsedAt = Date.now();
+            if (idx >= 0) list.splice(idx, 1);
+            list.unshift(rec);
+            if (list.length > 20) list = list.slice(0, 20);
+            saveSmbServers(list);
+            renderCloudSourceSelect();
+        }
+
         function hostnameOfUrl(u) {
             try { return new URL(u).hostname; } catch { return u; }
         }
-
-        let currentWebdavPath = '/';
-        /// 海报墙视图开关（目录浏览 / 海报墙 两种模式，用户偏好记忆）
-        let webdavPosterMode = localStorage.getItem('aethervr-webdav-poster-mode') === '1';
-        /// 当前目录的原始条目与基准 URL（供视图切换时快速重绘，不重复请求网络）
-        let webdavLastItems = null;
-        let webdavLastBase = null;
 
         function loadSavedWebdavConfig() {
             try {
@@ -6729,37 +6872,205 @@
         }
         loadSavedWebdavConfig();
 
-        if (webdavBtn) {
-            webdavBtn.addEventListener('click', () => {
-                renderWebdavRecents();
-                // 未连接任何目录时展示表单；已连接过则保持收起
-                const connected = webdavFileList && webdavFileList.children.length > 0;
-                setWebdavFormVisible(!connected);
-                webdavModalMask.classList.add('active');
-            });
-        }
-        if (webdavClose) {
-            webdavClose.addEventListener('click', () => {
-                webdavModalMask.classList.remove('active');
-            });
-        }
-        if (webdavModalMask) {
-            webdavModalMask.addEventListener('click', (e) => {
-                if (e.target === webdavModalMask) webdavModalMask.classList.remove('active');
-            });
-        }
-        const webdavSwitchBtn = document.getElementById('webdavSwitchBtn');
-        if (webdavSwitchBtn) {
-            webdavSwitchBtn.addEventListener('click', () => {
-                setWebdavFormVisible(true);
-                renderWebdavRecents();
-                // 清空目录视图，回到"未连接"状态
-                if (webdavFileList) webdavFileList.innerHTML = '';
-                if (webdavNav) webdavNav.style.display = 'none';
-                currentWebdavPath = '/';
+        function renderWebdavRecents() {
+            if (!webdavRecentsEl) return;
+            const list = getWebdavServers();
+            webdavRecentsEl.innerHTML = '';
+            list.forEach((s) => {
+                const el = document.createElement('div');
+                el.className = 'webdav-recent-item';
+                el.innerHTML = `
+                    <div class="webdav-recent-icon"><i class="fa-solid fa-server"></i></div>
+                    <div class="webdav-recent-main">
+                        <div class="webdav-recent-name"></div>
+                        <div class="webdav-recent-url"></div>
+                    </div>
+                    <button class="webdav-recent-del" title="删除"><i class="fa-solid fa-trash-can"></i></button>
+                `;
+                el.querySelector('.webdav-recent-name').textContent = s.name || hostnameOfUrl(s.url);
+                el.querySelector('.webdav-recent-url').textContent = s.url + (s.user ? ' (' + s.user + ')' : '');
+                el.addEventListener('click', () => {
+                    if (webdavNameInput) webdavNameInput.value = s.name || '';
+                    if (webdavUrlInput) webdavUrlInput.value = s.url;
+                    if (webdavUserInput) webdavUserInput.value = s.user || '';
+                    if (webdavPassInput) webdavPassInput.value = s.pass || '';
+                });
+                el.querySelector('.webdav-recent-del').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    saveWebdavServers(getWebdavServers().filter((x) => x.url !== s.url));
+                    renderWebdavRecents();
+                    renderCloudSourceSelect();
+                });
+                webdavRecentsEl.appendChild(el);
             });
         }
 
+        // 渲染右侧面板顶部的来源选择下拉
+        function renderCloudSourceSelect() {
+            if (!cloudSourceSelect) return;
+            cloudSourceSelect.innerHTML = '';
+            const wList = getWebdavServers();
+            const sList = getSmbServers();
+            if (!wList.length && !sList.length) {
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = '暂无已连接文件源';
+                cloudSourceSelect.appendChild(opt);
+                return;
+            }
+            wList.forEach((s) => {
+                const opt = document.createElement('option');
+                opt.value = 'webdav|' + (s.id || s.url);
+                opt.textContent = '[WebDAV] ' + (s.name || hostnameOfUrl(s.url));
+                cloudSourceSelect.appendChild(opt);
+            });
+            sList.forEach((s) => {
+                const opt = document.createElement('option');
+                opt.value = 'smb|' + (s.id || s.host);
+                opt.textContent = '[SMB] ' + (s.name || s.host + (s.share ? '/' + s.share : ''));
+                cloudSourceSelect.appendChild(opt);
+            });
+            if (currentCloudSource) {
+                cloudSourceSelect.value = currentCloudSource.kind + '|' + (currentCloudSource.id || currentCloudSource.url || currentCloudSource.host);
+            }
+        }
+
+        // 统一打开右侧文件浏览器面板（黑底右侧展示，99% 参考播放列表）
+        function openCloudBrowser() {
+            const wList = getWebdavServers();
+            const sList = getSmbServers();
+            if (!wList.length && !sList.length) {
+                // 尚未添加过任何源，弹出连接卡片引导添加
+                openConnectSourceModal();
+                return;
+            }
+            renderCloudSourceSelect();
+            if (!currentCloudSource) {
+                if (wList.length) {
+                    currentCloudSource = { kind: 'webdav', ...wList[0] };
+                } else if (sList.length) {
+                    currentCloudSource = { kind: 'smb', ...sList[0] };
+                }
+            }
+            cloudBrowserPanel.classList.add('active');
+            // 关闭播放列表面板，避免两层重叠
+            const plPanel = document.getElementById('playlistPanel');
+            if (plPanel) plPanel.classList.remove('active');
+            loadCurrentCloudDirectory(currentCloudSource.kind === 'webdav' ? currentWebdavPath : currentSmbPath);
+        }
+
+        function closeCloudBrowser() {
+            if (cloudBrowserPanel) cloudBrowserPanel.classList.remove('active');
+        }
+
+        function openConnectSourceModal() {
+            if (connectSourceModalMask) {
+                connectSourceModalMask.classList.add('active');
+                renderWebdavRecents();
+            }
+        }
+        function closeConnectSourceModal() {
+            if (connectSourceModalMask) connectSourceModalMask.classList.remove('active');
+        }
+
+        // 切换 WebDAV / SMB 连接表单
+        if (tabTypeWebdav) {
+            tabTypeWebdav.addEventListener('click', () => {
+                currentConnType = 'webdav';
+                tabTypeWebdav.classList.add('primary');
+                tabTypeSmb.classList.remove('primary');
+                connFormWebdav.style.display = 'block';
+                connFormSmb.style.display = 'none';
+            });
+        }
+        if (tabTypeSmb) {
+            tabTypeSmb.addEventListener('click', () => {
+                currentConnType = 'smb';
+                tabTypeSmb.classList.add('primary');
+                tabTypeWebdav.classList.remove('primary');
+                connFormSmb.style.display = 'block';
+                connFormWebdav.style.display = 'none';
+            });
+        }
+
+        // 首页“浏览”卡片点击
+        if (webdavBtn) {
+            webdavBtn.addEventListener('click', () => {
+                openCloudBrowser();
+            });
+        }
+        if (connectSourceClose) connectSourceClose.addEventListener('click', closeConnectSourceModal);
+        if (connCancelBtn) connCancelBtn.addEventListener('click', closeConnectSourceModal);
+        if (connectSourceModalMask) {
+            connectSourceModalMask.addEventListener('click', (e) => {
+                if (e.target === connectSourceModalMask) closeConnectSourceModal();
+            });
+        }
+        if (cloudBrowserClose) cloudBrowserClose.addEventListener('click', closeCloudBrowser);
+
+        if (cloudBrowserUpBtn) {
+            cloudBrowserUpBtn.addEventListener('click', () => {
+                if (!currentCloudSource) return;
+                if (currentCloudSource.kind === 'webdav') {
+                    if (currentWebdavPath === '/' || !currentWebdavPath) return;
+                    const parts = currentWebdavPath.replace(/\/$/, '').split('/').filter(Boolean);
+                    parts.pop();
+                    const parent = '/' + (parts.length ? parts.join('/') + '/' : '');
+                    fetchWebdavDirectory(parent);
+                } else {
+                    if (currentSmbPath === '/' || !currentSmbPath) return;
+                    const parts = currentSmbPath.replace(/^[\\/]+|[\\/]+$/g, '').split(/[\\/]/).filter(Boolean);
+                    parts.pop();
+                    const parent = parts.length ? '/' + parts.join('/') : '/';
+                    fetchSmbDirectory(parent);
+                }
+            });
+        }
+        if (cloudBrowserRefreshBtn) {
+            cloudBrowserRefreshBtn.addEventListener('click', () => {
+                if (!currentCloudSource) return;
+                loadCurrentCloudDirectory(currentCloudSource.kind === 'webdav' ? currentWebdavPath : currentSmbPath);
+            });
+        }
+        if (cloudBrowserAddBtn) {
+            cloudBrowserAddBtn.addEventListener('click', () => {
+                openConnectSourceModal();
+            });
+        }
+        if (cloudSourceSelect) {
+            cloudSourceSelect.addEventListener('change', () => {
+                const val = cloudSourceSelect.value;
+                if (!val) return;
+                const [kind, idOrUrl] = val.split('|');
+                if (kind === 'webdav') {
+                    const found = getWebdavServers().find((x) => (x.id || x.url) === idOrUrl);
+                    if (found) {
+                        currentCloudSource = { kind: 'webdav', ...found };
+                        currentWebdavPath = '/';
+                        fetchWebdavDirectory('/');
+                    }
+                } else if (kind === 'smb') {
+                    const found = getSmbServers().find((x) => (x.id || x.host) === idOrUrl);
+                    if (found) {
+                        currentCloudSource = { kind: 'smb', ...found };
+                        currentSmbPath = '/';
+                        fetchSmbDirectory('/');
+                    }
+                }
+            });
+        }
+
+        // 加载当前云端/网络目录
+        function loadCurrentCloudDirectory(path) {
+            if (!currentCloudSource) return;
+            if (currentCloudSource.kind === 'webdav') {
+                fetchWebdavDirectory(path || '/');
+            } else {
+                fetchSmbDirectory(path || '/');
+            }
+        }
+
+        // 解析 WebDAV XML
         function parseWebdavXml(xmlStr, baseOrigin) {
             const parser = new DOMParser();
             const xml = parser.parseFromString(xmlStr, 'application/xml');
@@ -6785,49 +7096,34 @@
             return items;
         }
 
-        /// 显示 / 隐藏连接表单区（连接成功后收起，避免占屏）
         function setWebdavFormVisible(visible) {
-            const form = document.getElementById('webdavForm');
-            const recents = document.getElementById('webdavRecents');
-            const desc = document.getElementById('webdavDesc');
-            [form, recents, desc].forEach((el) => {
-                if (!el) return;
-                el.classList.toggle('is-hidden', !visible);
-            });
-            // 已进入浏览态：弹窗标题同步为当前服务器名，避免仍显示"挂载"字样
-            const head = document.querySelector('#webdavModalMask .modal-head h3');
-            if (head) {
-                head.innerHTML = visible
-                    ? '<i class="fa-solid fa-server"></i>&nbsp; WebDAV 挂载与浏览'
-                    : '<i class="fa-solid fa-folder-open"></i>&nbsp; 文件浏览';
-            }
+            // 新设计：连接信息已移入独立的连接弹窗，右侧面板只展示纯净文件列表
         }
 
+        // ── WebDAV 目录读取 ──
         async function fetchWebdavDirectory(targetPath) {
-            const baseUrl = (webdavUrlInput.value || '').trim();
+            const server = currentCloudSource && currentCloudSource.kind === 'webdav' ? currentCloudSource : null;
+            const baseUrl = (server ? server.url : (webdavUrlInput ? webdavUrlInput.value : '')).trim();
             if (!baseUrl) {
-                showSpatialToast('请输入 WebDAV 服务器地址');
+                showSpatialToast('请选择或连接 WebDAV 服务器');
                 return;
             }
-            const user = (webdavUserInput.value || '').trim();
-            const pass = (webdavPassInput.value || '').trim();
-            const name = (webdavNameInput && webdavNameInput.value || '').trim();
-            // 保存配置 + 连接记录（localStorage，随跨端备份导出）
-            localStorage.setItem(WEBDAV_CFG_KEY, JSON.stringify({ url: baseUrl, user, pass, name }));
+            const user = server ? (server.user || '') : (webdavUserInput ? webdavUserInput.value.trim() : '');
+            const pass = server ? (server.pass || '') : (webdavPassInput ? webdavPassInput.value.trim() : '');
+            const name = server ? (server.name || '') : (webdavNameInput ? webdavNameInput.value.trim() : '');
 
             let u;
             try { u = new URL(baseUrl); } catch { showSpatialToast('无效的 WebDAV 地址'); return; }
-            // 拼接目标路径
             let fullPath = u.pathname.replace(/\/$/, '') + '/' + targetPath.replace(/^\//, '');
             fullPath = fullPath.replace(/\/+/g, '/');
             u.pathname = fullPath;
             if (!u.pathname.endsWith('/') && targetPath.endsWith('/')) u.pathname += '/';
 
-            webdavFileList.innerHTML = '<div style="padding:16px;text-align:center;color:var(--muted);"><i class="fa-solid fa-spinner fa-spin"></i> 正在读取 WebDAV 目录…</div>';
-            webdavConnectBtn.disabled = true;
+            currentWebdavPath = targetPath;
+            if (cloudBrowserPathText) cloudBrowserPathText.textContent = fullPath;
+            cloudBrowserFileList.innerHTML = '<div class="cb-empty"><i class="fa-solid fa-spinner fa-spin"></i><span>正在读取 WebDAV 目录…</span></div>';
 
             try {
-                // 通过服务端内置 WebDAV 代理接口或直连
                 const resp = await fetch('/api/webdav/list', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -6839,31 +7135,23 @@
                 }
                 const xmlText = await resp.text();
                 const items = parseWebdavXml(xmlText, u.origin);
-                currentWebdavPath = targetPath;
                 webdavLastBase = u;
-                // 连接成功 → 写入最近连接记录
                 rememberWebdavServer({ name, url: baseUrl, user, pass });
-                // 记录凭据：后续编码探测与转码都要用它对上游做 Basic 认证
-                activeUpstreamAuth = (user || pass) ? { username: user || '', password: pass || '' } : null;
-                // 连接成功：收起连接表单与历史，只留目录浏览
-                setWebdavFormVisible(false);
+                activeUpstreamAuth = (user || pass) ? { username: user, password: pass } : null;
                 renderWebdavItems(items, u);
             } catch (err) {
                 console.error('WebDAV fetch error:', err);
-                webdavFileList.innerHTML = `<div style="padding:16px;color:#ef4444;text-align:center;"><i class="fa-solid fa-circle-exclamation"></i> 连接失败：${err.message || '网络错误'}</div>`;
-            } finally {
-                webdavConnectBtn.disabled = false;
+                cloudBrowserFileList.innerHTML = `<div class="cb-empty" style="color:#f87171;"><i class="fa-solid fa-circle-exclamation"></i><span>读取失败：${escapeHtml(err.message || '网络错误')}</span></div>`;
             }
         }
 
+        // 渲染 WebDAV 列表（完全 99% 参考播放列表样式）
         function renderWebdavItems(items, baseUrlObj) {
             webdavLastItems = items;
             webdavLastBase = baseUrlObj;
-            webdavFileList.innerHTML = '';
-            webdavNav.style.display = 'flex';
-            webdavPathText.textContent = currentWebdavPath;
+            cloudBrowserFileList.innerHTML = '';
+            if (cloudBrowserPathText) cloudBrowserPathText.textContent = baseUrlObj.pathname;
 
-            // 过滤掉当前目录本身
             const currentNorm = baseUrlObj.pathname.replace(/\/$/, '');
             const filtered = items.filter(it => {
                 const norm = it.href.replace(/\/$/, '');
@@ -6871,18 +7159,15 @@
             });
 
             if (!filtered.length) {
-                webdavFileList.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);">空目录</div>';
+                cloudBrowserFileList.innerHTML = '<div class="cb-empty"><i class="fa-solid fa-folder-open"></i><span>此目录为空</span></div>';
                 return;
             }
 
-            // 目录在前，文件在后
             filtered.sort((a, b) => {
                 if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
                 return a.name.localeCompare(b.name, undefined, { numeric: true });
             });
 
-            // 当前目录全部视频 → 临时列表连播队列（对齐 iOS loadTemp：
-            // 从网络目录起播时，整个文件夹的视频进临时列表作为连播队列）
             const toPlayUrl = (it) => {
                 let playUrl = it.href;
                 if (!/^https?:\/\//i.test(playUrl)) {
@@ -6895,20 +7180,16 @@
 
             filtered.forEach(item => {
                 const el = document.createElement('div');
-                const isVideo = /\.(mp4|mkv|webm|mov|m4v|ts|flv|avi|wmv)$/i.test(item.name);
-                el.className = `webdav-item ${item.isDir ? 'is-dir' : (isVideo ? 'is-video' : '')}`;
+                const isVideo = isWebdavVideo(item);
+                el.className = `playlist-item cb-item ${item.isDir ? 'is-dir' : (isVideo ? 'is-video' : '')}`;
                 el.innerHTML = `
-                    <div class="webdav-item-icon"><i class="fa-solid ${item.isDir ? 'fa-folder' : (isVideo ? 'fa-film' : 'fa-file')}"></i></div>
-                    <div class="webdav-item-name" title="${item.name}">${item.name}</div>
-                    <div class="webdav-item-size">${item.isDir ? '' : formatFileSize(item.size)}</div>
-                    <div class="webdav-item-actions">
-                        <button class="webdav-act-btn rename" title="重命名"><i class="fa-solid fa-pencil"></i></button>
-                        <button class="webdav-act-btn del" title="删除"><i class="fa-solid fa-trash-can"></i></button>
+                    <div class="cb-item-icon">
+                        <i class="fa-solid ${item.isDir ? 'fa-folder' : (isVideo ? 'fa-film' : 'fa-file')}"></i>
                     </div>
+                    <div class="cb-item-name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div>
+                    <div class="cb-item-size">${item.isDir ? '›' : formatFileSize(item.size)}</div>
                 `;
                 el.addEventListener('click', (e) => {
-                    // 若点击的是重命名或删除按钮，则不触发点按播放/进目录
-                    if (e.target.closest('.webdav-item-actions')) return;
                     if (item.isDir) {
                         let sub = currentWebdavPath.replace(/\/$/, '') + '/' + item.name + '/';
                         fetchWebdavDirectory(sub);
@@ -6918,107 +7199,176 @@
                         showSpatialToast('该文件不是受支持的视频格式');
                     }
                 });
-                // 重命名
-                el.querySelector('.webdav-act-btn.rename').addEventListener('click', async (e) => {
-                    e.stopPropagation();
-                    const newName = prompt(`修改「${item.name}」的名称：`, item.name);
-                    if (!newName || newName.trim() === '' || newName.trim() === item.name) return;
-                    const cleanNew = newName.trim();
-                    const oldHref = item.href;
-                    // 构造新的目标完整 URL
-                    let destUrl = oldHref;
-                    if (!/^https?:\/\//i.test(destUrl)) {
-                        destUrl = baseUrlObj.origin + (destUrl.startsWith('/') ? '' : '/') + destUrl;
-                    }
-                    const destObj = new URL(destUrl);
-                    let normPath = destObj.pathname.replace(/\/$/, '');
-                    const parent = normPath.substring(0, normPath.lastIndexOf('/'));
-                    destObj.pathname = (parent === '' ? '/' : parent) + '/' + cleanNew + (item.isDir ? '/' : '');
-
-                    let srcUrl = oldHref;
-                    if (!/^https?:\/\//i.test(srcUrl)) {
-                        srcUrl = baseUrlObj.origin + (srcUrl.startsWith('/') ? '' : '/') + srcUrl;
-                    }
-
-                    try {
-                        const user = (webdavUserInput.value || '').trim();
-                        const pass = (webdavPassInput.value || '').trim();
-                        const resp = await fetch('/api/webdav/op', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                op: 'move',
-                                url: srcUrl,
-                                destUrl: destObj.href,
-                                username: user,
-                                password: pass
-                            })
-                        });
-                        const res = await resp.json();
-                        if (!resp.ok || !res.success) throw new Error(res.error || '重命名失败');
-                        showSpatialToast('✅ 重命名成功');
-                        fetchWebdavDirectory(currentWebdavPath);
-                    } catch (err) {
-                        alert('重命名失败：' + err.message);
-                    }
-                });
-                // 删除
-                el.querySelector('.webdav-act-btn.del').addEventListener('click', async (e) => {
-                    e.stopPropagation();
-                    if (!confirm(`确定要从 WebDAV 服务器彻底删除「${item.name}」吗？\n此操作不可恢复。`)) return;
-                    let targetUrl = item.href;
-                    if (!/^https?:\/\//i.test(targetUrl)) {
-                        targetUrl = baseUrlObj.origin + (targetUrl.startsWith('/') ? '' : '/') + targetUrl;
-                    }
-                    try {
-                        const user = (webdavUserInput.value || '').trim();
-                        const pass = (webdavPassInput.value || '').trim();
-                        const resp = await fetch('/api/webdav/op', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                op: 'delete',
-                                url: targetUrl,
-                                username: user,
-                                password: pass
-                            })
-                        });
-                        const res = await resp.json();
-                        if (!resp.ok || !res.success) throw new Error(res.error || '删除失败');
-                        showSpatialToast('✅ 删除成功');
-                        fetchWebdavDirectory(currentWebdavPath);
-                    } catch (err) {
-                        alert('删除失败：' + err.message);
-                    }
-                });
-                webdavFileList.appendChild(el);
+                cloudBrowserFileList.appendChild(el);
             });
         }
 
-        // ── 海报墙视图 ──────────────────────────────────────────
-        /// 视图切换按钮（列表 / 海报墙），插入到目录导航条右侧
-        function renderWebdavViewToggle() {
-            let btn = document.getElementById('webdavViewToggle');
-            if (!btn) {
-                btn = document.createElement('button');
-                btn.id = 'webdavViewToggle';
-                btn.className = 'pl-modal-btn webdav-view-toggle';
-                webdavNav.appendChild(btn);
-                btn.addEventListener('click', () => {
-                    webdavPosterMode = !webdavPosterMode;
-                    localStorage.setItem('aethervr-webdav-poster-mode', webdavPosterMode ? '1' : '0');
-                    // 用缓存重绘，不重复请求服务器
-                    if (webdavLastItems && webdavLastBase) renderWebdavItems(webdavLastItems, webdavLastBase);
-                });
-            }
-            btn.innerHTML = webdavPosterMode
-                ? '<i class="fa-solid fa-list"></i>&nbsp; 列表'
-                : '<i class="fa-solid fa-images"></i>&nbsp; 海报墙';
-            btn.title = webdavPosterMode ? '切换到文件列表视图' : '切换到海报墙视图（自动识别同目录封面图/预览图/nfo）';
+        // WebDAV 视频装入连播队列起播
+        function playWebdavFromQueue(item, dirVideos, toPlayUrl) {
+            const queue = dirVideos.map((v) => ({
+                name: v.name,
+                originalPath: v.href,
+                normalizedPath: normalizePath(v.href),
+                url: toPlayUrl(v),
+                file: null, fileHandle: null,
+                status: 'remote', error: '', position: 0,
+            }));
+            const startIdx = Math.max(0, queue.findIndex((q) => q.url === toPlayUrl(item)));
+            lastDplEntries = null;
+            const t = ensureTempTab();
+            activeTab = 'playlist';
+            activePlId = t.id;
+            renderTabs();
+            setPlaylist(queue, startIdx);
+            showSpatialToast(`起播 WebDAV：${item.name}（同目录 ${queue.length} 个视频连播）`);
         }
 
-        /// 渲染海报墙到指定容器。
-        /// @param entries 目录条目；@param toUrl 条目转播放地址；@param opts { container, onEnterFolder }
+        // ── SMB 目录读取与播放 ──
+        async function fetchSmbDirectory(subPath) {
+            const server = currentCloudSource && currentCloudSource.kind === 'smb' ? currentCloudSource : null;
+            if (!server) return;
+            if (!window.vrDesktop || typeof window.vrDesktop.smbConnectShare !== 'function') {
+                cloudBrowserFileList.innerHTML = '<div class="cb-empty" style="color:#f87171;"><i class="fa-solid fa-triangle-exclamation"></i><span>SMB 仅在 macOS 与 Windows 客户端可用</span></div>';
+                return;
+            }
+
+            cloudBrowserFileList.innerHTML = '<div class="cb-empty"><i class="fa-solid fa-spinner fa-spin"></i><span>正在读取 SMB 共享…</span></div>';
+            currentSmbPath = subPath || '/';
+
+            // 1. 先确保挂载/连接会话建立
+            if (!currentSmbMountRoot) {
+                const conn = await window.vrDesktop.smbConnectShare(server.host, server.share, server.user, server.pass);
+                if (!conn || !conn.ok) {
+                    cloudBrowserFileList.innerHTML = `<div class="cb-empty" style="color:#f87171;"><i class="fa-solid fa-circle-exclamation"></i><span>连接 SMB 失败：${escapeHtml(conn?.error || '无法访问共享')}</span></div>`;
+                    return;
+                }
+                currentSmbMountRoot = conn.localPath;
+            }
+
+            // 2. 构造目标本地绝对路径
+            const isWin = window.vrDesktop.platform === 'win32';
+            const sep = isWin ? '\\' : '/';
+            let targetDiskPath = currentSmbMountRoot;
+            const cleanSub = currentSmbPath.replace(/^[\\/]+|[\\/]+$/g, '');
+            if (cleanSub) {
+                targetDiskPath += sep + cleanSub.split(/[\\/]/).join(sep);
+            }
+
+            if (cloudBrowserPathText) cloudBrowserPathText.textContent = targetDiskPath;
+
+            try {
+                const r = await window.vrDesktop.smbListDir(targetDiskPath);
+                if (!r || !r.ok) throw new Error(r?.error || '读取目录失败');
+                renderSmbItems(r.entries || [], targetDiskPath);
+            } catch (err) {
+                cloudBrowserFileList.innerHTML = `<div class="cb-empty" style="color:#f87171;"><i class="fa-solid fa-circle-exclamation"></i><span>读取失败：${escapeHtml(err.message)}</span></div>`;
+            }
+        }
+
+        function renderSmbItems(entries, currentDiskPath) {
+            cloudBrowserFileList.innerHTML = '';
+            if (!entries.length) {
+                cloudBrowserFileList.innerHTML = '<div class="cb-empty"><i class="fa-solid fa-folder-open"></i><span>此目录为空</span></div>';
+                return;
+            }
+
+            const dirVideos = entries.filter((e) => !e.isDirectory && e.isVideo);
+
+            entries.forEach((item) => {
+                const el = document.createElement('div');
+                el.className = `playlist-item cb-item ${item.isDirectory ? 'is-dir' : (item.isVideo ? 'is-video' : '')}`;
+                el.innerHTML = `
+                    <div class="cb-item-icon">
+                        <i class="fa-solid ${item.isDirectory ? 'fa-folder' : (item.isVideo ? 'fa-film' : 'fa-file')}"></i>
+                    </div>
+                    <div class="cb-item-name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div>
+                    <div class="cb-item-size">${item.isDirectory ? '›' : formatFileSize(item.size)}</div>
+                `;
+                el.addEventListener('click', () => {
+                    if (item.isDirectory) {
+                        const cleanSub = currentSmbPath.replace(/^[\\/]+|[\\/]+$/g, '');
+                        const nextSub = (cleanSub ? cleanSub + '/' : '') + item.name;
+                        fetchSmbDirectory('/' + nextSub);
+                    } else if (item.isVideo) {
+                        playSmbFromQueue(item, dirVideos);
+                    } else {
+                        showSpatialToast('该文件不是受支持的视频格式');
+                    }
+                });
+                cloudBrowserFileList.appendChild(el);
+            });
+        }
+
+        // SMB 视频装入连播队列起播（直接走本地 /local 流式端点，原生极速 Seek）
+        function playSmbFromQueue(item, dirVideos) {
+            const queue = dirVideos.map((v) => ({
+                name: v.name,
+                originalPath: v.path,
+                normalizedPath: normalizePath(v.path),
+                url: localUrl(v.path),
+                file: null, fileHandle: null,
+                status: 'ready', error: '', position: 0,
+            }));
+            const startIdx = Math.max(0, queue.findIndex((q) => q.originalPath === item.path));
+            lastDplEntries = null;
+            const t = ensureTempTab();
+            activeTab = 'playlist';
+            activePlId = t.id;
+            renderTabs();
+            setPlaylist(queue, startIdx);
+            showSpatialToast(`起播 SMB：${item.name}（同目录 ${queue.length} 个视频连播）`);
+        }
+
+        // 连接弹窗提交按钮
+        if (connSubmitBtn) {
+            connSubmitBtn.addEventListener('click', async () => {
+                if (currentConnType === 'webdav') {
+                    const url = (webdavUrlInput?.value || '').trim();
+                    if (!url) { showSpatialToast('请输入 WebDAV 服务器地址'); return; }
+                    const name = (webdavNameInput?.value || '').trim();
+                    const user = (webdavUserInput?.value || '').trim();
+                    const pass = (webdavPassInput?.value || '').trim();
+                    connSubmitBtn.disabled = true;
+                    try {
+                        currentCloudSource = { kind: 'webdav', name, url, user, pass };
+                        closeConnectSourceModal();
+                        openCloudBrowser();
+                        await fetchWebdavDirectory('/');
+                    } catch (e) {
+                        showSpatialToast('连接失败：' + e.message);
+                    } finally {
+                        connSubmitBtn.disabled = false;
+                    }
+                } else {
+                    const host = (smbHostInput?.value || '').trim();
+                    const share = (smbShareInput?.value || '').trim();
+                    if (!host || !share) { showSpatialToast('请输入 SMB 主机地址和共享名'); return; }
+                    const name = (smbNameInput?.value || '').trim();
+                    const user = (smbUserInput?.value || '').trim();
+                    const pass = (smbPassInput?.value || '').trim();
+                    connSubmitBtn.disabled = true;
+                    try {
+                        currentSmbMountRoot = ''; // 重置挂载
+                        currentCloudSource = { kind: 'smb', name, host, share, user, pass };
+                        rememberSmbServer(currentCloudSource);
+                        closeConnectSourceModal();
+                        openCloudBrowser();
+                        await fetchSmbDirectory('/');
+                    } catch (e) {
+                        showSpatialToast('连接失败：' + e.message);
+                    } finally {
+                        connSubmitBtn.disabled = false;
+                    }
+                }
+            });
+        }
+
+        function escapeHtml(str) {
+            return String(str || '').replace(/[&<>"']/g, (m) => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[m]));
+        }
+
         function renderPosterWall(entries, toUrl, opts) {
             const options = opts || {};
             const container = options.container || webdavFileList;
@@ -7183,41 +7533,6 @@
             document.body.appendChild(mask);
         }
 
-        // WebDAV 起播：整个目录的视频装入「临时列表」页签并连播（参考移动端）
-        function playWebdavFromQueue(item, dirVideos, toPlayUrl) {
-            const queue = dirVideos.map((v) => ({
-                name: v.name,
-                originalPath: v.href,
-                normalizedPath: normalizePath(v.href),
-                url: toPlayUrl(v),
-                file: null, fileHandle: null,
-                status: 'remote', error: '', position: 0,
-            }));
-            const startIdx = Math.max(0, queue.findIndex((q) => q.url === toPlayUrl(item)));
-            webdavModalMask.classList.remove('active');
-            lastDplEntries = null;
-            const t = ensureTempTab();
-            activeTab = 'playlist';
-            activePlId = t.id;
-            renderTabs();
-            setPlaylist(queue, startIdx);
-            showSpatialToast(`起播 WebDAV：${item.name}（同目录 ${queue.length} 个视频已加入临时列表连播）`);
-        }
-
-        if (webdavConnectBtn) {
-            webdavConnectBtn.addEventListener('click', () => {
-                fetchWebdavDirectory('/');
-            });
-        }
-        if (webdavUpBtn) {
-            webdavUpBtn.addEventListener('click', () => {
-                if (currentWebdavPath === '/' || !currentWebdavPath) return;
-                const parts = currentWebdavPath.replace(/\/$/, '').split('/').filter(Boolean);
-                parts.pop();
-                const parent = '/' + (parts.length ? parts.join('/') + '/' : '');
-                fetchWebdavDirectory(parent);
-            });
-        }
 
 
         // ── 海报墙（独立入口，逻辑对齐 iOS）──────────────────────
@@ -7272,25 +7587,6 @@
         function posterWallCurrentSource() {
             const list = posterWallSources();
             return list.find((x) => x.id === posterWallSourceId) || list[0] || null;
-        }
-
-        // ── SMB 连接记录（仅桌面端）──────────────────────
-        const SMB_SERVERS_KEY = 'aethervr-smb-servers';
-        function getSmbServers() {
-            // 只在桌面端返回（网页版无法访问 SMB）
-            if (!window.vrDesktop || typeof window.vrDesktop.smbListShares !== 'function') return [];
-            try { return JSON.parse(localStorage.getItem(SMB_SERVERS_KEY)) || []; }
-            catch { return []; }
-        }
-        function saveSmbServers(list) {
-            try { localStorage.setItem(SMB_SERVERS_KEY, JSON.stringify(list)); } catch { /* 配额 */ }
-        }
-        function rememberSmbServer(server) {
-            const list = getSmbServers();
-            const idx = list.findIndex((x) => x.host === server.host && x.user === server.user);
-            if (idx >= 0) list[idx] = { ...list[idx], ...server };
-            else list.unshift(server);
-            saveSmbServers(list.slice(0, 20));
         }
 
         // ── 每来源独立存储 ────────────────────────────────

@@ -300,6 +300,63 @@ async function start() {
     return { ok: false, error: 'SMB 仅在 macOS 与 Windows 桌面端可用', shares: [] };
   });
 
+  // 挂载/连接 SMB 共享（Windows 建立 net use 会话，macOS 挂载到临时目录）
+  ipcMain.handle('smb:connectShare', async (event, payload) => {
+    const host = String((payload && payload.host) || '').trim();
+    const share = String((payload && payload.share) || '').trim().replace(/^[\\/]+|[\\/]+$/g, '');
+    const user = String((payload && payload.user) || '').trim();
+    const pass = String((payload && payload.password) || '');
+    if (!host || !share) return { ok: false, error: '缺少主机或共享名' };
+
+    if (process.platform === 'win32') {
+      const unc = `\\\\${host}\\${share}`;
+      // Windows: net use \\host\share pass /user:user
+      const args = ['use', unc];
+      if (pass) args.push(pass);
+      if (user) args.push(`/user:${user}`);
+      const r = await runCommand('net', args);
+      // net use 如果已经连过可能会返回 "已建立连接" 或 code 0，尝试直接 stat unc
+      try {
+        await fs.promises.stat(unc);
+        return { ok: true, localPath: unc };
+      } catch (err) {
+        if (r.ok) return { ok: true, localPath: unc };
+        return { ok: false, error: r.stderr || err.message || '连接 SMB 共享失败' };
+      }
+    }
+
+    if (process.platform === 'darwin') {
+      const safeDirName = `${host}_${share}`.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const mountDir = path.join('/tmp', 'aethervr-smb', safeDirName);
+      try { await fs.promises.mkdir(mountDir, { recursive: true }); } catch {}
+
+      // 检查是否已挂载
+      try {
+        const files = await fs.promises.readdir(mountDir);
+        if (files.length > 0) return { ok: true, localPath: mountDir };
+      } catch {}
+
+      // 构造 mount_smbfs //user:pass@host/share mountDir
+      const encUser = encodeURIComponent(user);
+      const encPass = encodeURIComponent(pass);
+      const auth = user ? `${encUser}${pass ? ':' + encPass : ''}@` : '';
+      const smbUrl = `//${auth}${host}/${share}`;
+      const r = await runCommand('mount_smbfs', [smbUrl, mountDir]);
+      if (!r.ok) {
+        // 如果已挂载报错，再测一次能否访问
+        try {
+          await fs.promises.stat(mountDir);
+          return { ok: true, localPath: mountDir };
+        } catch {
+          return { ok: false, error: r.stderr || '挂载 SMB 失败' };
+        }
+      }
+      return { ok: true, localPath: mountDir };
+    }
+
+    return { ok: false, error: 'SMB 仅支持 macOS 与 Windows 客户端' };
+  });
+
   // 列目录（支持 UNC 或已挂载路径）
   ipcMain.handle('smb:listDir', async (event, payload) => {
     const dirPath = String((payload && payload.path) || '').trim();

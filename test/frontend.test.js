@@ -196,3 +196,22 @@ test("SMB is desktop-only and bridged through preload", () => {
   assert.match(html, /window\.vrDesktop\.smbListDir/);
   assert.match(html, /SMB 仅在桌面端可用/);
 });
+
+test("unified cloud browser panel matches right-side playlist style and hides connection form", () => {
+  // 右侧浮动抽屉文件浏览器
+  assert.match(html, /id="cloudBrowserPanel"/);
+  assert.match(html, /class="[^"]*cloud-browser-panel[^"]*"/);
+  // 条目样式与播放列表一致
+  assert.match(html, /playlist-item cb-item/);
+  // 连接信息在独立弹层中，右侧面板只展示纯净列表
+  assert.match(html, /id="connectSourceModalMask"/);
+  assert.match(html, /id="cloudSourceSelect"/);
+  assert.match(html, /id="cloudBrowserFileList"/);
+  assert.match(html, /id="cloudBrowserPathBar"/);
+});
+
+test("WebDAV playback automatically resolves credentials to prevent 401 decode errors", () => {
+  assert.match(html, /function findMatchingWebdavAuth/);
+  assert.match(html, /cred = btoa\(unescape\(encodeURIComponent\(rawCred\)\)\)/);
+  assert.match(html, /&cred=/);
+});
