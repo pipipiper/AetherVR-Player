@@ -1508,6 +1508,8 @@
             box-shadow: 0 12px 32px rgba(0,0,0,.35);
         }
         .playlist-panel.active { display: flex; }
+        /* 海报墙选目录模式：面板要盖在整屏海报墙页面（z-index:60）之上 */
+        .playlist-panel.picking { z-index: 70; }
         .playlist-head {
             display: flex; align-items: center; justify-content: space-between;
             padding: 10px 14px; font-size: 13px; font-weight: 600;
@@ -1825,7 +1827,7 @@
                 </div>
             </div>
             <div class="right">
-                <button id="newVideoBtn" class="ghost-btn"><i class="fa-solid fa-plus"></i><span class="btn-text">&nbsp; 打开新视频</span></button>
+                <button id="newVideoBtn" class="ghost-btn"><i class="fa-solid fa-house"></i><span class="btn-text">&nbsp; 返回首页</span></button>
             </div>
         </div>
 
@@ -1960,8 +1962,8 @@
                             <button class="control-btn playlist-ctl" id="prevBtn" title="上一个" style="display:none"><i class="fa-solid fa-backward-step"></i></button>
                             <button class="control-btn" id="stepBackBtn" title="后退 30 秒"><i class="fa-solid fa-rotate-left"></i></button>
                             <button class="control-btn is-primary" id="playPauseBtn" title="播放 / 暂停"><i class="fa-solid fa-play"></i></button>
-                            <button class="control-btn is-stop" id="stopBtn" title="停止播放"><i class="fa-solid fa-stop"></i></button>
                             <button class="control-btn" id="stepForwardBtn" title="快进 30 秒"><i class="fa-solid fa-rotate-right"></i></button>
+                            <button class="control-btn is-stop" id="stopBtn" title="停止播放并返回"><i class="fa-solid fa-stop"></i></button>
                             <button class="control-btn playlist-ctl" id="nextBtn" title="下一个" style="display:none"><i class="fa-solid fa-forward-step"></i></button>
                         </div>
 
@@ -2061,6 +2063,12 @@
                 <ul class="playlist-items" id="favItems" style="display:none"></ul>
                 <!-- 云端文件列表项容器（与播放列表项同一套样式） -->
                 <div class="cb-items" id="cloudBrowserFileList" style="display:none"></div>
+                <!-- 海报墙「选目录」模式：底部固定扫描按钮 -->
+                <div class="playlist-tools" id="cloudPickBar" style="display:none; padding-top:6px;">
+                    <button class="pl-tool-btn" id="cloudPickScanBtn" style="flex:1; padding:9px 4px; font-size:12.5px;">
+                        <i class="fa-solid fa-radar"></i>&nbsp; 扫描当前目录
+                    </button>
+                </div>
                 <div class="playlist-foot">本地文件仅在浏览器内读取，不会上传服务器</div>
             </div>
             <!-- 位置记录确认弹窗（收藏 / 加入列表时） -->
@@ -2203,7 +2211,6 @@
                     <!-- 当前来源状态条 -->
                     <div class="poster-wall-statusbar" id="posterWallStatusBar"></div>
                     <div class="webdav-nav" id="posterWallNav">
-                        <button class="pl-modal-btn" id="posterWallUpBtn"><i class="fa-solid fa-arrow-up"></i>&nbsp; 上级目录</button>
                         <span class="webdav-path-text" id="posterWallPathText">/</span>
                         <button class="pl-modal-btn" id="posterWallScanHereBtn" title="选择要扫描的文件夹（结果并入当前来源）">
                             <i class="fa-solid fa-radar"></i>&nbsp; 选择目录
@@ -2484,6 +2491,7 @@
         // 条目状态机：ready（已匹配本地文件）/ remote（在线链接）/
         // unresolved（未授权）/ missing（授权过目录仍未找到）/ conflict（同名冲突）
         let playlist = [];          // [{name, originalPath, normalizedPath, url, file, fileHandle, status, error}]
+        let playedFromPosterWall = false;  // 当前播放是否从海报墙起播（停止播放后决定回海报墙还是首页）
         let playlistIndex = -1;
         let lastDplEntries = null;  // 最近导入的 dpl 条目（用于重新匹配）
         let dplResolved = true;
@@ -3371,6 +3379,7 @@
         async function playFav(i) {
             const f = favorites[i];
             if (!f) return;
+            playedFromPosterWall = false;   // 收藏夹起播，停止后回首页
             if (f.kind === 'local') {
                 let rec = null;
                 try {
@@ -4488,6 +4497,7 @@
         // Load video file
         async function loadVideoFile(file) {
             if (!file) return;
+            playedFromPosterWall = false;   // 本地文件起播，停止后回首页
             // 播放本地文件时清除云端列表的播放高亮
             if (typeof setCloudPlaying === 'function') setCloudPlaying('');
             urlLoadRequestId++;
@@ -5023,6 +5033,7 @@
             playlistPanel.classList.toggle('active');
         });
         document.getElementById('playlistClose').addEventListener('click', () => {
+            if (typeof setCloudPickMode === 'function') setCloudPickMode(false);
             playlistPanel.classList.remove('active');
         });
         // 播放列表工具栏：添加媒体目录 / 重新匹配 / 清空
@@ -5398,6 +5409,7 @@
 
         // Play/Pause button - works in both normal and VR mode
         // 停止播放：暂停 + 回到开头 + 释放画面（保留播放列表）
+        // 并返回首页；若当前是从海报墙起播的，则返回海报墙
         const stopBtn = document.getElementById('stopBtn');
         function stopPlayback() {
             try {
@@ -5407,6 +5419,14 @@
             playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
             bigPlayBtn.classList.add('show');
             if (stopBtn) stopBtn.disabled = true;
+            if (playedFromPosterWall && posterWallMask) {
+                // 从海报墙起播 → 停止后回到海报墙页面
+                posterWallMask.classList.add('active');
+            } else {
+                // 否则返回首页（hero 面板）
+                heroClose.style.display = 'inline-flex';
+                dropZone.classList.add('active');
+            }
         }
         if (stopBtn) {
             stopBtn.disabled = true;
@@ -7051,12 +7071,15 @@
             favTools.style.display = (!show && !isPl && isDesktopApp) ? '' : 'none';
             selectTools.style.display = 'none';
             playlistSummary.style.display = (!show && isPl) ? '' : 'none';
+            // 退出云端浏览时同时退出海报墙选目录模式
+            if (!show && typeof setCloudPickMode === 'function') setCloudPickMode(false);
             // 刷新子页签高亮
             if (typeof renderTabs === 'function') renderTabs();
         }
 
         // 打开播放列表面板并进入云端浏览（连接成功后的列表直接嵌入播放列表）
         function openCloudBrowser() {
+            setCloudPickMode(false);   // 普通云端浏览，退出海报墙选目录模式
             const wList = getWebdavServers();
             const sList = getSmbServers();
             if (!wList.length && !sList.length) {
@@ -7135,6 +7158,14 @@
         }
         if (cloudBrowserUpBtn) {
             cloudBrowserUpBtn.addEventListener('click', () => {
+                // 海报墙选目录模式：在选择器里回上级
+                if (cloudPickMode) {
+                    if (posterWallPickPath === '/' || !posterWallPickPath) return;
+                    const parts = posterWallPickPath.replace(/\/$/, '').split('/').filter(Boolean);
+                    parts.pop();
+                    pwRenderPickerPanel('/' + (parts.length ? parts.join('/') + '/' : ''));
+                    return;
+                }
                 if (!currentCloudSource) return;
                 if (currentCloudSource.kind === 'webdav') {
                     if (currentWebdavPath === '/' || !currentWebdavPath) return;
@@ -7153,6 +7184,7 @@
         }
         if (cloudBrowserRefreshBtn) {
             cloudBrowserRefreshBtn.addEventListener('click', () => {
+                if (cloudPickMode) { pwRenderPickerPanel(posterWallPickPath || '/'); return; }
                 if (!currentCloudSource) return;
                 loadCurrentCloudDirectory(currentCloudSource.kind === 'webdav' ? currentWebdavPath : currentSmbPath);
             });
@@ -7166,6 +7198,12 @@
             cloudSourceSelect.addEventListener('change', () => {
                 const val = cloudSourceSelect.value;
                 if (!val) return;
+                // 海报墙选目录模式：切换的是海报墙来源，回到该来源根目录重选
+                if (cloudPickMode) {
+                    pwSwitchSource(val);
+                    pwRenderPickerPanel('/');
+                    return;
+                }
                 const [kind, idOrUrl] = val.split('|');
                 if (kind === 'webdav') {
                     const found = getWebdavServers().find((x) => (x.id || x.url) === idOrUrl);
@@ -7346,6 +7384,7 @@
             const t = ensureTempTab();
             activeTab = 'playlist';
             activePlId = t.id;
+            playedFromPosterWall = false;
             setCloudPlaying(item.href);   // 云端列表高亮当前播放
             renderTabs();
             setPlaylist(queue, 0);
@@ -7447,6 +7486,7 @@
             const t = ensureTempTab();
             activeTab = 'playlist';
             activePlId = t.id;
+            playedFromPosterWall = false;
             setCloudPlaying(item.path);   // 云端列表高亮当前播放
             renderTabs();
             setPlaylist(queue, 0);
@@ -7638,7 +7678,10 @@
             const startUrl = toUrl(startVideo);
             const startIdx = Math.max(0, queueItems.findIndex((q) => q.url === startUrl));
 
-            webdavModalMask.classList.remove('active');
+            // 关键：海报墙是整屏页面，起播必须关掉它，
+            // 否则视频只在后台播放、前台被海报墙盖住
+            playedFromPosterWall = true;
+            if (posterWallMask) posterWallMask.classList.remove('active');
             lastDplEntries = null;
             const t = ensureTempTab();
             activeTab = 'playlist';
@@ -7695,7 +7738,6 @@
         const posterWallServerSelect = document.getElementById('posterWallServerSelect');
         const posterWallStatusBar = document.getElementById('posterWallStatusBar');
         const posterWallNav = document.getElementById('posterWallNav');
-        const posterWallUpBtn = document.getElementById('posterWallUpBtn');
         const posterWallPathText = document.getElementById('posterWallPathText');
         const posterWallBody = document.getElementById('posterWallBody');
         const posterWallImportInput = document.getElementById('posterWallImportInput');
@@ -8023,12 +8065,18 @@
         }
 
         // ── 目录选择器 ───────────────────────────────────
+        // ── 目录选择器：在右侧播放列表面板中以云端列表样式选目录 ──
         async function pwOpenFolderPicker() {
             const src = posterWallCurrentSource();
             if (!src) { pwShowEmptyGuide(); return; }
-            posterWallNav.style.display = 'flex';
             posterWallPickPath = '/';
-            await pwRenderPicker('/');
+            // 打开右侧面板，进入「海报墙选目录」模式（云端列表样式）
+            playlistPanel.classList.add('active');
+            setCloudMode(true);
+            renderCloudSourceSelect();
+            if (cloudSourceSelect) cloudSourceSelect.value = posterWallSourceId;
+            setCloudPickMode(true);
+            await pwRenderPickerPanel('/');
         }
 
         /// 列出 SMB 共享（作为一级目录）
@@ -8135,13 +8183,34 @@
             } catch { return href; }
         }
 
-        async function pwRenderPicker(path) {
+        // 「海报墙选目录」模式：右侧面板以云端列表样式展示文件夹
+        let cloudPickMode = false;
+        function setCloudPickMode(on) {
+            cloudPickMode = !!on;
+            playlistPanel.classList.toggle('picking', cloudPickMode);
+            const bar = document.getElementById('cloudPickBar');
+            if (bar) bar.style.display = cloudPickMode ? '' : 'none';
+        }
+        // 选好目录后起扫：关闭面板回到海报墙页面，扫描结果上墙
+        const cloudPickScanBtn = document.getElementById('cloudPickScanBtn');
+        if (cloudPickScanBtn) {
+            cloudPickScanBtn.addEventListener('click', () => {
+                const path = posterWallPickPath || '/';
+                setCloudPickMode(false);
+                playlistPanel.classList.remove('active');
+                pwScan(path);
+            });
+        }
+
+        /// 在右侧面板渲染目录选择器（数据逻辑与原页内选择器一致）
+        async function pwRenderPickerPanel(path) {
             const src = posterWallCurrentSource();
             if (!src) return;
             posterWallPickPath = path;
             posterWallPathText.textContent = path;
-            posterWallBody.innerHTML = `<div class="poster-scan-status">`
-                + `<i class="fa-solid fa-spinner fa-spin"></i> 读取目录…</div>`;
+            if (cloudBrowserPathText) cloudBrowserPathText.textContent = path;
+            cloudBrowserFileList.innerHTML = '<div class="cb-empty">'
+                + '<i class="fa-solid fa-spinner fa-spin"></i><span>读取目录…</span></div>';
 
             let items = [];
             try {
@@ -8167,43 +8236,36 @@
                     items = path === '/' ? await pwListSmbRoot(src) : await pwListSmbDir(src, path);
                 }
             } catch (err) {
-                posterWallBody.innerHTML = `<div class="pw-empty"><i class="fa-solid fa-triangle-exclamation"></i>`
-                    + `<p>读取失败：${err.message}</p></div>`;
+                cloudBrowserFileList.innerHTML = `<div class="cb-empty" style="color:#f87171;">`
+                    + `<i class="fa-solid fa-circle-exclamation"></i>`
+                    + `<span>读取失败：${escapeHtml(err.message)}</span></div>`;
                 return;
             }
 
             const folders = items.filter((it) => it.isDir)
                 .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { numeric: true }));
 
-            posterWallBody.innerHTML = '';
-            const wrap = document.createElement('div');
-            wrap.className = 'pw-picker';
+            cloudBrowserFileList.innerHTML = '';
             if (!folders.length) {
-                wrap.innerHTML = `<div class="pw-empty" style="padding:16px;">`
-                    + `<p><small>该目录没有子文件夹，可直接扫描当前目录</small></p></div>`;
-            } else {
-                folders.forEach((f) => {
-                    const row = document.createElement('div');
-                    row.className = 'webdav-item is-dir';
-                    row.innerHTML = `<div class="webdav-item-icon"><i class="fa-solid fa-folder"></i></div>`
-                        + `<div class="webdav-item-name">${f.name}</div>`
-                        + `<div class="webdav-item-size"><i class="fa-solid fa-chevron-right"></i></div>`;
-                    row.addEventListener('click', () => {
-                        const next = path.replace(/\/$/, '') + '/' + f.name + '/';
-                        pwRenderPicker(next);
-                    });
-                    wrap.appendChild(row);
-                });
+                cloudBrowserFileList.innerHTML = '<div class="cb-empty">'
+                    + '<i class="fa-solid fa-folder-open"></i>'
+                    + '<span>该目录没有子文件夹，可直接扫描当前目录</span></div>';
+                return;
             }
-            posterWallBody.appendChild(wrap);
-
-            const bar = document.createElement('div');
-            bar.className = 'poster-scan-bar';
-            bar.innerHTML = `<button class="pl-modal-btn primary" id="pwScanHereBtn">`
-                + `<i class="fa-solid fa-radar"></i>&nbsp; 扫描当前目录</button>`;
-            posterWallBody.appendChild(bar);
-            const scanBtn = bar.querySelector('#pwScanHereBtn');
-            if (scanBtn) scanBtn.addEventListener('click', () => pwScan(posterWallPickPath));
+            folders.forEach((f) => {
+                const el = document.createElement('div');
+                el.className = 'playlist-item cb-item is-dir';
+                el.innerHTML = `
+                    <div class="cb-item-icon"><i class="fa-solid fa-folder"></i></div>
+                    <div class="cb-item-name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</div>
+                    <div class="cb-item-size">›</div>
+                `;
+                el.addEventListener('click', () => {
+                    const next = path.replace(/\/$/, '') + '/' + f.name + '/';
+                    pwRenderPickerPanel(next);
+                });
+                cloudBrowserFileList.appendChild(el);
+            });
         }
 
         /// 扫描进度实时落库（节流）。
@@ -8694,15 +8756,6 @@
                 pwOpenFolderPicker();
             });
         }
-        if (posterWallUpBtn) {
-            posterWallUpBtn.addEventListener('click', () => {
-                if (posterWallPickPath === '/' || !posterWallPickPath) return;
-                const parts = posterWallPickPath.replace(/\/$/, '').split('/').filter(Boolean);
-                parts.pop();
-                pwRenderPicker('/' + (parts.length ? parts.join('/') + '/' : ''));
-            });
-        }
-
         // Clean up object URL when page unloads
         window.addEventListener('beforeunload', () => {
             // 扫描进度落库后再离开，避免中途退出丢结果

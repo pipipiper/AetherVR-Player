@@ -54,8 +54,9 @@ test("core modules are defined exactly once (no accidental deletion or duplicati
     "stripExt", "posterKindOf", "posterKeyOf", "buildPosterWall",
     "renderPosterWall",
     // 海报墙（对齐 iOS）：来源隔离 / 多文件夹增量 / 导出导入
+    // 目录选择器已迁入右侧播放列表面板（pwRenderPickerPanel）
     "posterWallSources", "pwLoadSource", "pwSaveSource", "pwMergeScan",
-    "pwSwitchSource", "pwScan", "pwRenderPicker", "pwRenderMovies",
+    "pwSwitchSource", "pwScan", "pwRenderPickerPanel", "pwRenderMovies",
     "pwShowBackupMenu", "pwShowFolderManager",
   ];
   for (const name of required) {
