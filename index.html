@@ -4820,7 +4820,8 @@
                 const controller = new AbortController();
                 activeProbeController = controller;
                 showHeroLoading('正在检测视频编码信息…');
-                const probe = await probeRemoteMedia(rawUrl, controller.signal, true, activeUpstreamAuth);
+                const effectiveAuth = findMatchingWebdavAuth(rawUrl) || activeUpstreamAuth;
+                const probe = await probeRemoteMedia(rawUrl, controller.signal, true, effectiveAuth);
                 if (requestId !== urlLoadRequestId) return;
                 if (activeProbeController === controller) activeProbeController = null;
                 hideHeroLoading();

@@ -541,24 +541,31 @@ async function resolveSafeTarget(u) {
 /* 远程链接预检：只取前 2KB（Range），判断上游返回的是不是视频数据。
  * OpenList/网盘路径错误、签名过期、权限不足时返回的是 JSON/HTML，
  * 直接交给播放器只会得到误导性的「无法解码」。 */
-function preflightRemote(target, redirects = 0) {
+function preflightRemote(target, redirects = 0, cred = null) {
   return new Promise((resolve) => {
     let u;
     try { u = new URL(target); } catch { return resolve({ error: "链接格式不正确" }); }
     resolveSafeTarget(u).then((resolved) => {
       const lib = u.protocol === "https:" ? https : http;
+      const headers = {
+        "Host": u.host,
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "*/*",
+        "Range": "bytes=0-2047",
+      };
+      // 支持 WebDAV 等私有源 Basic 认证凭据
+      const credAuth = decodeUpstreamCred(cred);
+      if (credAuth) {
+        headers["Authorization"] = "Basic "
+          + Buffer.from(`${credAuth.username}:${credAuth.password}`).toString("base64");
+      }
       const options = {
         protocol: u.protocol,
         hostname: resolved.address,
         family: resolved.family,
         port: u.port || (u.protocol === "https:" ? 443 : 80),
         path: `${u.pathname}${u.search}`,
-        headers: {
-          "Host": u.host,
-          "User-Agent": "Mozilla/5.0",
-          "Accept": "*/*",
-          "Range": "bytes=0-2047",
-        },
+        headers,
         timeout: 10000,
       };
       if (u.protocol === "https:" && !net.isIP(u.hostname)) options.servername = u.hostname;
@@ -566,7 +573,7 @@ function preflightRemote(target, redirects = 0) {
         if ([301, 302, 303, 307, 308].includes(pres.statusCode) && pres.headers.location) {
           pres.resume();
           if (redirects >= 5) return resolve({ error: "重定向次数过多" });
-          return resolve(preflightRemote(new URL(pres.headers.location, u).href, redirects + 1));
+          return resolve(preflightRemote(new URL(pres.headers.location, u).href, redirects + 1, cred));
         }
         const ct = (pres.headers["content-type"] || "").toLowerCase();
         const status = pres.statusCode;
@@ -1091,7 +1098,7 @@ const requestHandler = async (req, res) => {
       probeStarts.set(ip, Date.now());
       // 先预检上游返回的是不是视频（OpenList 路径错误/签名过期会返回 JSON/HTML），
       // 不是视频时直接给出具体原因，而不是让 ffprobe/播放器报误导性错误
-      preflightRemote(target).then((pf) => {
+      preflightRemote(target, 0, probeCred).then((pf) => {
         if (pf && pf.error) {
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ preflight_error: pf.error }));
