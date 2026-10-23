@@ -197,17 +197,23 @@ test("SMB is desktop-only and bridged through preload", () => {
   assert.match(html, /SMB 仅在桌面端可用/);
 });
 
-test("unified cloud browser panel matches right-side playlist style and hides connection form", () => {
-  // 右侧浮动抽屉文件浏览器
-  assert.match(html, /id="cloudBrowserPanel"/);
-  assert.match(html, /class="[^"]*cloud-browser-panel[^"]*"/);
+test("cloud browser is embedded directly into the playlist panel", () => {
+  // 云端文件列表直接嵌入播放列表面板，不再是独立浮层
+  assert.doesNotMatch(html, /id="cloudBrowserPanel"/);
   // 条目样式与播放列表一致
   assert.match(html, /playlist-item cb-item/);
-  // 连接信息在独立弹层中，右侧面板只展示纯净列表
+  // 连接信息在独立弹层中，面板内只展示纯净列表
   assert.match(html, /id="connectSourceModalMask"/);
   assert.match(html, /id="cloudSourceSelect"/);
   assert.match(html, /id="cloudBrowserFileList"/);
   assert.match(html, /id="cloudBrowserPathBar"/);
+  // 云端工具行 / 路径栏 / 文件列表都在播放列表面板内
+  const panel = html.match(
+    /<div class="playlist-panel" id="playlistPanel">[\s\S]*?<div class="playlist-foot">/);
+  assert.ok(panel, "playlist panel markup missing");
+  assert.match(panel[0], /id="cloudBar"/);
+  assert.match(panel[0], /id="cloudBrowserPathBar"/);
+  assert.match(panel[0], /id="cloudBrowserFileList"/);
 });
 
 test("WebDAV playback automatically resolves credentials to prevent 401 decode errors", () => {

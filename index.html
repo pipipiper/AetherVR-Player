@@ -1076,6 +1076,14 @@
         .webdav-item-actions { display: flex; gap: 4px; flex: none; opacity: 0; transition: opacity .12s; }
         .webdav-item:hover .webdav-item-actions { opacity: 1; }
 
+        /* 海报墙目录选择器：弹窗是浅色底，.webdav-item 默认的白字是给深色
+           播放列表用的，直接套用在海报墙里会"白字白底"完全看不见 */
+        #posterWallBody .webdav-item { color: var(--text); }
+        #posterWallBody .webdav-item:hover { background: rgba(22,32,46,.07); }
+        #posterWallBody .webdav-item .webdav-item-size { color: var(--muted); }
+        #posterWallBody .webdav-item .webdav-item-icon { color: #8b96a8; }
+        #posterWallBody .webdav-item.is-dir .webdav-item-icon { color: #e8a23c; }
+
         /* 连接成功后隐藏连接表单 */
         .webdav-form.is-hidden,
         .webdav-recents.is-hidden,
@@ -1535,19 +1543,7 @@
         .pl-tab-nav:hover { color: #fff; background: rgba(255,255,255,.10); }
         .pl-tab-nav:disabled { color: rgba(154,163,178,.35); cursor: default; background: none; }
 
-        /* ── 云端/网络文件浏览器面板（黑底右侧展示，99% 参考播放列表样式） ── */
-        .cloud-browser-panel {
-            position: fixed; top: 70px; right: 14px; bottom: 84px; z-index: 28;
-            width: 360px; max-width: 86vw;
-            display: none; flex-direction: column;
-            background: rgba(18, 22, 32, 0.94);
-            backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            border-radius: 16px;
-            color: #e8ecf3; overflow: hidden;
-            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.12);
-        }
-        .cloud-browser-panel.active { display: flex; }
+        /* ── 云端/网络文件浏览（嵌入播放列表面板，样式与播放列表一致） ── */
         .cb-head-title {
             display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0;
         }
@@ -1588,6 +1584,12 @@
             padding: 40px 16px; text-align: center; color: #94a3b8; font-size: 13px;
         }
         .cb-empty i { font-size: 32px; opacity: 0.35; margin-bottom: 10px; display: block; }
+
+        /* ── 云端浏览嵌入播放列表面板（WebDAV / SMB 连接成功后的列表直接进播放列表） ── */
+        .cb-cloud-bar { align-items: center; flex-wrap: nowrap; }
+        .cb-cloud-icon { color: #f59e0b; font-size: 13px; flex: none; }
+        .cb-cloud-bar .cb-source-select { flex: 1; min-width: 0; max-width: none; }
+        .cb-cloud-bar .pl-tab-nav { font-size: 12px; padding: 4px 6px; }
 
         /* ── 条目位置标记（起播跳转点）──────────────────── */
         .pl-pos {
@@ -1941,6 +1943,7 @@
                         <button class="pl-tab-action" id="tabOpenList" title="打开播放列表（.dpl 文件）"><i class="fa-solid fa-folder-open"></i></button>
                     </div>
                     <span id="playlistTitle">播放列表</span>
+                    <button class="playlist-close" id="playlistCloudBtn" title="浏览 WebDAV / SMB 云端文件" style="font-size:13px"><i class="fa-solid fa-cloud"></i></button>
                     <button class="playlist-close" id="playlistClose" title="关闭"><i class="fa-solid fa-xmark"></i></button>
                 </div>
                 <div class="playlist-tools" id="playlistTools">
@@ -1967,9 +1970,24 @@
                     <button class="pl-tool-btn" id="deleteSelBtn"><i class="fa-solid fa-trash-can"></i>&nbsp;删除所选</button>
                     <button class="pl-tool-btn" id="cancelSelectBtn"><i class="fa-solid fa-xmark"></i>&nbsp;取消</button>
                 </div>
+                <!-- 云端/网络文件浏览（WebDAV / SMB）：连接成功后直接嵌入本面板 -->
+                <div class="playlist-tools cb-cloud-bar" id="cloudBar" style="display:none">
+                    <i class="fa-solid fa-folder-tree cb-cloud-icon"></i>
+                    <select id="cloudSourceSelect" class="cb-source-select" title="切换网络/云端文件源"></select>
+                    <button class="pl-tab-nav" id="cloudBrowserUpBtn" title="返回上级目录"><i class="fa-solid fa-arrow-up"></i></button>
+                    <button class="pl-tab-nav" id="cloudBrowserRefreshBtn" title="刷新目录"><i class="fa-solid fa-rotate-right"></i></button>
+                    <button class="pl-tab-nav" id="cloudBrowserAddBtn" title="连接新服务器 (WebDAV / SMB)"><i class="fa-solid fa-plus"></i></button>
+                </div>
+                <!-- 目录路径展示栏 -->
+                <div class="cb-path-bar" id="cloudBrowserPathBar" style="display:none" title="当前路径">
+                    <i class="fa-solid fa-folder"></i>
+                    <span class="cb-path-text" id="cloudBrowserPathText">/</span>
+                </div>
                 <div class="playlist-summary" id="playlistSummary" style="display:none"></div>
                 <ul class="playlist-items" id="playlistItems"></ul>
                 <ul class="playlist-items" id="favItems" style="display:none"></ul>
+                <!-- 云端文件列表项容器（与播放列表项同一套样式） -->
+                <div class="cb-items" id="cloudBrowserFileList" style="display:none"></div>
                 <div class="playlist-foot">本地文件仅在浏览器内读取，不会上传服务器</div>
             </div>
             <!-- 位置记录确认弹窗（收藏 / 加入列表时） -->
@@ -2043,29 +2061,6 @@
                     </div>
                 </div>
             </div>
-            <!-- 统一的网络/云端文件浏览器面板（黑底右侧展示，99% 参考播放列表样式） -->
-            <div class="playlist-panel cloud-browser-panel" id="cloudBrowserPanel">
-                <div class="playlist-head">
-                    <div class="cb-head-title">
-                        <i class="fa-solid fa-folder-tree" style="color:var(--yellow); font-size:13px;"></i>
-                        <select id="cloudSourceSelect" class="cb-source-select" title="切换网络/云端文件源"></select>
-                    </div>
-                    <div class="playlist-head-actions">
-                        <button class="pl-tab-nav" id="cloudBrowserUpBtn" title="返回上级目录"><i class="fa-solid fa-arrow-up"></i></button>
-                        <button class="pl-tab-nav" id="cloudBrowserRefreshBtn" title="刷新目录"><i class="fa-solid fa-rotate-right"></i></button>
-                        <button class="pl-tab-nav" id="cloudBrowserAddBtn" title="连接新服务器 (WebDAV / SMB)"><i class="fa-solid fa-plus"></i></button>
-                        <button class="playlist-close" id="cloudBrowserClose" title="关闭"><i class="fa-solid fa-xmark"></i></button>
-                    </div>
-                </div>
-                <!-- 目录路径展示栏 -->
-                <div class="cb-path-bar" id="cloudBrowserPathBar" title="当前路径">
-                    <i class="fa-solid fa-folder"></i>
-                    <span class="cb-path-text" id="cloudBrowserPathText">/</span>
-                </div>
-                <!-- 列表项容器（黑底右侧展示，99% 参考播放列表项） -->
-                <div class="cb-items" id="cloudBrowserFileList"></div>
-            </div>
-
             <!-- 连接/添加新文件源弹窗（仅配置时弹出，连接成功后自动关闭并在右侧展示） -->
             <div class="pl-modal-mask" id="connectSourceModalMask">
                 <div class="pl-modal">
@@ -3522,6 +3517,8 @@
 
         // ── 页签切换：favs 固定最左；playlist 页签切换到对应列表 ──
         function switchTab(tab, plId) {
+            // 切回收藏夹/播放列表页签时退出云端浏览模式
+            if (typeof setCloudMode === 'function') setCloudMode(false);
             activeTab = tab;
             if (tab === 'playlist') {
                 if (plId) activePlId = plId;
@@ -6773,13 +6770,13 @@
         const smbPassInput = document.getElementById('smbPass');
         const webdavRecentsEl = document.getElementById('webdavRecents');
 
-        // 右侧浮动抽屉文件浏览器
-        const cloudBrowserPanel = document.getElementById('cloudBrowserPanel');
+        // 云端/网络文件浏览：嵌入播放列表面板（不再是独立浮层）
+        const cloudBar = document.getElementById('cloudBar');
+        const cloudBrowserPathBar = document.getElementById('cloudBrowserPathBar');
         const cloudSourceSelect = document.getElementById('cloudSourceSelect');
         const cloudBrowserUpBtn = document.getElementById('cloudBrowserUpBtn');
         const cloudBrowserRefreshBtn = document.getElementById('cloudBrowserRefreshBtn');
         const cloudBrowserAddBtn = document.getElementById('cloudBrowserAddBtn');
-        const cloudBrowserClose = document.getElementById('cloudBrowserClose');
         const cloudBrowserPathText = document.getElementById('cloudBrowserPathText');
         const cloudBrowserFileList = document.getElementById('cloudBrowserFileList');
 
@@ -6936,7 +6933,26 @@
             }
         }
 
-        // 统一打开右侧文件浏览器面板（黑底右侧展示，99% 参考播放列表）
+        // 云端浏览模式：文件列表直接嵌入播放列表面板
+        let cloudMode = false;
+        function setCloudMode(on) {
+            cloudMode = !!on;
+            const show = cloudMode;
+            if (cloudBar) cloudBar.style.display = show ? '' : 'none';
+            if (cloudBrowserPathBar) cloudBrowserPathBar.style.display = show ? '' : 'none';
+            if (cloudBrowserFileList) cloudBrowserFileList.style.display = show ? '' : 'none';
+            // 恢复/隐藏常规播放列表视图（与 switchTab 的可见性规则保持一致）
+            const isPl = activeTab === 'playlist';
+            playlistItems.style.display = (!show && isPl) ? '' : 'none';
+            favItems.style.display = (!show && !isPl) ? '' : 'none';
+            playlistTools.style.display = (!show && isPl) ? '' : 'none';
+            playlistTools2.style.display = (!show && isPl) ? '' : 'none';
+            favTools.style.display = (!show && !isPl && isDesktopApp) ? '' : 'none';
+            selectTools.style.display = 'none';
+            playlistSummary.style.display = (!show && isPl) ? '' : 'none';
+        }
+
+        // 打开播放列表面板并进入云端浏览（连接成功后的列表直接嵌入播放列表）
         function openCloudBrowser() {
             const wList = getWebdavServers();
             const sList = getSmbServers();
@@ -6953,15 +6969,9 @@
                     currentCloudSource = { kind: 'smb', ...sList[0] };
                 }
             }
-            cloudBrowserPanel.classList.add('active');
-            // 关闭播放列表面板，避免两层重叠
-            const plPanel = document.getElementById('playlistPanel');
-            if (plPanel) plPanel.classList.remove('active');
+            playlistPanel.classList.add('active');
+            setCloudMode(true);
             loadCurrentCloudDirectory(currentCloudSource.kind === 'webdav' ? currentWebdavPath : currentSmbPath);
-        }
-
-        function closeCloudBrowser() {
-            if (cloudBrowserPanel) cloudBrowserPanel.classList.remove('active');
         }
 
         function openConnectSourceModal() {
@@ -7000,6 +7010,14 @@
                 openCloudBrowser();
             });
         }
+        // 播放列表面板内的云端入口
+        const playlistCloudBtn = document.getElementById('playlistCloudBtn');
+        if (playlistCloudBtn) {
+            playlistCloudBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                openCloudBrowser();
+            });
+        }
         if (connectSourceClose) connectSourceClose.addEventListener('click', closeConnectSourceModal);
         if (connCancelBtn) connCancelBtn.addEventListener('click', closeConnectSourceModal);
         if (connectSourceModalMask) {
@@ -7007,8 +7025,6 @@
                 if (e.target === connectSourceModalMask) closeConnectSourceModal();
             });
         }
-        if (cloudBrowserClose) cloudBrowserClose.addEventListener('click', closeCloudBrowser);
-
         if (cloudBrowserUpBtn) {
             cloudBrowserUpBtn.addEventListener('click', () => {
                 if (!currentCloudSource) return;
@@ -7219,6 +7235,7 @@
             const t = ensureTempTab();
             activeTab = 'playlist';
             activePlId = t.id;
+            setCloudMode(false);   // 起播后回到播放列表视图，展示连播队列
             renderTabs();
             setPlaylist(queue, startIdx);
             showSpatialToast(`起播 WebDAV：${item.name}（同目录 ${queue.length} 个视频连播）`);
@@ -7315,6 +7332,7 @@
             const t = ensureTempTab();
             activeTab = 'playlist';
             activePlId = t.id;
+            setCloudMode(false);   // 起播后回到播放列表视图，展示连播队列
             renderTabs();
             setPlaylist(queue, startIdx);
             showSpatialToast(`起播 SMB：${item.name}（同目录 ${queue.length} 个视频连播）`);
@@ -7870,22 +7888,55 @@
             }));
         }
 
+        // SMB 会话缓存：扫描时同一共享会列几十上百个目录，
+        // 每次都 net use / mount_smbfs 会非常慢，按 来源|共享名 复用已连接的本地根
+        const pwSmbBaseCache = new Map();
+
         /// 列出 SMB 目录内容
         async function pwListSmbDir(src, dirPath) {
             if (!window.vrDesktop || typeof window.vrDesktop.smbListDir !== 'function') {
                 throw new Error('SMB 仅在桌面端可用');
             }
-            // 一级：/ShareName → 先解析成 UNC/挂载路径再列
-            let target = dirPath.replace(/^smb:\/\//, '');
-            if (!target.includes('/') && !target.includes('\\')) {
-                // 只有共享名，转成平台路径
-                const share = target;
-                target = window.vrDesktop.platform === 'win32'
+            // 前端虚拟路径形如 /Share/sub/dir/（也可能带 smb://host 前缀）。
+            // 必须先拆出共享名、建立会话拿到真实磁盘根，再拼接子目录——
+            // 直接把 "/Share/sub/" 当本地路径读，会被 Node 解析成 C:\Share\sub\ 而 ENOENT
+            const raw = String(dirPath || '')
+                .replace(/^smb:\/\//i, '')
+                .replace(/^[\\/]+|[\\/]+$/g, '');
+            const parts = raw.split(/[\\/]/).filter(Boolean);
+            if (!parts.length) throw new Error('无效的 SMB 路径');
+            // smb://host/share/... 形式：首段是主机名时去掉
+            if (parts.length > 1 && src.host
+                && parts[0].toLowerCase() === String(src.host).toLowerCase()) {
+                parts.shift();
+            }
+            const share = parts[0];
+            const rest = parts.slice(1);
+
+            // 先建立/复用 SMB 会话，拿到可访问的本地根（Windows: UNC；macOS: 挂载点）
+            const cacheKey = (src.id || src.host || '') + '|' + share;
+            let base = pwSmbBaseCache.get(cacheKey) || '';
+            if (!base && typeof window.vrDesktop.smbConnectShare === 'function') {
+                const conn = await window.vrDesktop.smbConnectShare(
+                    src.host, share, src.user || '', src.pass || '');
+                if (conn && conn.ok && conn.localPath) {
+                    base = conn.localPath;
+                    pwSmbBaseCache.set(cacheKey, base);
+                }
+            }
+            if (!base) {
+                base = window.vrDesktop.platform === 'win32'
                     ? `\\\\${src.host}\\${share}`
                     : `//${src.user ? encodeURIComponent(src.user) + '@' : ''}${src.host}/${share}`;
             }
-            const r = await window.vrDesktop.smbListDir(target);
+            const sep = window.vrDesktop.platform === 'win32' ? '\\' : '/';
+            const diskPath = base.replace(/[\\/]+$/, '')
+                + (rest.length ? sep + rest.join(sep) : '');
+
+            const r = await window.vrDesktop.smbListDir(diskPath);
             if (!r || !r.ok) {
+                // 连接可能已失效（重启/网络抖动），清缓存让下次重建会话
+                pwSmbBaseCache.delete(cacheKey);
                 throw new Error((r && r.error) || '无法读取 SMB 目录');
             }
             return (r.entries || []).map((e) => ({
@@ -7894,6 +7945,34 @@
                 isDir: e.isDirectory,
                 size: e.size || 0,
             }));
+        }
+
+        /// 把海报墙里的相对路径拼成完整 URL（WebDAV 目录读取用）
+        function posterWallUrlFor(baseUrl, subPath) {
+            let url = String(baseUrl || '').replace(/\/$/, '') + '/';
+            if (subPath && subPath !== '/') url += String(subPath).replace(/^\//, '');
+            try {
+                const u = new URL(url);
+                if (u.pathname === '/' || u.pathname === '') u.pathname = '/dav/';
+                return u.href;
+            } catch { return url; }
+        }
+
+        /// 海报墙条目 → 可播放/可加载的地址
+        /// WebDAV：源站 origin + href；SMB：主进程返回的磁盘路径走 /local 流式端点
+        function posterWallToUrl(item) {
+            const href = typeof item === 'string' ? item : String((item && item.href) || '');
+            const src = posterWallCurrentSource();
+            if (src && src.kind === 'smb') return localUrl(href);
+            if (src && src.kind === 'webdav' && (src.user || src.pass)) {
+                // 海报墙直接起播时补齐代理转码所需的上游凭据
+                activeUpstreamAuth = { username: src.user || '', password: src.pass || '' };
+            }
+            if (/^https?:\/\//i.test(href)) return href;
+            try {
+                const base = new URL((src && src.url) || location.origin);
+                return base.origin + (href.startsWith('/') ? '' : '/') + href;
+            } catch { return href; }
         }
 
         async function pwRenderPicker(path) {

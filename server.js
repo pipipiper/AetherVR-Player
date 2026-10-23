@@ -46,6 +46,9 @@ const MIME = {
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
   ".png": "image/png",
+  ".webp": "image/webp",
+  ".gif": "image/gif",
+  ".bmp": "image/bmp",
   ".woff2": "font/woff2",
   ".json": "application/json",
   ".m3u8": "application/vnd.apple.mpegurl",
@@ -1158,7 +1161,9 @@ const requestHandler = async (req, res) => {
         res.writeHead(404).end("Not found");
         return;
       }
-      const type = VIDEO_MIME[path.extname(target).toLowerCase()] || "application/octet-stream";
+      // 海报墙封面/预览图也走 /local：除视频外补上常见图片类型
+      const ext = path.extname(target).toLowerCase();
+      const type = VIDEO_MIME[ext] || MIME[ext] || "application/octet-stream";
       const base = {
         "Content-Type": type,
         "Accept-Ranges": "bytes",
