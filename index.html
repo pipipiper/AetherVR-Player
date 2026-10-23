@@ -5856,6 +5856,14 @@
             if (folder) destUrl += folder + '/';
             destUrl += filename;
 
+            try {
+                const testU = new URL(destUrl);
+                if (testU.pathname.startsWith('/' + filename)) {
+                    testU.pathname = '/dav/' + filename;
+                    destUrl = testU.href;
+                }
+            } catch {}
+
             if (webdavBackupStatus) {
                 webdavBackupStatus.textContent = `正在上传备份至 ${server.name || hostnameOfUrl(server.url)}…`;
                 webdavBackupStatus.className = 'webdav-backup-status';
@@ -5908,6 +5916,16 @@
 
             let listUrl = server.url.replace(/\/$/, '') + '/';
             if (folder) listUrl += folder + '/';
+
+            // 针对 OpenList/AList 等 WebDAV 服务：
+            // 如果根路径不是 /dav，自动确保 /dav 挂载路径正常拼接
+            try {
+                const testU = new URL(listUrl);
+                if (testU.pathname === '/' || testU.pathname === '') {
+                    testU.pathname = '/dav/';
+                    listUrl = testU.href;
+                }
+            } catch {}
 
             if (webdavBackupStatus) {
                 webdavBackupStatus.textContent = '正在检索 WebDAV 备份文件…';
