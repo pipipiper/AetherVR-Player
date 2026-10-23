@@ -107,3 +107,44 @@ test("poster wall keeps each source (incl. multiple WebDAV) fully separate", () 
   // 增量合并按 rootPath 替换，保留其它文件夹
   assert.match(html, /snap\.movies = \(snap\.movies \|\| \[\]\)\.filter\(\(m\) => m\.rootPath !== rootPath\)/);
 });
+
+test("poster wall supports incremental rescan without losing existing entries", () => {
+  // 重扫同一文件夹时，新片插入、已有更新、漏读的标记失效而不是直接删
+  assert.match(html, /function pwMergeScan\(sourceId, meta, rootPath, movies, options\)/);
+  assert.match(html, /snapMovie\.missingSince = null/, "rescanned entries must clear missing flag");
+  assert.match(html, /merged\.push\(\{ \.\.\.old, missingSince: old\.missingSince \|\| Date\.now\(\) \}\)/,
+    "unseen entries must be marked, not deleted");
+  // 中断的半成品扫描不应标记失效
+  assert.match(html, /if \(complete\) \{/);
+  // 有增量扫描入口
+  assert.match(html, /'incremental'/, "scan must accept incremental mode");
+  assert.match(html, /data-incremental/);
+});
+
+test("poster wall purges invalid (missing) entries on demand", () => {
+  assert.match(html, /function pwPurgeMissing\(sourceId, olderThanMs\)/);
+  assert.match(html, /function pwMissingList\(sourceId\)/);
+  assert.match(html, /data-purge/, "purge button must exist in folder manager");
+  // 统计失效数量并展示
+  assert.match(html, /疑似失效/);
+});
+
+test("file drop → playback chain is intact", () => {
+  // 拖入视频是核心功能，历史上曾因整段脚本被误删而失效。
+  // 这里锁定从 drop 到播放的完整调用链。
+  const chain = [
+    "handleFiles", "addToFilePool", "buildTempItems", "ensureTempTab",
+    "setPlaylist", "renderPlaylist", "playAt", "playResolved",
+    "loadVideoFile", "loadVideoURL", "isPlayable",
+  ];
+  for (const fn of chain) {
+    const defs = html.match(new RegExp(`function ${fn}\\s*\\(`, "g")) || [];
+    assert.equal(defs.length, 1, `${fn} must be defined exactly once, got ${defs.length}`);
+  }
+  // 拖放监听必须存在，且 dropZone 要阻止冒泡避免重复处理
+  assert.match(html, /dropZone\.addEventListener\('drop'/, "dropZone drop handler missing");
+  assert.match(html, /document\.addEventListener\('drop'/, "document-level drop fallback missing");
+  assert.match(html, /e\.stopPropagation\(\);\s*\/\/ 阻止冒泡到 document 级兜底/);
+  // 存在 file 时必须有兜底播放路径（pathForFile 失败也不至于无法播放）
+  assert.match(html, /if \(item\.file\) \{\s*\n\s*loadVideoFile\(item\.file\)/);
+});

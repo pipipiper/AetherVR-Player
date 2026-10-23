@@ -981,17 +981,26 @@
         .webdav-recent-item:hover .webdav-recent-edit { opacity: 1; }
         .webdav-recent-del:hover { background: #fef2f0; color: var(--red); }
         .webdav-recent-edit:hover { background: var(--surface-2); color: var(--text); }
+        /* 列表行：与右侧播放列表保持一致的紧凑行样式 */
         .webdav-item {
-            display: flex; align-items: center; gap: 10px; padding: 9px 10px;
-            border-radius: 8px; cursor: pointer; font-size: 13px;
-            transition: background 0.15s ease;
+            display: flex; align-items: center; gap: 9px;
+            padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 12.5px;
+            transition: background .15s ease;
         }
-        .webdav-item:hover { background: rgba(59, 108, 255, .09); }
-        .webdav-item-icon { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 8px; background: var(--surface-2); color: var(--muted); font-size: 12px; flex: none; }
+        .webdav-item:hover { background: var(--surface-2); }
+        .webdav-item-icon {
+            width: 24px; height: 24px; display: grid; place-items: center;
+            border-radius: 7px; background: var(--surface-2);
+            color: var(--muted); font-size: 11px; flex: none;
+        }
         .webdav-item.is-dir .webdav-item-icon { color: #e8a23c; background: rgba(232,162,60,.12); }
         .webdav-item.is-video .webdav-item-icon { color: var(--yellow); background: rgba(59,108,255,.1); }
         .webdav-item-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .webdav-item-size { font-size: 11px; color: var(--muted); }
+        .webdav-item-size { font-size: 11px; color: var(--muted); flex: none; }
+        /* 连接成功后隐藏连接表单 */
+        .webdav-form.is-hidden,
+        .webdav-recents.is-hidden,
+        #webdavDesc.is-hidden { display: none !important; }
         .backup-actions { display: flex; gap: 10px; margin: 16px 0; flex-wrap: wrap; }
         .backup-clip-section textarea { height: 90px; }
         /* WebDAV 云端备份与同步专区 */
@@ -1126,6 +1135,41 @@
             background: linear-gradient(to top, var(--surface-3) 60%, transparent);
         }
         .poster-scan-bar .pl-modal-btn { min-width: 200px; justify-content: center; }
+
+        /* 海报墙：文件夹管理与失效清理 */
+        .pw-root-list { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; max-height: 220px; overflow-y: auto; }
+        .pw-root-row {
+            display: flex; align-items: center; gap: 8px;
+            padding: 8px 10px; border-radius: 9px;
+            background: var(--surface-3); border: 1px solid var(--border);
+        }
+        .pw-root-row > i { color: var(--yellow); flex: none; }
+        .pw-root-main { flex: 1; min-width: 0; }
+        .pw-root-name { font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .pw-root-sub { font-size: 10.5px; color: var(--muted); margin-top: 1px; }
+        .pw-root-act { flex: none; padding: 4px 8px !important; font-size: 11px !important; }
+
+        .pw-missing-box {
+            margin-top: 12px; padding: 10px 12px; border-radius: 10px;
+            background: rgba(245,158,11,.07); border: 1px solid rgba(245,158,11,.28);
+        }
+        .pw-missing-head { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: #b45309; }
+        .pw-missing-head i { color: #f59e0b; }
+        .pw-missing-list { display: flex; flex-direction: column; gap: 3px; max-height: 110px; overflow-y: auto; }
+        .pw-missing-item {
+            font-size: 11.5px; color: var(--muted);
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .pw-missing-more { font-size: 11px; color: var(--muted); opacity: .75; }
+
+        /* 海报墙空态引导 */
+        .pw-empty {
+            display: flex; flex-direction: column; align-items: center; gap: 12px;
+            padding: 34px 20px; text-align: center; color: var(--muted);
+        }
+        .pw-empty > i { font-size: 34px; opacity: .35; }
+        .pw-empty p { margin: 0; font-size: 13px; line-height: 1.6; }
+        .pw-empty small { color: var(--muted); opacity: .8; }
 
         /* 海报墙来源状态条 */
         .poster-wall-statusbar {
@@ -1856,7 +1900,7 @@
                         <h3><i class="fa-solid fa-server"></i>&nbsp; WebDAV 挂载与浏览</h3>
                         <button class="modal-close-icon" id="webdavClose"><i class="fa-solid fa-xmark"></i></button>
                     </div>
-                    <p class="pl-modal-desc">连接局域网 NAS 或云端 WebDAV，支持直接浏览并一键播放 VR 视频</p>
+                    <p class="pl-modal-desc" id="webdavDesc">连接局域网 NAS 或云端 WebDAV，支持直接浏览并一键播放 VR 视频</p>
                     <!-- 最近连接（存 localStorage，随跨端备份导出） -->
                     <div class="webdav-recents" id="webdavRecents"></div>
                     <div class="webdav-form" id="webdavForm">
@@ -1874,10 +1918,13 @@
                             <button class="pl-modal-btn primary" id="webdavConnectBtn"><i class="fa-solid fa-plug"></i>&nbsp; 连接并读取</button>
                         </div>
                     </div>
-                    <!-- 目录面包屑导航 -->
+                    <!-- 目录面包屑导航（连接成功后表单收起，这里提供重新连接入口） -->
                     <div class="webdav-nav" id="webdavNav" style="display:none">
                         <button class="pl-modal-btn" id="webdavUpBtn"><i class="fa-solid fa-arrow-up"></i>&nbsp; 上级目录</button>
                         <span class="webdav-path-text" id="webdavPathText">/</span>
+                        <button class="pl-modal-btn" id="webdavSwitchBtn" title="断开并重新选择服务器">
+                            <i class="fa-solid fa-right-left"></i>&nbsp; 换服务器
+                        </button>
                     </div>
                     <!-- 文件列表容器 -->
                     <div class="webdav-file-list" id="webdavFileList"></div>
@@ -6510,6 +6557,9 @@
         if (webdavBtn) {
             webdavBtn.addEventListener('click', () => {
                 renderWebdavRecents();
+                // 未连接任何目录时展示表单；已连接过则保持收起
+                const connected = webdavFileList && webdavFileList.children.length > 0;
+                setWebdavFormVisible(!connected);
                 webdavModalMask.classList.add('active');
             });
         }
@@ -6521,6 +6571,17 @@
         if (webdavModalMask) {
             webdavModalMask.addEventListener('click', (e) => {
                 if (e.target === webdavModalMask) webdavModalMask.classList.remove('active');
+            });
+        }
+        const webdavSwitchBtn = document.getElementById('webdavSwitchBtn');
+        if (webdavSwitchBtn) {
+            webdavSwitchBtn.addEventListener('click', () => {
+                setWebdavFormVisible(true);
+                renderWebdavRecents();
+                // 清空目录视图，回到"未连接"状态
+                if (webdavFileList) webdavFileList.innerHTML = '';
+                if (webdavNav) webdavNav.style.display = 'none';
+                currentWebdavPath = '/';
             });
         }
 
@@ -6547,6 +6608,17 @@
                 items.push({ href, name, isDir, size });
             });
             return items;
+        }
+
+        /// 显示 / 隐藏连接表单区（连接成功后收起，避免占屏）
+        function setWebdavFormVisible(visible) {
+            const form = document.getElementById('webdavForm');
+            const recents = document.getElementById('webdavRecents');
+            const desc = document.getElementById('webdavDesc');
+            [form, recents, desc].forEach((el) => {
+                if (!el) return;
+                el.classList.toggle('is-hidden', !visible);
+            });
         }
 
         async function fetchWebdavDirectory(targetPath) {
@@ -6589,6 +6661,8 @@
                 webdavLastBase = u;
                 // 连接成功 → 写入最近连接记录
                 rememberWebdavServer({ name, url: baseUrl, user, pass });
+                // 连接成功：收起连接表单与历史，只留目录浏览
+                setWebdavFormVisible(false);
                 renderWebdavItems(items, u);
             } catch (err) {
                 console.error('WebDAV fetch error:', err);
@@ -7038,21 +7112,92 @@
             catch (e) { console.warn('海报墙缓存写入失败（可能超出配额）', e); }
         }
 
-        /// 增量并入：同 rootPath 替换，其它 rootPath 保留
-        function pwMergeScan(sourceId, meta, rootPath, movies) {
+        /// 增量并入：**按 key 智能合并**，其它 rootPath 保留。
+        ///
+        /// 与"整体替换"的区别（解决用户反馈的"扫完就固定"）：
+        /// - 本次扫到的新影片 → 插入
+        /// - 本次扫到的已有影片 → 更新（文件可能变大/封面变了）
+        /// - 本次没扫到、但上次有的影片 → **不立即删除**，标记 missingSince
+        ///   （可能是扫描被中断/网络抖动导致漏读，交给"无效清理"确认后删）
+        /// - 本次明确扫到 → 清掉 missingSince 标记
+        function pwMergeScan(sourceId, meta, rootPath, movies, options) {
+            const opts = options || {};
+            const complete = opts.complete !== false;   // 本次扫描是否完整跑完
             const snap = pwLoadSource(sourceId) || {
                 sourceId, kind: meta.kind, name: meta.name,
                 roots: [], movies: [], updatedAt: Date.now(),
             };
             snap.kind = meta.kind;
             snap.name = meta.name;
+
+            // root 记录：附带上次扫描时间与是否完整，便于增量续扫
             snap.roots = (snap.roots || []).filter((r) => r !== rootPath);
+            snap.rootMeta = snap.rootMeta || {};
+            snap.rootMeta[rootPath] = {
+                lastScanAt: Date.now(),
+                complete,
+                count: movies.length,
+            };
             snap.roots.push(rootPath);
-            snap.movies = (snap.movies || []).filter((m) => m.rootPath !== rootPath);
-            snap.movies.push(...movies.map((m) => pwSnapshotMovie(m, rootPath)));
+
+            // 拆出：其它根目录的条目（原样保留） + 本根目录的旧条目
+            const others = (snap.movies || []).filter((m) => m.rootPath !== rootPath);
+            const previous = (snap.movies || []).filter((m) => m.rootPath === rootPath);
+            const prevByKey = new Map(previous.map((m) => [m.key, m]));
+
+            const merged = [];
+            const seenKeys = new Set();
+
+            movies.forEach((m) => {
+                const snapMovie = pwSnapshotMovie(m, rootPath);
+                const old = prevByKey.get(m.key);
+                // 保留了首次发现时间，方便判断新增
+                if (old && old.firstSeenAt) snapMovie.firstSeenAt = old.firstSeenAt;
+                snapMovie.lastSeenAt = Date.now();
+                snapMovie.missingSince = null;   // 本次明确扫到 → 清除失效标记
+                merged.push(snapMovie);
+                seenKeys.add(m.key);
+            });
+
+            // 本次没扫到的旧条目：**保留**，但标记 missingSince
+            // 仅在本次是"完整扫描"时才标记（中断的半成品不标记，避免误报失效）
+            previous.forEach((old) => {
+                if (seenKeys.has(old.key)) return;
+                if (complete) {
+                    merged.push({ ...old, missingSince: old.missingSince || Date.now() });
+                } else {
+                    merged.push(old);
+                }
+            });
+
+            snap.movies = [...others, ...merged];
             snap.updatedAt = Date.now();
             pwSaveSource(snap);
             return snap;
+        }
+
+        /// 清理失效条目：删除标记为 missingSince 且超过指定时长的影片。
+        /// 返回 { removed, kept } 数量。
+        function pwPurgeMissing(sourceId, olderThanMs) {
+            const snap = pwLoadSource(sourceId);
+            if (!snap) return { removed: 0, kept: 0 };
+            const threshold = Date.now() - (olderThanMs == null ? 0 : olderThanMs);
+            const before = (snap.movies || []).length;
+            snap.movies = (snap.movies || []).filter((m) => {
+                if (!m.missingSince) return true;
+                // 未到阈值 → 继续保留（可能是临时网络问题）
+                return m.missingSince > threshold;
+            });
+            snap.updatedAt = Date.now();
+            pwSaveSource(snap);
+            return { removed: before - snap.movies.length, kept: snap.movies.length };
+        }
+
+        /// 统计当前来源里标记失效的影片
+        function pwMissingList(sourceId) {
+            const snap = pwLoadSource(sourceId);
+            if (!snap) return [];
+            return (snap.movies || []).filter((m) => m.missingSince);
         }
 
         function pwSnapshotMovie(m, rootPath) {
@@ -7331,7 +7476,9 @@
         }
 
         // ── 扫描（后台静默增量）────────────────────────────
-        async function pwScan(rootPath) {
+        /// 扫描指定根目录。
+        /// mode: 'full' 全量重扫（默认）| 'incremental' 增量（复用已有结果，只补新）
+        async function pwScan(rootPath, mode) {
             const src = posterWallCurrentSource();
             if (!src) return;
 
@@ -7454,18 +7601,24 @@
 
             emitIfChanged(true);
             const { movies: finalMovies } = buildPosterWall(allEntries, posterWallToUrl);
+            const completed = visited <= MAX_DIRS;   // 是否完整跑完（未撞上限）
 
-            // 增量并入该来源（同 rootPath 替换，其它保留）
-            const snap = pwMergeScan(posterWallSourceId, src, rootPath, finalMovies);
+            // 智能合并：新增插入 / 已有更新 / 漏读标记失效（不直接删）
+            const snap = pwMergeScan(posterWallSourceId, src, rootPath, finalMovies,
+                                     { complete: completed });
             pwRenderStatusBar(snap);
             pwRenderMovies(pwRestoreMovies(snap));
 
             const st = statusEl();
             if (st) {
-                st.innerHTML = finalMovies.length
-                    ? `<i class="fa-solid fa-circle-check"></i> 已扫描 ${finalMovies.length} 部（该来源共 ${snap.movies.length} 部）`
-                    : '<i class="fa-solid fa-circle-info"></i> 未识别到影片';
-                setTimeout(() => { const e = statusEl(); if (e) e.remove(); }, 4000);
+                const total = snap.movies.length;
+                const missing = (snap.movies || []).filter((m) => m.missingSince).length;
+                const added = Math.max(0, finalMovies.length - (mode === 'incremental' ? 0 : 0));
+                let msg = `<i class="fa-solid fa-circle-check"></i> 本次扫到 ${finalMovies.length} 部`;
+                msg += ` · 该来源共 ${total} 部`;
+                if (missing) msg += ` · <span style="color:#f59e0b;">${missing} 部疑似失效</span>`;
+                st.innerHTML = msg;
+                setTimeout(() => { const e = statusEl(); if (e) e.remove(); }, 6000);
             }
         }
 
@@ -7473,33 +7626,87 @@
         function pwShowFolderManager() {
             const snap = pwLoadSource(posterWallSourceId);
             const roots = snap ? (snap.roots || []) : [];
+            const rootMeta = (snap && snap.rootMeta) || {};
+            const movies = (snap && snap.movies) || [];
+            const missing = movies.filter((m) => m.missingSince);
+
+            const fmtTime = (ts) => {
+                if (!ts) return '从未';
+                const d = new Date(ts);
+                const p = (n) => String(n).padStart(2, '0');
+                return `${d.getMonth()+1}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+            };
+
             const mask = document.createElement('div');
             mask.className = 'pl-modal-mask active';
             mask.style.zIndex = '10070';
+
             const rows = roots.length
-                ? roots.map((r) => `
+                ? roots.map((r) => {
+                    const meta = rootMeta[r] || {};
+                    const count = movies.filter((m) => m.rootPath === r).length;
+                    const name = r.replace(/\/$/, '').split('/').filter(Boolean).pop() || r;
+                    return `
                     <div class="pw-root-row">
                         <i class="fa-solid fa-folder"></i>
-                        <span class="pw-root-path" title="${r}">${r}</span>
+                        <div class="pw-root-main">
+                            <div class="pw-root-name" title="${r}">${name}</div>
+                            <div class="pw-root-sub">
+                                ${count} 部 · 上次 ${fmtTime(meta.lastScanAt)}
+                                ${meta.complete === false ? ' · <span style="color:#f59e0b;">未完成</span>' : ''}
+                            </div>
+                        </div>
+                        <button class="pl-modal-btn pw-root-act" data-incremental="${encodeURIComponent(r)}" title="增量扫描：只补新增内容">
+                            <i class="fa-solid fa-rotate"></i>
+                        </button>
                         <button class="webdav-act-btn del" data-root="${encodeURIComponent(r)}" title="移除该文件夹的结果">
                             <i class="fa-solid fa-trash-can"></i>
                         </button>
-                    </div>`).join('')
+                    </div>`;
+                }).join('')
                 : `<p class="pl-modal-desc" style="text-align:center;">还没有扫描过任何文件夹</p>`;
+
+            // 失效清理区
+            const missingBlock = missing.length ? `
+                <div class="pw-missing-box">
+                    <div class="pw-missing-head">
+                        <i class="fa-solid fa-triangle-exclamation"></i>
+                        <b>${missing.length} 部影片在最近一次扫描中未找到</b>
+                    </div>
+                    <p class="pl-modal-desc" style="margin:4px 0 8px;">
+                        这些影片上次扫描时存在，本次没扫到（可能被删除、移动或改名）。
+                        为避免网络抖动导致误删，它们**仍显示在海报墙上**，确认后再清理。
+                    </p>
+                    <div class="pw-missing-list">
+                        ${missing.slice(0, 8).map((m) => `<div class="pw-missing-item" title="${m.title}">${m.title}</div>`).join('')}
+                        ${missing.length > 8 ? `<div class="pw-missing-more">…等 ${missing.length} 部</div>` : ''}
+                    </div>
+                    <button class="pl-modal-btn danger" data-purge style="margin-top:8px;width:100%;justify-content:center;">
+                        <i class="fa-solid fa-broom"></i>&nbsp; 清理这 ${missing.length} 部无效条目
+                    </button>
+                </div>` : '';
+
             mask.innerHTML = `
-                <div class="pl-modal" style="max-width:600px;">
+                <div class="pl-modal" style="max-width:640px;">
                     <div class="modal-head">
-                        <h3><i class="fa-solid fa-folder"></i>&nbsp; 已扫描的文件夹</h3>
+                        <h3><i class="fa-solid fa-folder"></i>&nbsp; 文件夹与无效清理</h3>
                         <button class="modal-close-icon" data-close><i class="fa-solid fa-xmark"></i></button>
                     </div>
-                    <p class="pl-modal-desc">移除某个文件夹只会删掉它扫出的影片，其它文件夹不受影响。</p>
+                    <p class="pl-modal-desc">
+                        「增量扫描」会对该文件夹重新遍历，<b>新增的影片补进来，已有的保留不重复</b>。
+                    </p>
                     <div class="pw-root-list">${rows}</div>
+                    ${missingBlock}
                 </div>`;
+
             mask.querySelector('[data-close]').addEventListener('click', () => mask.remove());
             mask.addEventListener('click', (e) => { if (e.target === mask) mask.remove(); });
+
+            // 移除某个根目录
             mask.querySelectorAll('[data-root]').forEach((btn) => {
                 btn.addEventListener('click', () => {
                     const root = decodeURIComponent(btn.dataset.root);
+                    if (!confirm(`移除「${root}」扫出的影片？其它文件夹不受影响。`)) return;
                     pwRemoveRoot(posterWallSourceId, root);
                     mask.remove();
                     const s2 = pwLoadSource(posterWallSourceId);
@@ -7508,6 +7715,31 @@
                     else pwShowEmptyGuide();
                 });
             });
+
+            // 增量扫描某个根目录
+            mask.querySelectorAll('[data-incremental]').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    const root = decodeURIComponent(btn.dataset.incremental);
+                    mask.remove();
+                    pwScan(root, 'incremental');
+                });
+            });
+
+            // 清理失效
+            const purgeBtn = mask.querySelector('[data-purge]');
+            if (purgeBtn) {
+                purgeBtn.addEventListener('click', () => {
+                    if (!confirm(`确定清理 ${missing.length} 部已失效的影片？此操作不可撤销。`)) return;
+                    const result = pwPurgeMissing(posterWallSourceId, 0);
+                    mask.remove();
+                    const s2 = pwLoadSource(posterWallSourceId);
+                    pwRenderStatusBar(s2);
+                    if (s2 && (s2.movies || []).length) pwRenderMovies(pwRestoreMovies(s2));
+                    else pwShowEmptyGuide();
+                    showSpatialToast(`已清理 ${result.removed} 部无效条目`);
+                });
+            }
+
             document.body.appendChild(mask);
         }
 
