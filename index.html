@@ -1579,9 +1579,13 @@
                         <span class="hero-btn-icon"><i class="fa-solid fa-clock-rotate-left"></i></span>
                         <span class="hero-btn-text"><b>播放记录</b><small>最近观看 · 自动续播</small></span>
                     </button>
-                    <button id="webdavBtn" class="file-input-label hero-file" title="挂载与浏览局域网或云端 WebDAV 资源">
-                        <span class="hero-btn-icon"><i class="fa-solid fa-server"></i></span>
-                        <span class="hero-btn-text"><b>WebDAV 挂载</b><small>NAS / 云端 · 目录浏览</small></span>
+                    <button id="webdavBtn" class="file-input-label hero-file" title="浏览局域网或云端 WebDAV 目录（文件列表）">
+                        <span class="hero-btn-icon"><i class="fa-solid fa-folder-tree"></i></span>
+                        <span class="hero-btn-text"><b>浏览</b><small>NAS / 云端 · 目录浏览</small></span>
+                    </button>
+                    <button id="posterWallBtn" class="file-input-label hero-file" title="海报墙：自动识别同目录封面图、预览图与 nfo">
+                        <span class="hero-btn-icon"><i class="fa-solid fa-rectangle-list"></i></span>
+                        <span class="hero-btn-text"><b>海报墙</b><small>封面聚合 · 多碟合并</small></span>
                     </button>
                     <button id="backupBtn" class="file-input-label hero-file" title="跨端备份与同步（与 iOS 版无缝互通）">
                         <span class="hero-btn-icon"><i class="fa-solid fa-cloud-arrow-up"></i></span>
@@ -1840,6 +1844,25 @@
                     </div>
                     <!-- 文件列表容器 -->
                     <div class="webdav-file-list" id="webdavFileList"></div>
+                </div>
+            </div>
+
+            <!-- 海报墙（独立入口，不放在 WebDAV 文件浏览里） -->
+            <div class="pl-modal-mask" id="posterWallMask">
+                <div class="pl-modal pl-modal-lg">
+                    <div class="modal-head">
+                        <h3><i class="fa-solid fa-rectangle-list"></i>&nbsp; 海报墙</h3>
+                        <button class="modal-close-icon" id="posterWallClose"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                    <div class="webdav-backup-row" style="margin-bottom:10px;">
+                        <label>服务器：</label>
+                        <select id="posterWallServerSelect" class="webdav-select"></select>
+                    </div>
+                    <div class="webdav-nav" id="posterWallNav">
+                        <button class="pl-modal-btn" id="posterWallUpBtn"><i class="fa-solid fa-arrow-up"></i>&nbsp; 上级目录</button>
+                        <span class="webdav-path-text" id="posterWallPathText">/</span>
+                    </div>
+                    <div class="webdav-file-list" id="posterWallBody"></div>
                 </div>
             </div>
 
@@ -6126,6 +6149,155 @@
         // 页面启动时检查自动备份
         setTimeout(checkAutoBackupTrigger, 2500);
 
+        // ── 海报墙（独立入口）──────────────────────────────────
+        // 与 WebDAV 文件浏览完全分离：这里只做封面视角的聚合浏览
+        const posterWallBtn = document.getElementById('posterWallBtn');
+        const posterWallMask = document.getElementById('posterWallMask');
+        const posterWallClose = document.getElementById('posterWallClose');
+        const posterWallServerSelect = document.getElementById('posterWallServerSelect');
+        const posterWallNav = document.getElementById('posterWallNav');
+        const posterWallUpBtn = document.getElementById('posterWallUpBtn');
+        const posterWallPathText = document.getElementById('posterWallPathText');
+        const posterWallBody = document.getElementById('posterWallBody');
+
+        let posterWallPath = '/';
+        let posterWallServerUrl = '';
+
+        function posterWallBaseUrl() {
+            const servers = getWebdavServers();
+            const chosen = servers.find((s) => s.url === posterWallServerUrl) || servers[0];
+            return chosen || null;
+        }
+
+        /// 把海报墙里的相对路径拼成完整 URL（含 /dav 兜底）
+        function posterWallUrlFor(baseUrl, subPath) {
+            let url = baseUrl.replace(/\/$/, '') + '/';
+            if (subPath && subPath !== '/') url += subPath.replace(/^\//, '');
+            try {
+                const u = new URL(url);
+                if (u.pathname === '/' || u.pathname === '') u.pathname = '/dav/';
+                return u.href;
+            } catch { return url; }
+        }
+
+        /// 远程条目 → 播放地址
+        function posterWallToUrl(href) {
+            try {
+                const base = new URL(posterWallBaseUrl()?.url || location.origin);
+                if (/^https?:\/\//i.test(href)) return href;
+                return base.origin + (href.startsWith('/') ? '' : '/') + href;
+            } catch {
+                return href;
+            }
+        }
+
+        async function loadPosterWallLevel(subPath, push) {
+            if (!posterWallBody) return;
+            const server = posterWallBaseUrl();
+            if (!server) {
+                posterWallBody.innerHTML = '<div style="padding:24px;text-align:center;color:var(--muted);">'
+                    + '还没有保存 WebDAV 服务器<br><small>请先在「浏览」里连接一次服务器</small></div>';
+                posterWallNav.style.display = 'none';
+                return;
+            }
+            if (push) posterWallPath = subPath;
+            posterWallNav.style.display = 'flex';
+            posterWallPathText.textContent = posterWallPath;
+            posterWallBody.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);">'
+                + '<i class="fa-solid fa-spinner fa-spin"></i> 正在加载…</div>';
+
+            try {
+                const resp = await fetch('/api/webdav/list', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        url: posterWallUrlFor(server.url, posterWallPath),
+                        username: server.user || '',
+                        password: server.pass || '',
+                    }),
+                });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    throw new Error(err.error || `HTTP ${resp.status}`);
+                }
+                const xmlText = await resp.text();
+                const baseObj = new URL(posterWallUrlFor(server.url, posterWallPath));
+                const items = parseWebdavXml(xmlText, baseObj.origin);
+                const curNorm = baseObj.pathname.replace(/\/$/, '');
+                const filtered = items.filter((it) => {
+                    const norm = it.href.replace(/\/$/, '');
+                    return norm !== curNorm && norm !== curNorm.slice(baseObj.origin.length);
+                });
+                renderPosterWall(filtered, posterWallToUrl, {
+                    container: posterWallBody,
+                    onEnterFolder: (folder) => {
+                        const next = posterWallPath.replace(/\/$/, '') + '/' + folder.name + '/';
+                        loadPosterWallLevel(next, true);
+                    },
+                });
+            } catch (err) {
+                posterWallBody.innerHTML = `<div style="padding:20px;color:#ef4444;text-align:center;">`
+                    + `<i class="fa-solid fa-circle-exclamation"></i> 加载失败：${err.message || '网络错误'}</div>`;
+            }
+        }
+
+        function renderPosterWallServers() {
+            if (!posterWallServerSelect) return;
+            const servers = getWebdavServers();
+            posterWallServerSelect.innerHTML = '';
+            if (!servers.length) {
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = '暂无可用的 WebDAV 服务器';
+                posterWallServerSelect.appendChild(opt);
+                posterWallServerUrl = '';
+                return;
+            }
+            servers.forEach((s) => {
+                const opt = document.createElement('option');
+                opt.value = s.url;
+                opt.textContent = s.name ? `${s.name} (${hostnameOfUrl(s.url)})` : s.url;
+                posterWallServerSelect.appendChild(opt);
+            });
+            if (!servers.some((s) => s.url === posterWallServerUrl)) {
+                posterWallServerUrl = servers[0].url;
+            }
+            posterWallServerSelect.value = posterWallServerUrl;
+        }
+
+        if (posterWallBtn) {
+            posterWallBtn.addEventListener('click', () => {
+                posterWallMask.classList.add('active');
+                renderPosterWallServers();
+                posterWallPath = '/';
+                loadPosterWallLevel('/', false);
+            });
+        }
+        if (posterWallClose) {
+            posterWallClose.addEventListener('click', () => posterWallMask.classList.remove('active'));
+        }
+        if (posterWallMask) {
+            posterWallMask.addEventListener('click', (e) => {
+                if (e.target === posterWallMask) posterWallMask.classList.remove('active');
+            });
+        }
+        if (posterWallServerSelect) {
+            posterWallServerSelect.addEventListener('change', () => {
+                posterWallServerUrl = posterWallServerSelect.value;
+                posterWallPath = '/';
+                loadPosterWallLevel('/', false);
+            });
+        }
+        if (posterWallUpBtn) {
+            posterWallUpBtn.addEventListener('click', () => {
+                if (posterWallPath === '/' || !posterWallPath) return;
+                const parts = posterWallPath.replace(/\/$/, '').split('/').filter(Boolean);
+                parts.pop();
+                const parent = '/' + (parts.length ? parts.join('/') + '/' : '');
+                loadPosterWallLevel(parent, true);
+            });
+        }
+
         // ── WebDAV 挂载与目录浏览 ──
         const webdavBtn = document.getElementById('webdavBtn');
         const webdavModalMask = document.getElementById('webdavModalMask');
@@ -6515,7 +6687,6 @@
             webdavFileList.innerHTML = '';
             webdavNav.style.display = 'flex';
             webdavPathText.textContent = currentWebdavPath;
-            renderWebdavViewToggle();
 
             // 过滤掉当前目录本身
             const currentNorm = baseUrlObj.pathname.replace(/\/$/, '');
@@ -6546,12 +6717,6 @@
             };
             const isWebdavVideo = (it) => /\.(mp4|m4v|webm|mov|mkv|avi|ts|m2ts|flv|wmv|3gp|ogv|ogg)$/i.test(it.name);
             const dirVideos = filtered.filter((it) => !it.isDir && isWebdavVideo(it));
-
-            // ── 海报墙视图：聚合同一文件夹的视频/封面/缩略图/nfo ──
-            if (webdavPosterMode) {
-                renderPosterWall(filtered, toPlayUrl);
-                return;
-            }
 
             filtered.forEach(item => {
                 const el = document.createElement('div');
@@ -6677,12 +6842,18 @@
             btn.title = webdavPosterMode ? '切换到文件列表视图' : '切换到海报墙视图（自动识别同目录封面图/预览图/nfo）';
         }
 
-        /// 选一张缩略图作为卡片「悬停预览」背景，取第一张 thumb
-        function renderPosterWall(entries, toUrl) {
+        /// 渲染海报墙到指定容器。
+        /// @param entries 目录条目；@param toUrl 条目转播放地址；@param opts { container, onEnterFolder }
+        function renderPosterWall(entries, toUrl, opts) {
+            const options = opts || {};
+            const container = options.container || webdavFileList;
+            const onEnterFolder = options.onEnterFolder || ((f) => {
+                fetchWebdavDirectory(currentWebdavPath.replace(/\/$/, '') + '/' + f.name + '/');
+            });
             const { movies, folders, others } = buildPosterWall(entries, toUrl);
 
             if (!movies.length && !folders.length) {
-                webdavFileList.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);">'
+                container.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);">'
                     + '当前目录没有可识别的影片<br><small>海报墙需要视频文件与同名封面图（-poster.jpg）/ nfo 位于同一文件夹</small></div>';
                 return;
             }
@@ -6701,10 +6872,7 @@
                         <div class="poster-sub">文件夹</div>
                     </div>
                 `;
-                card.addEventListener('click', () => {
-                    const sub = currentWebdavPath.replace(/\/$/, '') + '/' + f.name + '/';
-                    fetchWebdavDirectory(sub);
-                });
+                card.addEventListener('click', () => onEnterFolder(f));
                 wrap.appendChild(card);
             });
 
@@ -6773,7 +6941,7 @@
                 wrap.appendChild(tip);
             }
 
-            webdavFileList.appendChild(wrap);
+            container.appendChild(wrap);
         }
 
         /// 从海报墙起播：同目录所有影片视频组成连播队列，从当前碟起播
