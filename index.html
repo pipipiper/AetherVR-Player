@@ -909,6 +909,9 @@
 
         /* WebDAV 目录浏览与文件项 */
         .pl-modal-lg { width: min(600px, 94vw); }
+        /* WebDAV 弹窗：海报墙需要更宽的画布，但也别撑爆屏幕 */
+        #webdavModalMask .pl-modal-lg { width: min(880px, 96vw); }
+        #webdavFileList { max-height: 56vh; }
         .pl-modal-lg .pl-modal-desc { text-align: left; margin-bottom: 14px; }
         .modal-head {
             display: flex; align-items: center; justify-content: space-between;
@@ -1035,6 +1038,99 @@
         }
         .webdav-act-btn:hover { background: var(--surface-2); color: var(--text); }
         .webdav-act-btn.del:hover { background: #fef2f0; color: var(--red); }
+        .webdav-view-toggle { flex: none; padding: 6px 10px; font-size: 12px; }
+
+        /* ── 海报墙（自动识别同目录封面图/预览图/nfo，不做联网刮削） ── */
+        .poster-wall {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 14px;
+            padding: 4px 2px 8px;
+        }
+        .poster-card {
+            cursor: pointer; border-radius: 12px; overflow: hidden;
+            background: var(--surface-3); border: 1px solid var(--border);
+            transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+        }
+        .poster-card:hover {
+            transform: translateY(-3px);
+            border-color: rgba(59,108,255,.45);
+            box-shadow: 0 8px 22px rgba(23,33,64,.16);
+        }
+        .poster-thumb {
+            position: relative; width: 100%; aspect-ratio: 2 / 3;
+            background: linear-gradient(160deg, #2a3346, #1a2130);
+            display: grid; place-items: center; overflow: hidden;
+        }
+        .poster-img {
+            width: 100%; height: 100%; object-fit: cover; display: block;
+            position: relative; z-index: 2;
+        }
+        .poster-fallback {
+            position: absolute; inset: 0; display: grid; place-items: center;
+            color: rgba(255,255,255,.22); font-size: 30px; z-index: 1;
+        }
+        .poster-thumb:not(.no-poster) .poster-fallback { display: none; }
+        /* 悬停时缩略图预览淡入，模拟 Infuse / VidHub 的手感 */
+        .poster-preview {
+            position: absolute; inset: 0; width: 100%; height: 100%;
+            object-fit: cover; z-index: 3; opacity: 0;
+            transition: opacity .25s ease;
+        }
+        .poster-card:hover .poster-preview { opacity: 1; }
+        .poster-hover-hint {
+            position: absolute; inset: 0; z-index: 4;
+            display: grid; place-items: center;
+            color: rgba(255,255,255,.92); font-size: 34px;
+            opacity: 0; transition: opacity .2s ease;
+            background: rgba(10,16,28,.28);
+        }
+        .poster-card:hover .poster-hover-hint { opacity: 1; }
+        .poster-badges {
+            position: absolute; top: 6px; right: 6px; z-index: 5;
+            display: flex; gap: 4px; align-items: center;
+        }
+        .poster-badge {
+            font-size: 10px; font-weight: 600; color: #fff;
+            background: rgba(10,16,28,.72); border-radius: 6px;
+            padding: 2px 6px; display: inline-flex; align-items: center; gap: 3px;
+            backdrop-filter: blur(6px);
+        }
+        .poster-badge-nfo { color: #7fd4ff; }
+        .poster-thumb-folder {
+            aspect-ratio: 2 / 3;
+            color: rgba(255,255,255,.5); font-size: 34px;
+            background: linear-gradient(160deg, #3a4256, #232b3a);
+        }
+        .poster-meta { padding: 8px 9px 10px; }
+        .poster-title {
+            font-size: 12.5px; font-weight: 600; line-height: 1.35;
+            color: var(--text);
+            display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+            overflow: hidden; word-break: break-word;
+        }
+        .poster-sub {
+            margin-top: 3px; font-size: 10.5px; color: var(--muted);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .poster-others-tip {
+            grid-column: 1 / -1; text-align: center; font-size: 11.5px;
+            color: var(--muted); padding: 8px 0 2px;
+        }
+
+        /* 多碟选择面板 */
+        .disc-pick-list { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+        .disc-pick-btn {
+            display: flex; align-items: center; gap: 10px;
+            padding: 10px 12px; border-radius: 10px; cursor: pointer;
+            border: 1px solid var(--border); background: var(--surface-3);
+            font-size: 13px; color: var(--text); text-align: left;
+            transition: border-color .15s, background .15s;
+        }
+        .disc-pick-btn:hover { border-color: rgba(59,108,255,.5); background: rgba(59,108,255,.06); }
+        .disc-pick-btn i { color: var(--yellow); flex: none; }
+        .disc-pick-btn span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .disc-pick-btn small { color: var(--muted); font-size: 11px; flex: none; }
 
         /* ── 播放记录 ─────────────────────────────────────── */
         .history-toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; }
@@ -6130,6 +6226,12 @@
         }
 
         let currentWebdavPath = '/';
+        /// 海报墙视图开关（目录浏览 / 海报墙 两种模式，用户偏好记忆）
+        let webdavPosterMode = localStorage.getItem('aethervr-webdav-poster-mode') === '1';
+        /// 当前目录的原始条目与基准 URL（供视图切换时快速重绘，不重复请求网络）
+        let webdavLastItems = null;
+        let webdavLastBase = null;
+
         function loadSavedWebdavConfig() {
             try {
                 const saved = JSON.parse(localStorage.getItem(WEBDAV_CFG_KEY) || '{}');
@@ -6221,6 +6323,7 @@
                 const xmlText = await resp.text();
                 const items = parseWebdavXml(xmlText, u.origin);
                 currentWebdavPath = targetPath;
+                webdavLastBase = u;
                 // 连接成功 → 写入最近连接记录
                 rememberWebdavServer({ name, url: baseUrl, user, pass });
                 renderWebdavItems(items, u);
@@ -6232,10 +6335,187 @@
             }
         }
 
+        // ═══════════════════════════════════════════════════════════
+        // 海报墙识别：把同一文件夹里的「视频 + 封面图 + 缩略图 + nfo」
+        // 聚合为一张影片卡片（对齐 Infuse / VidHub / 飞牛影视 的识别习惯，
+        // 但完全不做联网刮削，只用本地同名文件配对）
+        // ═══════════════════════════════════════════════════════════
+        const POSTER_VIDEO_EXT = /\.(mp4|m4v|mkv|mov|webm|avi|wmv|ts|m2ts|flv|3gp|ogv|ogg|iso)$/i;
+        const POSTER_IMAGE_EXT = /\.(jpg|jpeg|png|webp|bmp|avif)$/i;
+
+        /// 去掉扩展名
+        function stripExt(name) {
+            return String(name).replace(/\.[^.]+$/, '');
+        }
+
+        /// 目录级通用封面名（整目录只有一张，给没有自己封面的影片当兜底）
+        const GENERIC_POSTER_NAMES = /^(poster|folder|cover|front|封面|海报)$/i;
+
+        /// 识别图片/文件的用途后缀：poster(封面) / thumb(预览图) / fanart(剧照)
+        /// 兼容 `xxx-poster.jpg`、`xxx_poster.jpg`、`xxx.poster.jpg`、`xxx poster.jpg`，
+        /// 以及只叫 poster / folder / cover 的目录级通用封面。
+        /// 注意：必须带分隔符才算后缀，否则 `Movie` 这种普通名会被误判成封面。
+        function posterKindOf(baseName) {
+            const lower = String(baseName).toLowerCase().trim();
+            if (GENERIC_POSTER_NAMES.test(lower)) return 'poster';
+            if (/^(thumb|thumbnail|preview|截图)$/.test(lower)) return 'thumb';
+            if (/^(fanart|backdrop|剧照)$/.test(lower)) return 'fanart';
+            if (/^(banner|logo|clearlogo|discart)$/.test(lower)) return 'banner';
+            const m = lower.match(/[-_.\s]+(poster|thumb|thumbnail|fanart|backdrop|banner|logo|clearlogo|discart|preview|sample)$/);
+            return m ? m[1] : null;
+        }
+
+        /// 去掉用途后缀得到「影片主名」，用于跨文件配对
+        /// 例：`二階堂麗…-cd1-poster` → `二階堂麗…`；`xxx-cd1` → `xxx`；`xxx_poster` → `xxx`
+        function posterKeyOf(baseName) {
+            let key = String(baseName);
+            // 先剥掉用途后缀（含下划线/点/空格/中划线四种分隔）
+            const kind = posterKindOf(key);
+            if (kind) {
+                const stripped = key.replace(new RegExp('[-_.\\s]+' + kind + '$', 'i'), '');
+                // 若整个名字就是 poster/folder 本身，剥完为空 → 视为纯通用图，key 保持原样
+                if (stripped.trim()) key = stripped;
+            }
+            // 再剥掉碟片编号：cd1 / cd2 / disc1 / part1 / -CD2 等
+            key = key.replace(/[-_.\s]*(cd|disc|disk|part|pt|e)[\s._-]*\d{1,2}$/i, '');
+            // 剥掉常见画质/版本标记尾缀，方便同片不同版本合并
+            key = key.replace(/[-_.\s]*(4k|8k|2160p|1080p|720p|uhd|hdr|sbs|vr|3d|ou|hevc|h265)$/i, '');
+            return key.toLowerCase().trim();
+        }
+
+        /// 把 WebDAV 目录条目聚合成「影片」列表
+        /// 返回 { movies: [...], others: [...], folders: [...] }
+        ///   movie = { key, title, videos:[], poster, thumbs:[], fanart, nfo, size }
+        function buildPosterWall(entries, toUrl) {
+            const movies = new Map();   // key -> movie
+            const folders = [];
+            const others = [];
+            const looseImages = [];     // 未能配对到影片的图（可能是目录级兜底封面）
+
+            // 先按 key 归集所有文件（视频/图/nfo）
+            const byKey = new Map();
+            const ensure = (key) => {
+                if (!byKey.has(key)) byKey.set(key, { videos: [], images: [], nfos: [] });
+                return byKey.get(key);
+            };
+
+            entries.forEach((it) => {
+                if (it.isDir) { folders.push(it); return; }
+                const base = stripExt(it.name);
+                if (POSTER_VIDEO_EXT.test(it.name)) {
+                    ensure(posterKeyOf(base)).videos.push(it);
+                } else if (POSTER_IMAGE_EXT.test(it.name)) {
+                    const kind = posterKindOf(base);
+                    // 目录级通用封面（poster.jpg / folder.jpg / cover.jpg）不参与影片配对，
+                    // 单独收集，稍后给所有缺少封面的影片当兜底
+                    if (GENERIC_POSTER_NAMES.test(base.trim())) {
+                        looseImages.push(it);
+                        return;
+                    }
+                    // 无用途后缀的图：可能是 `影片名.jpg` 形式的封面，挂到同 key
+                    ensure(posterKeyOf(base)).images.push({ item: it, kind: kind || 'poster' });
+                } else if (/\.nfo$/i.test(it.name)) {
+                    ensure(posterKeyOf(base)).nfos.push(it);
+                } else {
+                    others.push(it);
+                }
+            });
+
+            // 组装影片：只有含视频的 key 才算一部影片（纯图片/nfo 不单独成卡）
+            byKey.forEach((group, key) => {
+                if (!group.videos.length) {
+                    // 无视频的分组：图作为目录兜底素材，其余归 others
+                    group.nfos.forEach((n) => others.push(n));
+                    return;
+                }
+                // 视频按碟片序号自然排序（cd1 → cd2）
+                const videos = group.videos.slice().sort((a, b) =>
+                    a.name.localeCompare(b.name, undefined, { numeric: true }));
+                // 封面优先级：poster > fanart > 无后缀图 > thumb
+                const rank = { poster: 0, fanart: 1, backdrop: 1, banner: 2, thumb: 3, thumbnail: 3, preview: 3 };
+                const images = group.images.slice().sort((a, b) =>
+                    (rank[a.kind] ?? 9) - (rank[b.kind] ?? 9));
+                const posterItem = images.find((x) => rank[x.kind] === 0)?.item
+                    || images.find((x) => rank[x.kind] === 1)?.item
+                    || images[0]?.item || null;
+                const thumbItems = images.filter((x) => /^thumb/.test(x.kind) || x.kind === 'preview');
+                const fanartItem = images.find((x) => x.kind === 'fanart' || x.kind === 'backdrop')?.item || null;
+
+                // 标题：优先 nfo 里的 <title>（本地读取，不联网），否则用视频名（去掉碟号）
+                const cleanTitle = stripExt(videos[0].name)
+                    .replace(/[-_.\s]*(cd|disc|disk|part|pt)[\s._-]*\d{1,2}$/i, '')
+                    .trim();
+                movies.set(key, {
+                    key,
+                    title: cleanTitle || stripExt(videos[0].name),
+                    rawTitle: stripExt(videos[0].name),
+                    videos,
+                    poster: posterItem,
+                    posterUrl: posterItem ? toUrl(posterItem) : '',
+                    thumbs: thumbItems.map((x) => ({ url: toUrl(x.item), name: x.item.name })),
+                    fanart: fanartItem ? toUrl(fanartItem) : '',
+                    nfo: group.nfos[0] || null,
+                    nfoUrl: group.nfos[0] ? toUrl(group.nfos[0]) : '',
+                    size: videos.reduce((s, v) => s + (v.size || 0), 0),
+                    meta: null,
+                });
+            });
+
+            // 目录级兜底封面：整目录只有一张 poster/folder/cover 图时，
+            // 给所有自身没有封面的影片复用（对齐 Infuse / Kodi 的 folder.jpg 习惯）
+            const dirFallback = looseImages[0];
+            if (dirFallback) {
+                movies.forEach((m) => {
+                    if (!m.posterUrl) {
+                        m.poster = dirFallback;
+                        m.posterUrl = toUrl(dirFallback);
+                    }
+                });
+            }
+
+            const movieList = [...movies.values()].sort((a, b) =>
+                a.title.localeCompare(b.title, undefined, { numeric: true }));
+            folders.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+            others.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+            return { movies: movieList, folders, others };
+        }
+
+        /// 读取 nfo 元数据（本地文件，仅解析 XML 文本，不联网）
+        /// 支持 Kodi 标准 <movie><title>… 与常见 <plot>/<rating>
+        async function loadNfoMeta(nfoUrl, container) {
+            if (!nfoUrl) return null;
+            try {
+                const resp = await fetch(nfoUrl);
+                if (!resp.ok) return null;
+                const text = await resp.text();
+                const pick = (tag) => {
+                    const m = text.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`, 'i'));
+                    return m ? m[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').trim() : '';
+                };
+                const meta = {
+                    title: pick('title'),
+                    originalTitle: pick('originaltitle'),
+                    plot: pick('plot') || pick('outline'),
+                    year: pick('year') || pick('premiered').slice(0, 4),
+                    studio: pick('studio'),
+                    genre: pick('genre'),
+                    rating: pick('rating'),
+                    actor: pick('name'),
+                };
+                if (meta.title && container) container.title = meta.title;
+                return meta;
+            } catch {
+                return null;
+            }
+        }
+
         function renderWebdavItems(items, baseUrlObj) {
+            webdavLastItems = items;
+            webdavLastBase = baseUrlObj;
             webdavFileList.innerHTML = '';
             webdavNav.style.display = 'flex';
             webdavPathText.textContent = currentWebdavPath;
+            renderWebdavViewToggle();
 
             // 过滤掉当前目录本身
             const currentNorm = baseUrlObj.pathname.replace(/\/$/, '');
@@ -6266,6 +6546,12 @@
             };
             const isWebdavVideo = (it) => /\.(mp4|m4v|webm|mov|mkv|avi|ts|m2ts|flv|wmv|3gp|ogv|ogg)$/i.test(it.name);
             const dirVideos = filtered.filter((it) => !it.isDir && isWebdavVideo(it));
+
+            // ── 海报墙视图：聚合同一文件夹的视频/封面/缩略图/nfo ──
+            if (webdavPosterMode) {
+                renderPosterWall(filtered, toPlayUrl);
+                return;
+            }
 
             filtered.forEach(item => {
                 const el = document.createElement('div');
@@ -6367,6 +6653,191 @@
                 });
                 webdavFileList.appendChild(el);
             });
+        }
+
+        // ── 海报墙视图 ──────────────────────────────────────────
+        /// 视图切换按钮（列表 / 海报墙），插入到目录导航条右侧
+        function renderWebdavViewToggle() {
+            let btn = document.getElementById('webdavViewToggle');
+            if (!btn) {
+                btn = document.createElement('button');
+                btn.id = 'webdavViewToggle';
+                btn.className = 'pl-modal-btn webdav-view-toggle';
+                webdavNav.appendChild(btn);
+                btn.addEventListener('click', () => {
+                    webdavPosterMode = !webdavPosterMode;
+                    localStorage.setItem('aethervr-webdav-poster-mode', webdavPosterMode ? '1' : '0');
+                    // 用缓存重绘，不重复请求服务器
+                    if (webdavLastItems && webdavLastBase) renderWebdavItems(webdavLastItems, webdavLastBase);
+                });
+            }
+            btn.innerHTML = webdavPosterMode
+                ? '<i class="fa-solid fa-list"></i>&nbsp; 列表'
+                : '<i class="fa-solid fa-images"></i>&nbsp; 海报墙';
+            btn.title = webdavPosterMode ? '切换到文件列表视图' : '切换到海报墙视图（自动识别同目录封面图/预览图/nfo）';
+        }
+
+        /// 选一张缩略图作为卡片「悬停预览」背景，取第一张 thumb
+        function renderPosterWall(entries, toUrl) {
+            const { movies, folders, others } = buildPosterWall(entries, toUrl);
+
+            if (!movies.length && !folders.length) {
+                webdavFileList.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);">'
+                    + '当前目录没有可识别的影片<br><small>海报墙需要视频文件与同名封面图（-poster.jpg）/ nfo 位于同一文件夹</small></div>';
+                return;
+            }
+
+            const wrap = document.createElement('div');
+            wrap.className = 'poster-wall';
+
+            // 子文件夹卡片（可继续下钻）
+            folders.forEach((f) => {
+                const card = document.createElement('div');
+                card.className = 'poster-card is-folder';
+                card.innerHTML = `
+                    <div class="poster-thumb poster-thumb-folder"><i class="fa-solid fa-folder-open"></i></div>
+                    <div class="poster-meta">
+                        <div class="poster-title" title="${f.name}">${f.name}</div>
+                        <div class="poster-sub">文件夹</div>
+                    </div>
+                `;
+                card.addEventListener('click', () => {
+                    const sub = currentWebdavPath.replace(/\/$/, '') + '/' + f.name + '/';
+                    fetchWebdavDirectory(sub);
+                });
+                wrap.appendChild(card);
+            });
+
+            // 影片卡片
+            movies.forEach((movie) => {
+                const card = document.createElement('div');
+                card.className = 'poster-card';
+                const posterHtml = movie.posterUrl
+                    ? `<img class="poster-img" src="${movie.posterUrl}" alt="" loading="lazy" onerror="this.style.display='none';this.parentElement.classList.add('no-poster')">`
+                    : '';
+                const multiDisc = movie.videos.length > 1
+                    ? `<span class="poster-badge"><i class="fa-solid fa-layer-group"></i> ${movie.videos.length}</span>`
+                    : '';
+                const nfoBadge = movie.nfoUrl
+                    ? '<span class="poster-badge poster-badge-nfo" title="已识别 nfo 元数据"><i class="fa-solid fa-circle-info"></i></span>'
+                    : '';
+                card.innerHTML = `
+                    <div class="poster-thumb ${movie.posterUrl ? '' : 'no-poster'}">
+                        ${posterHtml}
+                        <div class="poster-fallback"><i class="fa-solid fa-film"></i></div>
+                        <div class="poster-hover-hint"><i class="fa-solid fa-circle-play"></i></div>
+                        <div class="poster-badges">${multiDisc}${nfoBadge}</div>
+                    </div>
+                    <div class="poster-meta">
+                        <div class="poster-title" title="${movie.title}">${movie.title}</div>
+                        <div class="poster-sub">
+                            ${movie.videos.length > 1 ? `${movie.videos.length} 碟 · ` : ''}${formatFileSize(movie.size)}
+                        </div>
+                    </div>
+                `;
+                // 悬停时把缩略图作为背景淡入（模拟 Infuse / VidHub 的预览体验）
+                if (movie.thumbs.length) {
+                    const thumb = card.querySelector('.poster-thumb');
+                    const previewImg = document.createElement('img');
+                    previewImg.className = 'poster-preview';
+                    previewImg.src = movie.thumbs[0].url;
+                    previewImg.alt = '';
+                    thumb.appendChild(previewImg);
+                }
+                card.addEventListener('click', () => {
+                    // 单碟：直接起播；多碟：展开选择
+                    if (movie.videos.length === 1) {
+                        playMovieFromWall(movie, movie.videos[0], entries, toUrl);
+                    } else {
+                        showMovieDiscPicker(movie, entries, toUrl);
+                    }
+                });
+                // 异步补读 nfo 标题（本地文本，不联网）
+                if (movie.nfoUrl) {
+                    loadNfoMeta(movie.nfoUrl, movie).then((meta) => {
+                        if (meta && meta.title) {
+                            const t = card.querySelector('.poster-title');
+                            if (t) { t.textContent = meta.title; t.title = meta.title; }
+                        }
+                        movie.meta = meta;
+                    });
+                }
+                wrap.appendChild(card);
+            });
+
+            // 未识别为影片的其它文件：折叠在底部，避免干扰海报墙
+            if (others.length) {
+                const tip = document.createElement('div');
+                tip.className = 'poster-others-tip';
+                tip.innerHTML = `<i class="fa-solid fa-circle-info"></i> 另有 ${others.length} 个未识别文件，切换到「列表」视图查看`;
+                wrap.appendChild(tip);
+            }
+
+            webdavFileList.appendChild(wrap);
+        }
+
+        /// 从海报墙起播：同目录所有影片视频组成连播队列，从当前碟起播
+        function playMovieFromWall(movie, startVideo, entries, toUrl) {
+            // 队列 = 当前目录全部电影的碟片（按影片名、碟号排序），保证跨片连播
+            const { movies } = buildPosterWall(entries, toUrl);
+            const queueItems = [];
+            movies.forEach((m) => {
+                m.videos.forEach((v) => {
+                    queueItems.push({
+                        name: m.videos.length > 1 ? `${m.title} · ${v.name}` : m.title,
+                        originalPath: v.href,
+                        normalizedPath: normalizePath(v.href),
+                        url: toUrl(v),
+                        file: null, fileHandle: null,
+                        status: 'remote', error: '', position: 0,
+                    });
+                });
+            });
+            const startUrl = toUrl(startVideo);
+            const startIdx = Math.max(0, queueItems.findIndex((q) => q.url === startUrl));
+
+            webdavModalMask.classList.remove('active');
+            lastDplEntries = null;
+            const t = ensureTempTab();
+            activeTab = 'playlist';
+            activePlId = t.id;
+            renderTabs();
+            setPlaylist(queueItems, startIdx);
+            showSpatialToast(`▶ ${movie.title}${movie.videos.length > 1 ? `（多碟）` : ''} · 已加入连播队列`);
+        }
+
+        /// 多碟影片：弹出选择面板
+        function showMovieDiscPicker(movie, entries, toUrl) {
+            const mask = document.createElement('div');
+            mask.className = 'pl-modal-mask active';
+            mask.style.zIndex = '10060';
+            const discs = movie.videos.map((v, i) => `
+                <button class="disc-pick-btn" data-idx="${i}">
+                    <i class="fa-solid fa-compact-disc"></i>
+                    <span>${stripExt(v.name)}</span>
+                    <small>${formatFileSize(v.size)}</small>
+                </button>
+            `).join('');
+            mask.innerHTML = `
+                <div class="pl-modal" style="max-width:560px;">
+                    <div class="modal-head">
+                        <h3><i class="fa-solid fa-layer-group"></i>&nbsp; ${movie.title}</h3>
+                        <button class="modal-close-icon" data-close><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                    <p class="pl-modal-desc">该影片包含 ${movie.videos.length} 个碟片文件，选择起始播放：</p>
+                    <div class="disc-pick-list">${discs}</div>
+                </div>
+            `;
+            mask.querySelector('[data-close]').addEventListener('click', () => mask.remove());
+            mask.addEventListener('click', (e) => { if (e.target === mask) mask.remove(); });
+            mask.querySelectorAll('.disc-pick-btn').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    const idx = Number(btn.dataset.idx);
+                    mask.remove();
+                    playMovieFromWall(movie, movie.videos[idx], entries, toUrl);
+                });
+            });
+            document.body.appendChild(mask);
         }
 
         // WebDAV 起播：整个目录的视频装入「临时列表」页签并连播（参考移动端）
