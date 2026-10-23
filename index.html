@@ -1460,6 +1460,19 @@
             padding: 10px 14px; font-size: 13px; font-weight: 600;
             border-bottom: 1px solid rgba(255,255,255,.08);
         }
+        /* 顶级页签行：播放列表 / 云端 并列 */
+        .panel-head-top { border-bottom: none; padding-bottom: 4px; }
+        .panel-top-tabs { display: flex; gap: 4px; flex: 1; min-width: 0; }
+        .panel-top-tab {
+            flex: 1; display: inline-flex; align-items: center; justify-content: center;
+            gap: 5px; background: none; border: none; color: #9aa3b2;
+            font-size: 12.5px; font-weight: 600; padding: 5px 10px;
+            cursor: pointer; border-radius: 7px; white-space: nowrap;
+        }
+        .panel-top-tab:hover { color: #e8ecf3; background: rgba(255,255,255,.06); }
+        .panel-top-tab.active { color: #fff; background: rgba(47,107,255,.35); }
+        /* 子页签行（收藏夹/各播放列表） */
+        .panel-head-sub { padding-top: 4px; }
         .playlist-close {
             background: none; border: none; color: #9aa3b2;
             cursor: pointer; font-size: 15px; padding: 2px 6px;
@@ -1929,12 +1942,20 @@
             <!-- 播放列表面板放在 video-container 外（fixed 定位）：
                  导入 dpl 后还没有视频加载时（全部待匹配），面板也必须可见 -->
             <div class="playlist-panel" id="playlistPanel">
-                <div class="playlist-head">
+                <!-- 顶级页签：播放列表 / 云端 并列切换 -->
+                <div class="playlist-head panel-head-top">
+                    <div class="panel-top-tabs">
+                        <button class="panel-top-tab active" id="panelTabPlaylist"><i class="fa-solid fa-list-ul"></i>&nbsp;播放列表</button>
+                        <button class="panel-top-tab" id="panelTabCloud"><i class="fa-solid fa-cloud"></i>&nbsp;云端</button>
+                    </div>
+                    <button class="playlist-close" id="playlistClose" title="关闭"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <!-- 播放列表子页签行（收藏夹 + 各列表），云端模式下隐藏 -->
+                <div class="playlist-head panel-head-sub" id="playlistSubHead">
                     <button class="pl-tab-nav" id="tabScrollLeft" style="display:none" title="向左滚动页签"><i class="fa-solid fa-chevron-left"></i></button>
                     <div class="playlist-tabs" id="playlistTabs" style="display:none">
-                        <!-- 收藏夹固定在最左侧，云端（WebDAV/SMB）紧随其后 -->
+                        <!-- 收藏夹固定在最左侧 -->
                         <button class="pl-tab" id="tabFavs" title="收藏夹"><i class="fa-solid fa-star"></i><span class="pl-tab-name">收藏夹</span></button>
-                        <button class="pl-tab" id="tabCloud" title="WebDAV / SMB 云端文件"><i class="fa-solid fa-cloud"></i><span class="pl-tab-name">云端</span></button>
                         <span id="plTabList" style="display:contents"></span>
                     </div>
                     <button class="pl-tab-nav" id="tabScrollRight" style="display:none" title="向右滚动页签"><i class="fa-solid fa-chevron-right"></i></button>
@@ -1944,8 +1965,6 @@
                         <button class="pl-tab-action" id="tabOpenList" title="打开播放列表（.dpl 文件）"><i class="fa-solid fa-folder-open"></i></button>
                     </div>
                     <span id="playlistTitle">播放列表</span>
-                    <button class="playlist-close" id="playlistCloudBtn" title="浏览 WebDAV / SMB 云端文件" style="font-size:13px"><i class="fa-solid fa-cloud"></i></button>
-                    <button class="playlist-close" id="playlistClose" title="关闭"><i class="fa-solid fa-xmark"></i></button>
                 </div>
                 <div class="playlist-tools" id="playlistTools">
                     <button class="pl-tool-btn" id="addDirBtn" title="选择媒体文件夹，自动匹配未授权的本地条目"><i class="fa-solid fa-folder-plus"></i>&nbsp;添加媒体目录</button>
@@ -3129,7 +3148,6 @@
 
         const playlistTabs = document.getElementById('playlistTabs');
         const tabFavs = document.getElementById('tabFavs');
-        const tabCloud = document.getElementById('tabCloud');
         const plTabList = document.getElementById('plTabList');
         const tabNewList = document.getElementById('tabNewList');
         const tabOpenList = document.getElementById('tabOpenList');
@@ -3394,8 +3412,6 @@
                 plTabList.appendChild(b);
             });
             tabFavs.classList.toggle('active', activeTab === 'favs' && !cloudMode);
-            // 云端（WebDAV/SMB）页签：云端浏览模式时高亮
-            if (tabCloud) tabCloud.classList.toggle('active', !!cloudMode);
             if (typeof updateTabScrollBtns === 'function') updateTabScrollBtns();
         }
         function closePlaylistTab(id) {
@@ -3554,8 +3570,6 @@
             renderTabs();
         }
         tabFavs.addEventListener('click', () => switchTab('favs'));
-        // 云端页签：进入 WebDAV/SMB 文件浏览（嵌入本面板）
-        tabCloud.addEventListener('click', () => openCloudBrowser());
 
         // 页签溢出时：纵向滚轮转为横向滚动，且新建/打开按钮固定在滚动区外
         const playlistHeadActions = document.getElementById('playlistHeadActions');
@@ -6947,6 +6961,13 @@
             if (cloudBar) cloudBar.style.display = show ? '' : 'none';
             if (cloudBrowserPathBar) cloudBrowserPathBar.style.display = show ? '' : 'none';
             if (cloudBrowserFileList) cloudBrowserFileList.style.display = show ? '' : 'none';
+            // 顶级页签高亮 + 子页签行显隐
+            const plTabBtn = document.getElementById('panelTabPlaylist');
+            const cloudTabBtn = document.getElementById('panelTabCloud');
+            if (plTabBtn) plTabBtn.classList.toggle('active', !show);
+            if (cloudTabBtn) cloudTabBtn.classList.toggle('active', show);
+            const subHead = document.getElementById('playlistSubHead');
+            if (subHead) subHead.style.display = show ? 'none' : '';
             // 恢复/隐藏常规播放列表视图（与 switchTab 的可见性规则保持一致）
             const isPl = activeTab === 'playlist';
             playlistItems.style.display = (!show && isPl) ? '' : 'none';
@@ -6956,7 +6977,7 @@
             favTools.style.display = (!show && !isPl && isDesktopApp) ? '' : 'none';
             selectTools.style.display = 'none';
             playlistSummary.style.display = (!show && isPl) ? '' : 'none';
-            // 刷新页签高亮（云端页签在云端模式下点亮）
+            // 刷新子页签高亮
             if (typeof renderTabs === 'function') renderTabs();
         }
 
@@ -7018,13 +7039,18 @@
                 openCloudBrowser();
             });
         }
-        // 播放列表面板内的云端入口
-        const playlistCloudBtn = document.getElementById('playlistCloudBtn');
-        if (playlistCloudBtn) {
-            playlistCloudBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                openCloudBrowser();
+        // 顶级页签：播放列表 / 云端 并列切换
+        const panelTabPlaylist = document.getElementById('panelTabPlaylist');
+        const panelTabCloud = document.getElementById('panelTabCloud');
+        const playlistSubHead = document.getElementById('playlistSubHead');
+        if (panelTabPlaylist) {
+            panelTabPlaylist.addEventListener('click', () => {
+                setCloudMode(false);
+                switchTab(activeTab);
             });
+        }
+        if (panelTabCloud) {
+            panelTabCloud.addEventListener('click', () => openCloudBrowser());
         }
         if (connectSourceClose) connectSourceClose.addEventListener('click', closeConnectSourceModal);
         if (connCancelBtn) connCancelBtn.addEventListener('click', closeConnectSourceModal);
@@ -7228,25 +7254,25 @@
             });
         }
 
-        // WebDAV 视频装入连播队列起播
+        // WebDAV 视频起播：只播放当前点击的文件，
+        // 不把当前文件夹的全部内容自动塞进临时列表
         function playWebdavFromQueue(item, dirVideos, toPlayUrl) {
-            const queue = dirVideos.map((v) => ({
-                name: v.name,
-                originalPath: v.href,
-                normalizedPath: normalizePath(v.href),
-                url: toPlayUrl(v),
+            const queue = [{
+                name: item.name,
+                originalPath: item.href,
+                normalizedPath: normalizePath(item.href),
+                url: toPlayUrl(item),
                 file: null, fileHandle: null,
                 status: 'remote', error: '', position: 0,
-            }));
-            const startIdx = Math.max(0, queue.findIndex((q) => q.url === toPlayUrl(item)));
+            }];
             lastDplEntries = null;
             const t = ensureTempTab();
             activeTab = 'playlist';
             activePlId = t.id;
-            setCloudMode(false);   // 起播后回到播放列表视图，展示连播队列
+            setCloudMode(false);   // 起播后回到播放列表视图
             renderTabs();
-            setPlaylist(queue, startIdx);
-            showSpatialToast(`起播 WebDAV：${item.name}（同目录 ${queue.length} 个视频连播）`);
+            setPlaylist(queue, 0);
+            showSpatialToast(`起播 WebDAV：${item.name}`);
         }
 
         // ── SMB 目录读取与播放 ──
@@ -7325,25 +7351,25 @@
             });
         }
 
-        // SMB 视频装入连播队列起播（直接走本地 /local 流式端点，原生极速 Seek）
+        // SMB 视频起播（直接走本地 /local 流式端点，原生极速 Seek）：
+        // 只播放当前点击的文件，不把当前文件夹内容自动加入临时列表
         function playSmbFromQueue(item, dirVideos) {
-            const queue = dirVideos.map((v) => ({
-                name: v.name,
-                originalPath: v.path,
-                normalizedPath: normalizePath(v.path),
-                url: localUrl(v.path),
+            const queue = [{
+                name: item.name,
+                originalPath: item.path,
+                normalizedPath: normalizePath(item.path),
+                url: localUrl(item.path),
                 file: null, fileHandle: null,
                 status: 'ready', error: '', position: 0,
-            }));
-            const startIdx = Math.max(0, queue.findIndex((q) => q.originalPath === item.path));
+            }];
             lastDplEntries = null;
             const t = ensureTempTab();
             activeTab = 'playlist';
             activePlId = t.id;
-            setCloudMode(false);   // 起播后回到播放列表视图，展示连播队列
+            setCloudMode(false);   // 起播后回到播放列表视图
             renderTabs();
-            setPlaylist(queue, startIdx);
-            showSpatialToast(`起播 SMB：${item.name}（同目录 ${queue.length} 个视频连播）`);
+            setPlaylist(queue, 0);
+            showSpatialToast(`起播 SMB：${item.name}`);
         }
 
         // 连接弹窗提交按钮

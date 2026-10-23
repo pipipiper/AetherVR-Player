@@ -214,8 +214,11 @@ test("cloud browser is embedded directly into the playlist panel", () => {
   assert.match(panel[0], /id="cloudBar"/);
   assert.match(panel[0], /id="cloudBrowserPathBar"/);
   assert.match(panel[0], /id="cloudBrowserFileList"/);
-  // 页签条上收藏夹旁有「云端」页签可直接切换到 WebDAV/SMB 浏览
-  assert.match(panel[0], /id="tabCloud"/);
+  // 面板顶部是「播放列表 / 云端」并列的顶级页签
+  assert.match(panel[0], /id="panelTabPlaylist"/);
+  assert.match(panel[0], /id="panelTabCloud"/);
+  // 子页签行（收藏夹 + 各播放列表）在云端模式下隐藏
+  assert.match(panel[0], /id="playlistSubHead"/);
 });
 
 test("WebDAV playback automatically resolves credentials to prevent 401 decode errors", () => {
