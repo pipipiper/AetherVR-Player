@@ -138,3 +138,33 @@ test("disc and quality suffixes are stripped so multi-disc sets share one key", 
   ];
   assert.equal(new Set(same).size, 1, `expected one key, got ${JSON.stringify(same)}`);
 });
+
+test("VR multi-segment video collapses into ONE movie instead of many", () => {
+  // 真实 VR 片源：同一部 8K VR 被切成 3 段，每段各有自己的封面与 nfo
+  const base = "愛花あゆみ [DSVR-069-C-8K] 顔面特化 不倫スローセックス 8KVR";
+  const entries = [
+    entry(`${base} -cd1.mp4`, { size: 5_000_000_000 }),
+    entry(`${base} -cd2.mp4`, { size: 5_000_000_000 }),
+    entry(`${base} -cd3.mp4`, { size: 5_000_000_000 }),
+    entry(`${base} -cd1-poster.jpg`),
+    entry(`${base} -cd2-poster.jpg`),
+    entry(`${base} -cd1-thumb.jpg`),
+    entry(`${base} -cd1.nfo`),
+  ];
+  const { movies } = helpers.buildPosterWall(entries, toUrl);
+  assert.equal(movies.length, 1, "3 segments must merge into 1 movie");
+  assert.equal(movies[0].videos.length, 3, "all 3 segments kept as playback queue");
+  assert.equal(movies[0].size, 15_000_000_000, "sizes summed across segments");
+  assert.ok(!/cd\d/.test(movies[0].title), `title must not contain segment suffix: ${movies[0].title}`);
+});
+
+test("segment numbering beyond 9 and zero-padded forms still merge", () => {
+  const names = [
+    "Show -cd01.mp4", "Show -cd02.mp4", "Show -cd08.mp4",
+    "Show -seg9.mp4", "Show _10.mp4",
+  ];
+  const { movies } = helpers.buildPosterWall(names.map((n) => entry(n)), toUrl);
+  // cd01/cd02/cd08/seg9 应合并；_10 是纯数字分段也应合并
+  assert.equal(movies.length, 1, `expected 1 movie, got ${movies.length}: ${movies.map((m) => m.title)}`);
+  assert.equal(movies[0].videos.length, 5);
+});
