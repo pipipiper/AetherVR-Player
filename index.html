@@ -1127,6 +1127,16 @@
         }
         .poster-scan-bar .pl-modal-btn { min-width: 200px; justify-content: center; }
 
+        /* 扫描状态条（后台静默扫描，不遮挡内容） */
+        .poster-scan-status {
+            display: flex; align-items: center; gap: 8px;
+            padding: 8px 12px; margin-bottom: 8px;
+            border-radius: 9px; font-size: 12px;
+            background: var(--surface-2); color: var(--muted);
+            border: 1px solid var(--border);
+        }
+        .poster-scan-status i { color: var(--yellow); }
+
         /* 多碟选择面板 */
         .disc-pick-list { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
         .disc-pick-btn {
@@ -6388,26 +6398,92 @@
 
         /// 递归扫描：从根目录往下收集所有层级的文件，再统一聚合。
         /// VR 片源常被切成多段（cd1/cd2…），聚合时按「影片主名」合并为一部。
+        /// 海报墙扫描状态（后台静默、增量吐片、可缓存）
+        const POSTER_CACHE_KEY = 'aethervr-poster-wall-cache-v1';
+        let posterScanAbort = null;
+
+        /// 读取扫描缓存
+        function loadPosterCache(serverUrl, rootPath) {
+            try {
+                const raw = localStorage.getItem(POSTER_CACHE_KEY + '|' + serverUrl + '|' + rootPath);
+                if (!raw) return null;
+                const obj = JSON.parse(raw);
+                if (!obj || !Array.isArray(obj.movies)) return null;
+                return obj;
+            } catch { return null; }
+        }
+
+        function savePosterCache(serverUrl, rootPath, movies) {
+            try {
+                localStorage.setItem(
+                    POSTER_CACHE_KEY + '|' + serverUrl + '|' + rootPath,
+                    JSON.stringify({ scannedAt: Date.now(), movies })
+                );
+                // 同时记录最近扫描根目录，方便下次直达
+                localStorage.setItem('aethervr-poster-root|' + serverUrl, rootPath);
+            } catch { /* 容量超限忽略 */ }
+        }
+
+        /// 把缓存里的影片快照还原成卡片可用的结构
+        function restoreCachedMovies(cached) {
+            return (cached.movies || []).map((m) => ({
+                key: m.key,
+                title: m.title,
+                rawTitle: m.title,
+                videos: (m.videos || []).map((v) => ({ ...v })),
+                poster: m.poster ? { ...m.poster } : null,
+                posterUrl: m.posterUrl || '',
+                thumbs: m.thumbs || [],
+                fanart: m.fanartUrl || '',
+                nfo: m.nfo ? { ...m.nfo } : null,
+                nfoUrl: m.nfoUrl || '',
+                size: m.size || 0,
+                meta: null,
+            }));
+        }
+
+        /// 后台静默扫描：边扫边渲染，扫到一部立刻显示一部
         async function scanPosterWall(rootPath) {
             const server = posterWallBaseUrl();
             if (!server) return;
 
-            const MAX_DIRS = 800;
-            const MAX_DEPTH = 8;
+            const MAX_DIRS = 2000;
+            const MAX_DEPTH = 10;
             const CONCURRENCY = 4;
+
+            // 取消上一次扫描
+            if (posterScanAbort) posterScanAbort.aborted = true;
+            const abortToken = { aborted: false };
+            posterScanAbort = abortToken;
+
+            // 先用缓存秒开（若有）
+            const cached = loadPosterCache(server.url, rootPath);
+            if (cached && cached.movies && cached.movies.length) {
+                renderPosterWall(restoreCachedMovies(cached), posterWallToUrl, {
+                    container: posterWallBody,
+                    onEnterFolder: () => {},
+                });
+            } else {
+                posterWallBody.innerHTML = '<div class="poster-scan-status" id="posterScanStatus">'
+                    + '<i class="fa-solid fa-radar fa-spin"></i> 正在后台扫描…</div>';
+            }
 
             let visited = 0;
             let allEntries = [];
             const queue = [{ path: rootPath, depth: 0 }];
             const seen = new Set();
-
-            const renderProgress = () => {
-                posterWallBody.innerHTML = `<div style="padding:26px;text-align:center;color:var(--muted);">`
-                    + `<i class="fa-solid fa-spinner fa-spin"></i>&nbsp; 正在扫描…<br>`
-                    + `<small>已扫描 ${visited} 个目录 · ${allEntries.length} 个文件</small>`
-                    + `<br><small style="opacity:.6;word-break:break-all;">${currentScanPath || ''}</small></div>`;
-            };
+            let knownKeys = new Set();
+            let lastCount = -1;
             let currentScanPath = rootPath;
+
+            const statusEl = () => document.getElementById('posterScanStatus');
+            const updateStatus = () => {
+                const el = statusEl();
+                if (el) {
+                    el.innerHTML = `<i class="fa-solid fa-radar fa-spin"></i> 扫描中 · `
+                        + `${visited} 目录 · ${allEntries.length} 文件`;
+                }
+            };
 
             const listDir = async (path) => {
                 const resp = await fetch('/api/webdav/list', {
@@ -6430,13 +6506,31 @@
                 });
             };
 
+            // 增量渲染：有新增影片才重绘，避免闪烁
+            const emitIfChanged = (force) => {
+                const { movies } = buildPosterWall(allEntries, posterWallToUrl);
+                const keys = new Set(movies.map((m) => m.key));
+                let hasNew = false;
+                keys.forEach((k) => { if (!knownKeys.has(k)) hasNew = true; });
+                if (!force && !hasNew && movies.length === lastCount) return;
+                keys.forEach((k) => knownKeys.add(k));
+                lastCount = movies.length;
+                renderPosterWall(allEntries, posterWallToUrl, {
+                    container: posterWallBody,
+                    onEnterFolder: () => {},
+                });
+                updateStatus();
+            };
+
             while (queue.length) {
+                if (abortToken.aborted) return;
                 if (visited > MAX_DIRS) break;
+
                 const batch = queue.splice(0, CONCURRENCY);
                 const results = await Promise.all(batch.map(async (job) => {
                     currentScanPath = job.path;
                     visited += 1;
-                    renderProgress();
+                    updateStatus();
                     try {
                         return { job, items: await listDir(job.path) };
                     } catch {
@@ -6459,14 +6553,36 @@
                         }
                     }
                 }
-                renderProgress();
+                // 每扫完一批就尝试增量吐片（扫一个出一个）
+                emitIfChanged(false);
             }
 
-            // 递归收集时目录条目也在 allEntries 里，聚合时会自动归为 folders
-            renderPosterWall(allEntries, posterWallToUrl, {
-                container: posterWallBody,
-                onEnterFolder: () => { /* 海报墙已是全量扫描，不再下钻 */ },
-            });
+            if (abortToken.aborted) return;
+
+            // 收尾：强制最终渲染 + 写缓存
+            emitIfChanged(true);
+            const { movies: finalMovies } = buildPosterWall(allEntries, posterWallToUrl);
+            if (finalMovies.length) {
+                savePosterCache(server.url, rootPath, finalMovies.map((m) => ({
+                    key: m.key,
+                    title: m.title,
+                    videos: m.videos.map((v) => ({ name: v.name, href: v.href, size: v.size })),
+                    poster: m.poster ? { name: m.poster.name, href: m.poster.href } : null,
+                    posterUrl: m.posterUrl,
+                    thumbs: m.thumbs,
+                    fanartUrl: m.fanart,
+                    nfo: m.nfo ? { name: m.nfo.name, href: m.nfo.href } : null,
+                    nfoUrl: m.nfoUrl,
+                    size: m.size,
+                })));
+            }
+            const el = statusEl();
+            if (el) {
+                el.innerHTML = finalMovies.length
+                    ? `<i class="fa-solid fa-circle-check"></i> 扫描完成 · ${finalMovies.length} 部影片`
+                    : '<i class="fa-solid fa-circle-info"></i> 未识别到影片';
+                setTimeout(() => { const e = statusEl(); if (e) e.remove(); }, 4000);
+            }
         }
 
         /// 打开文件夹选择器（只列目录）
@@ -6574,7 +6690,16 @@
             posterWallBtn.addEventListener('click', () => {
                 posterWallMask.classList.add('active');
                 renderPosterWallServers();
-                openPosterWallFolderPicker();
+                const server = posterWallBaseUrl();
+                // 上次扫过的根目录 → 直接增量扫描，不必重新选
+                const lastRoot = server ? localStorage.getItem('aethervr-poster-root|' + server.url) : null;
+                if (lastRoot) {
+                    posterWallNav.style.display = 'flex';
+                    posterWallPathText.textContent = lastRoot;
+                    scanPosterWall(lastRoot);
+                } else {
+                    openPosterWallFolderPicker();
+                }
             });
         }
         if (posterWallClose) {
