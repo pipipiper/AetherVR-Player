@@ -6353,6 +6353,579 @@
             }
         }
 
+        // ── WebDAV 挂载与目录浏览 ──
+        const webdavBtn = document.getElementById('webdavBtn');
+        const webdavModalMask = document.getElementById('webdavModalMask');
+        const webdavClose = document.getElementById('webdavClose');
+        const webdavNameInput = document.getElementById('webdavName');
+        const webdavUrlInput = document.getElementById('webdavUrl');
+        const webdavUserInput = document.getElementById('webdavUser');
+        const webdavPassInput = document.getElementById('webdavPass');
+        const webdavConnectBtn = document.getElementById('webdavConnectBtn');
+        const webdavNav = document.getElementById('webdavNav');
+        const webdavUpBtn = document.getElementById('webdavUpBtn');
+        const webdavPathText = document.getElementById('webdavPathText');
+        const webdavFileList = document.getElementById('webdavFileList');
+        const webdavRecentsEl = document.getElementById('webdavRecents');
+
+        // 连接记录（参考 iOS ServerHistory）：存 localStorage，随跨端备份导出
+        const WEBDAV_CFG_KEY = 'aethervr-webdav-cfg';
+        const WEBDAV_SERVERS_KEY = 'aethervr-webdav-servers';
+        function getWebdavServers() {
+            try { return JSON.parse(localStorage.getItem(WEBDAV_SERVERS_KEY)) || []; }
+            catch { return []; }
+        }
+        function saveWebdavServers(list) {
+            try { localStorage.setItem(WEBDAV_SERVERS_KEY, JSON.stringify(list)); } catch { /* 忽略 */ }
+        }
+        // 保存/更新一条连接记录：以 url 为主键去重，最近使用排最前，最多 20 条
+        function rememberWebdavServer({ name, url, user, pass }) {
+            if (!url) return;
+            let list = getWebdavServers();
+            const idx = list.findIndex((s) => s.url === url);
+            const rec = idx >= 0 ? list[idx] : { id: 'webdav-' + Date.now().toString(36) };
+            rec.url = url;
+            rec.user = user || '';
+            if (pass) rec.pass = pass;          // 留空不覆盖已存密码
+            if (name) rec.name = name;
+            rec.lastUsedAt = Date.now();
+            if (idx >= 0) list.splice(idx, 1);
+            list.unshift(rec);
+            if (list.length > 20) list = list.slice(0, 20);
+            saveWebdavServers(list);
+            renderWebdavRecents();
+        }
+        function renderWebdavRecents() {
+            if (!webdavRecentsEl) return;
+            const list = getWebdavServers();
+            webdavRecentsEl.innerHTML = '';
+            list.forEach((s) => {
+                const el = document.createElement('div');
+                el.className = 'webdav-recent-item';
+                el.innerHTML = `
+                    <div class="webdav-recent-icon"><i class="fa-solid fa-server"></i></div>
+                    <div class="webdav-recent-main">
+                        <div class="webdav-recent-name"></div>
+                        <div class="webdav-recent-url"></div>
+                    </div>
+                    <button class="webdav-recent-del" title="删除该连接记录"><i class="fa-solid fa-trash-can"></i></button>
+                    <button class="webdav-recent-edit" title="编辑连接（修改名称、地址、账号密码）"><i class="fa-solid fa-pencil"></i></button>
+                `;
+                el.querySelector('.webdav-recent-name').textContent = s.name || hostnameOfUrl(s.url);
+                el.querySelector('.webdav-recent-url').textContent = s.url + (s.user ? '（' + s.user + '）' : '');
+                el.addEventListener('click', () => {
+                    if (webdavNameInput) webdavNameInput.value = s.name || '';
+                    if (webdavUrlInput) webdavUrlInput.value = s.url;
+                    if (webdavUserInput) webdavUserInput.value = s.user || '';
+                    if (webdavPassInput) webdavPassInput.value = s.pass || '';
+                    fetchWebdavDirectory('/');
+                });
+                el.querySelector('.webdav-recent-del').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    saveWebdavServers(getWebdavServers().filter((x) => x.url !== s.url));
+                    renderWebdavRecents();
+                });
+                el.querySelector('.webdav-recent-edit').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const newUrl = prompt(`修改「${s.name || s.url}」的 WebDAV 服务器地址：`, s.url);
+                    if (!newUrl || newUrl.trim() === '') return;
+                    const cleanUrl = newUrl.trim();
+                    const newName = prompt(`修改连接别名（选填）：`, s.name || '');
+                    const servers = getWebdavServers();
+                    const target = servers.find((x) => x.id === s.id || x.url === s.url);
+                    if (target) {
+                        target.url = cleanUrl;
+                        if (newName !== null) target.name = newName.trim();
+                        saveWebdavServers(servers);
+                        if (webdavUrlInput && webdavUrlInput.value === s.url) {
+                            webdavUrlInput.value = cleanUrl;
+                            if (webdavNameInput) webdavNameInput.value = target.name || '';
+                        }
+                        renderWebdavRecents();
+                        showSpatialToast('✅ 连接记录已更新');
+                    }
+                });
+                webdavRecentsEl.appendChild(el);
+            });
+        }
+        function hostnameOfUrl(u) {
+            try { return new URL(u).hostname; } catch { return u; }
+        }
+
+        let currentWebdavPath = '/';
+        /// 海报墙视图开关（目录浏览 / 海报墙 两种模式，用户偏好记忆）
+        let webdavPosterMode = localStorage.getItem('aethervr-webdav-poster-mode') === '1';
+        /// 当前目录的原始条目与基准 URL（供视图切换时快速重绘，不重复请求网络）
+        let webdavLastItems = null;
+        let webdavLastBase = null;
+
+        function loadSavedWebdavConfig() {
+            try {
+                const saved = JSON.parse(localStorage.getItem(WEBDAV_CFG_KEY) || '{}');
+                if (saved.url && webdavUrlInput) webdavUrlInput.value = saved.url;
+                if (saved.user && webdavUserInput) webdavUserInput.value = saved.user;
+                if (saved.pass && webdavPassInput) webdavPassInput.value = saved.pass;
+                if (saved.name && webdavNameInput) webdavNameInput.value = saved.name;
+            } catch {}
+            renderWebdavRecents();
+        }
+        loadSavedWebdavConfig();
+
+        if (webdavBtn) {
+            webdavBtn.addEventListener('click', () => {
+                renderWebdavRecents();
+                webdavModalMask.classList.add('active');
+            });
+        }
+        if (webdavClose) {
+            webdavClose.addEventListener('click', () => {
+                webdavModalMask.classList.remove('active');
+            });
+        }
+        if (webdavModalMask) {
+            webdavModalMask.addEventListener('click', (e) => {
+                if (e.target === webdavModalMask) webdavModalMask.classList.remove('active');
+            });
+        }
+
+        function parseWebdavXml(xmlStr, baseOrigin) {
+            const parser = new DOMParser();
+            const xml = parser.parseFromString(xmlStr, 'application/xml');
+            const responses = xml.querySelectorAll('response, D\\:response');
+            const items = [];
+            responses.forEach(resp => {
+                const hrefEl = resp.querySelector('href, D\\:href');
+                if (!hrefEl) return;
+                let href = hrefEl.textContent.trim();
+                try { href = decodeURIComponent(href); } catch {}
+                const prop = resp.querySelector('propstat prop, D\\:propstat D\\:prop, prop, D\\:prop');
+                let isDir = false;
+                let size = 0;
+                if (prop) {
+                    const rtype = prop.querySelector('resourcetype, D\\:resourcetype');
+                    if (rtype && rtype.querySelector('collection, D\\:collection')) isDir = true;
+                    const len = prop.querySelector('getcontentlength, D\\:getcontentlength');
+                    if (len) size = parseInt(len.textContent, 10) || 0;
+                }
+                const name = href.replace(/\/$/, '').split('/').pop() || href;
+                items.push({ href, name, isDir, size });
+            });
+            return items;
+        }
+
+        async function fetchWebdavDirectory(targetPath) {
+            const baseUrl = (webdavUrlInput.value || '').trim();
+            if (!baseUrl) {
+                showSpatialToast('请输入 WebDAV 服务器地址');
+                return;
+            }
+            const user = (webdavUserInput.value || '').trim();
+            const pass = (webdavPassInput.value || '').trim();
+            const name = (webdavNameInput && webdavNameInput.value || '').trim();
+            // 保存配置 + 连接记录（localStorage，随跨端备份导出）
+            localStorage.setItem(WEBDAV_CFG_KEY, JSON.stringify({ url: baseUrl, user, pass, name }));
+
+            let u;
+            try { u = new URL(baseUrl); } catch { showSpatialToast('无效的 WebDAV 地址'); return; }
+            // 拼接目标路径
+            let fullPath = u.pathname.replace(/\/$/, '') + '/' + targetPath.replace(/^\//, '');
+            fullPath = fullPath.replace(/\/+/g, '/');
+            u.pathname = fullPath;
+            if (!u.pathname.endsWith('/') && targetPath.endsWith('/')) u.pathname += '/';
+
+            webdavFileList.innerHTML = '<div style="padding:16px;text-align:center;color:var(--muted);"><i class="fa-solid fa-spinner fa-spin"></i> 正在读取 WebDAV 目录…</div>';
+            webdavConnectBtn.disabled = true;
+
+            try {
+                // 通过服务端内置 WebDAV 代理接口或直连
+                const resp = await fetch('/api/webdav/list', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: u.href, username: user, password: pass })
+                });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    throw new Error(err.error || `HTTP ${resp.status}`);
+                }
+                const xmlText = await resp.text();
+                const items = parseWebdavXml(xmlText, u.origin);
+                currentWebdavPath = targetPath;
+                webdavLastBase = u;
+                // 连接成功 → 写入最近连接记录
+                rememberWebdavServer({ name, url: baseUrl, user, pass });
+                renderWebdavItems(items, u);
+            } catch (err) {
+                console.error('WebDAV fetch error:', err);
+                webdavFileList.innerHTML = `<div style="padding:16px;color:#ef4444;text-align:center;"><i class="fa-solid fa-circle-exclamation"></i> 连接失败：${err.message || '网络错误'}</div>`;
+            } finally {
+                webdavConnectBtn.disabled = false;
+            }
+        }
+
+        function renderWebdavItems(items, baseUrlObj) {
+            webdavLastItems = items;
+            webdavLastBase = baseUrlObj;
+            webdavFileList.innerHTML = '';
+            webdavNav.style.display = 'flex';
+            webdavPathText.textContent = currentWebdavPath;
+
+            // 过滤掉当前目录本身
+            const currentNorm = baseUrlObj.pathname.replace(/\/$/, '');
+            const filtered = items.filter(it => {
+                const norm = it.href.replace(/\/$/, '');
+                return norm !== currentNorm && norm !== currentNorm.slice(baseUrlObj.origin.length);
+            });
+
+            if (!filtered.length) {
+                webdavFileList.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);">空目录</div>';
+                return;
+            }
+
+            // 目录在前，文件在后
+            filtered.sort((a, b) => {
+                if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+                return a.name.localeCompare(b.name, undefined, { numeric: true });
+            });
+
+            // 当前目录全部视频 → 临时列表连播队列（对齐 iOS loadTemp：
+            // 从网络目录起播时，整个文件夹的视频进临时列表作为连播队列）
+            const toPlayUrl = (it) => {
+                let playUrl = it.href;
+                if (!/^https?:\/\//i.test(playUrl)) {
+                    playUrl = baseUrlObj.origin + (playUrl.startsWith('/') ? '' : '/') + playUrl;
+                }
+                return playUrl;
+            };
+            const isWebdavVideo = (it) => /\.(mp4|m4v|webm|mov|mkv|avi|ts|m2ts|flv|wmv|3gp|ogv|ogg)$/i.test(it.name);
+            const dirVideos = filtered.filter((it) => !it.isDir && isWebdavVideo(it));
+
+            filtered.forEach(item => {
+                const el = document.createElement('div');
+                const isVideo = /\.(mp4|mkv|webm|mov|m4v|ts|flv|avi|wmv)$/i.test(item.name);
+                el.className = `webdav-item ${item.isDir ? 'is-dir' : (isVideo ? 'is-video' : '')}`;
+                el.innerHTML = `
+                    <div class="webdav-item-icon"><i class="fa-solid ${item.isDir ? 'fa-folder' : (isVideo ? 'fa-film' : 'fa-file')}"></i></div>
+                    <div class="webdav-item-name" title="${item.name}">${item.name}</div>
+                    <div class="webdav-item-size">${item.isDir ? '' : formatFileSize(item.size)}</div>
+                    <div class="webdav-item-actions">
+                        <button class="webdav-act-btn rename" title="重命名"><i class="fa-solid fa-pencil"></i></button>
+                        <button class="webdav-act-btn del" title="删除"><i class="fa-solid fa-trash-can"></i></button>
+                    </div>
+                `;
+                el.addEventListener('click', (e) => {
+                    // 若点击的是重命名或删除按钮，则不触发点按播放/进目录
+                    if (e.target.closest('.webdav-item-actions')) return;
+                    if (item.isDir) {
+                        let sub = currentWebdavPath.replace(/\/$/, '') + '/' + item.name + '/';
+                        fetchWebdavDirectory(sub);
+                    } else if (isVideo) {
+                        playWebdavFromQueue(item, dirVideos, toPlayUrl);
+                    } else {
+                        showSpatialToast('该文件不是受支持的视频格式');
+                    }
+                });
+                // 重命名
+                el.querySelector('.webdav-act-btn.rename').addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const newName = prompt(`修改「${item.name}」的名称：`, item.name);
+                    if (!newName || newName.trim() === '' || newName.trim() === item.name) return;
+                    const cleanNew = newName.trim();
+                    const oldHref = item.href;
+                    // 构造新的目标完整 URL
+                    let destUrl = oldHref;
+                    if (!/^https?:\/\//i.test(destUrl)) {
+                        destUrl = baseUrlObj.origin + (destUrl.startsWith('/') ? '' : '/') + destUrl;
+                    }
+                    const destObj = new URL(destUrl);
+                    let normPath = destObj.pathname.replace(/\/$/, '');
+                    const parent = normPath.substring(0, normPath.lastIndexOf('/'));
+                    destObj.pathname = (parent === '' ? '/' : parent) + '/' + cleanNew + (item.isDir ? '/' : '');
+
+                    let srcUrl = oldHref;
+                    if (!/^https?:\/\//i.test(srcUrl)) {
+                        srcUrl = baseUrlObj.origin + (srcUrl.startsWith('/') ? '' : '/') + srcUrl;
+                    }
+
+                    try {
+                        const user = (webdavUserInput.value || '').trim();
+                        const pass = (webdavPassInput.value || '').trim();
+                        const resp = await fetch('/api/webdav/op', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                op: 'move',
+                                url: srcUrl,
+                                destUrl: destObj.href,
+                                username: user,
+                                password: pass
+                            })
+                        });
+                        const res = await resp.json();
+                        if (!resp.ok || !res.success) throw new Error(res.error || '重命名失败');
+                        showSpatialToast('✅ 重命名成功');
+                        fetchWebdavDirectory(currentWebdavPath);
+                    } catch (err) {
+                        alert('重命名失败：' + err.message);
+                    }
+                });
+                // 删除
+                el.querySelector('.webdav-act-btn.del').addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    if (!confirm(`确定要从 WebDAV 服务器彻底删除「${item.name}」吗？\n此操作不可恢复。`)) return;
+                    let targetUrl = item.href;
+                    if (!/^https?:\/\//i.test(targetUrl)) {
+                        targetUrl = baseUrlObj.origin + (targetUrl.startsWith('/') ? '' : '/') + targetUrl;
+                    }
+                    try {
+                        const user = (webdavUserInput.value || '').trim();
+                        const pass = (webdavPassInput.value || '').trim();
+                        const resp = await fetch('/api/webdav/op', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                op: 'delete',
+                                url: targetUrl,
+                                username: user,
+                                password: pass
+                            })
+                        });
+                        const res = await resp.json();
+                        if (!resp.ok || !res.success) throw new Error(res.error || '删除失败');
+                        showSpatialToast('✅ 删除成功');
+                        fetchWebdavDirectory(currentWebdavPath);
+                    } catch (err) {
+                        alert('删除失败：' + err.message);
+                    }
+                });
+                webdavFileList.appendChild(el);
+            });
+        }
+
+        // ── 海报墙视图 ──────────────────────────────────────────
+        /// 视图切换按钮（列表 / 海报墙），插入到目录导航条右侧
+        function renderWebdavViewToggle() {
+            let btn = document.getElementById('webdavViewToggle');
+            if (!btn) {
+                btn = document.createElement('button');
+                btn.id = 'webdavViewToggle';
+                btn.className = 'pl-modal-btn webdav-view-toggle';
+                webdavNav.appendChild(btn);
+                btn.addEventListener('click', () => {
+                    webdavPosterMode = !webdavPosterMode;
+                    localStorage.setItem('aethervr-webdav-poster-mode', webdavPosterMode ? '1' : '0');
+                    // 用缓存重绘，不重复请求服务器
+                    if (webdavLastItems && webdavLastBase) renderWebdavItems(webdavLastItems, webdavLastBase);
+                });
+            }
+            btn.innerHTML = webdavPosterMode
+                ? '<i class="fa-solid fa-list"></i>&nbsp; 列表'
+                : '<i class="fa-solid fa-images"></i>&nbsp; 海报墙';
+            btn.title = webdavPosterMode ? '切换到文件列表视图' : '切换到海报墙视图（自动识别同目录封面图/预览图/nfo）';
+        }
+
+        /// 渲染海报墙到指定容器。
+        /// @param entries 目录条目；@param toUrl 条目转播放地址；@param opts { container, onEnterFolder }
+        function renderPosterWall(entries, toUrl, opts) {
+            const options = opts || {};
+            const container = options.container || webdavFileList;
+            const onEnterFolder = options.onEnterFolder || ((f) => {
+                fetchWebdavDirectory(currentWebdavPath.replace(/\/$/, '') + '/' + f.name + '/');
+            });
+            const { movies, folders, others } = buildPosterWall(entries, toUrl);
+
+            if (!movies.length && !folders.length) {
+                container.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);">'
+                    + '当前目录没有可识别的影片<br><small>海报墙需要视频文件与同名封面图（-poster.jpg）/ nfo 位于同一文件夹</small></div>';
+                return;
+            }
+
+            const wrap = document.createElement('div');
+            wrap.className = 'poster-wall';
+
+            // 子文件夹卡片（可继续下钻）
+            folders.forEach((f) => {
+                const card = document.createElement('div');
+                card.className = 'poster-card is-folder';
+                card.innerHTML = `
+                    <div class="poster-thumb poster-thumb-folder"><i class="fa-solid fa-folder-open"></i></div>
+                    <div class="poster-meta">
+                        <div class="poster-title" title="${f.name}">${f.name}</div>
+                        <div class="poster-sub">文件夹</div>
+                    </div>
+                `;
+                card.addEventListener('click', () => onEnterFolder(f));
+                wrap.appendChild(card);
+            });
+
+            // 影片卡片
+            movies.forEach((movie) => {
+                const card = document.createElement('div');
+                card.className = 'poster-card';
+                const posterHtml = movie.posterUrl
+                    ? `<img class="poster-img" src="${movie.posterUrl}" alt="" loading="lazy" onerror="this.style.display='none';this.parentElement.classList.add('no-poster')">`
+                    : '';
+                const multiDisc = movie.videos.length > 1
+                    ? `<span class="poster-badge"><i class="fa-solid fa-layer-group"></i> ${movie.videos.length}</span>`
+                    : '';
+                const nfoBadge = movie.nfoUrl
+                    ? '<span class="poster-badge poster-badge-nfo" title="已识别 nfo 元数据"><i class="fa-solid fa-circle-info"></i></span>'
+                    : '';
+                card.innerHTML = `
+                    <div class="poster-thumb ${movie.posterUrl ? '' : 'no-poster'}">
+                        ${posterHtml}
+                        <div class="poster-fallback"><i class="fa-solid fa-film"></i></div>
+                        <div class="poster-hover-hint"><i class="fa-solid fa-circle-play"></i></div>
+                        <div class="poster-badges">${multiDisc}${nfoBadge}</div>
+                    </div>
+                    <div class="poster-meta">
+                        <div class="poster-title" title="${movie.title}">${movie.title}</div>
+                        <div class="poster-sub">
+                            ${movie.videos.length > 1 ? `${movie.videos.length} 碟 · ` : ''}${formatFileSize(movie.size)}
+                        </div>
+                    </div>
+                `;
+                // 悬停时把缩略图作为背景淡入（模拟 Infuse / VidHub 的预览体验）
+                if (movie.thumbs.length) {
+                    const thumb = card.querySelector('.poster-thumb');
+                    const previewImg = document.createElement('img');
+                    previewImg.className = 'poster-preview';
+                    previewImg.src = movie.thumbs[0].url;
+                    previewImg.alt = '';
+                    thumb.appendChild(previewImg);
+                }
+                card.addEventListener('click', () => {
+                    // 单碟：直接起播；多碟：展开选择
+                    if (movie.videos.length === 1) {
+                        playMovieFromWall(movie, movie.videos[0], entries, toUrl);
+                    } else {
+                        showMovieDiscPicker(movie, entries, toUrl);
+                    }
+                });
+                // 异步补读 nfo 标题（本地文本，不联网）
+                if (movie.nfoUrl) {
+                    loadNfoMeta(movie.nfoUrl, movie).then((meta) => {
+                        if (meta && meta.title) {
+                            const t = card.querySelector('.poster-title');
+                            if (t) { t.textContent = meta.title; t.title = meta.title; }
+                        }
+                        movie.meta = meta;
+                    });
+                }
+                wrap.appendChild(card);
+            });
+
+            // 未识别为影片的其它文件：折叠在底部，避免干扰海报墙
+            if (others.length) {
+                const tip = document.createElement('div');
+                tip.className = 'poster-others-tip';
+                tip.innerHTML = `<i class="fa-solid fa-circle-info"></i> 另有 ${others.length} 个未识别文件，切换到「列表」视图查看`;
+                wrap.appendChild(tip);
+            }
+
+            container.appendChild(wrap);
+        }
+
+        /// 从海报墙起播：同目录所有影片视频组成连播队列，从当前碟起播
+        function playMovieFromWall(movie, startVideo, entries, toUrl) {
+            // 队列 = 当前目录全部电影的碟片（按影片名、碟号排序），保证跨片连播
+            const { movies } = buildPosterWall(entries, toUrl);
+            const queueItems = [];
+            movies.forEach((m) => {
+                m.videos.forEach((v) => {
+                    queueItems.push({
+                        name: m.videos.length > 1 ? `${m.title} · ${v.name}` : m.title,
+                        originalPath: v.href,
+                        normalizedPath: normalizePath(v.href),
+                        url: toUrl(v),
+                        file: null, fileHandle: null,
+                        status: 'remote', error: '', position: 0,
+                    });
+                });
+            });
+            const startUrl = toUrl(startVideo);
+            const startIdx = Math.max(0, queueItems.findIndex((q) => q.url === startUrl));
+
+            webdavModalMask.classList.remove('active');
+            lastDplEntries = null;
+            const t = ensureTempTab();
+            activeTab = 'playlist';
+            activePlId = t.id;
+            renderTabs();
+            setPlaylist(queueItems, startIdx);
+            showSpatialToast(`▶ ${movie.title}${movie.videos.length > 1 ? `（多碟）` : ''} · 已加入连播队列`);
+        }
+
+        /// 多碟影片：弹出选择面板
+        function showMovieDiscPicker(movie, entries, toUrl) {
+            const mask = document.createElement('div');
+            mask.className = 'pl-modal-mask active';
+            mask.style.zIndex = '10060';
+            const discs = movie.videos.map((v, i) => `
+                <button class="disc-pick-btn" data-idx="${i}">
+                    <i class="fa-solid fa-compact-disc"></i>
+                    <span>${stripExt(v.name)}</span>
+                    <small>${formatFileSize(v.size)}</small>
+                </button>
+            `).join('');
+            mask.innerHTML = `
+                <div class="pl-modal" style="max-width:560px;">
+                    <div class="modal-head">
+                        <h3><i class="fa-solid fa-layer-group"></i>&nbsp; ${movie.title}</h3>
+                        <button class="modal-close-icon" data-close><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                    <p class="pl-modal-desc">该影片包含 ${movie.videos.length} 个碟片文件，选择起始播放：</p>
+                    <div class="disc-pick-list">${discs}</div>
+                </div>
+            `;
+            mask.querySelector('[data-close]').addEventListener('click', () => mask.remove());
+            mask.addEventListener('click', (e) => { if (e.target === mask) mask.remove(); });
+            mask.querySelectorAll('.disc-pick-btn').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    const idx = Number(btn.dataset.idx);
+                    mask.remove();
+                    playMovieFromWall(movie, movie.videos[idx], entries, toUrl);
+                });
+            });
+            document.body.appendChild(mask);
+        }
+
+        // WebDAV 起播：整个目录的视频装入「临时列表」页签并连播（参考移动端）
+        function playWebdavFromQueue(item, dirVideos, toPlayUrl) {
+            const queue = dirVideos.map((v) => ({
+                name: v.name,
+                originalPath: v.href,
+                normalizedPath: normalizePath(v.href),
+                url: toPlayUrl(v),
+                file: null, fileHandle: null,
+                status: 'remote', error: '', position: 0,
+            }));
+            const startIdx = Math.max(0, queue.findIndex((q) => q.url === toPlayUrl(item)));
+            webdavModalMask.classList.remove('active');
+            lastDplEntries = null;
+            const t = ensureTempTab();
+            activeTab = 'playlist';
+            activePlId = t.id;
+            renderTabs();
+            setPlaylist(queue, startIdx);
+            showSpatialToast(`起播 WebDAV：${item.name}（同目录 ${queue.length} 个视频已加入临时列表连播）`);
+        }
+
+        if (webdavConnectBtn) {
+            webdavConnectBtn.addEventListener('click', () => {
+                fetchWebdavDirectory('/');
+            });
+        }
+        if (webdavUpBtn) {
+            webdavUpBtn.addEventListener('click', () => {
+                if (currentWebdavPath === '/' || !currentWebdavPath) return;
+                const parts = currentWebdavPath.replace(/\/$/, '').split('/').filter(Boolean);
+                parts.pop();
+                const parent = '/' + (parts.length ? parts.join('/') + '/' : '');
+                fetchWebdavDirectory(parent);
+            });
+        }
+
+
         // ── 海报墙（独立入口）──────────────────────────────────
         // 与 WebDAV 文件浏览完全分离：这里只做封面视角的聚合浏览
         const posterWallBtn = document.getElementById('posterWallBtn');

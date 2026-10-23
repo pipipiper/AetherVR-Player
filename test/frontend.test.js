@@ -42,3 +42,39 @@ test("desktop diagnostics report Electron GPU video decode status", () => {
   assert.match(html, /vrDesktop\.gpuDiagnostics\(\)/);
   assert.match(html, /status\.video_decode/);
 });
+
+test("core modules are defined exactly once (no accidental deletion or duplication)", () => {
+  // 曾经在 v1.7.1 误删整段 WebDAV 模块，导致运行时报
+  // "getWebdavServers is not defined"，这里做静态防回归。
+  const required = [
+    "getWebdavServers", "saveWebdavServers", "rememberWebdavServer",
+    "renderWebdavRecents", "hostnameOfUrl", "loadSavedWebdavConfig",
+    "fetchWebdavDirectory", "parseWebdavXml", "renderWebdavItems",
+    "playWebdavFromQueue",
+    "stripExt", "posterKindOf", "posterKeyOf", "buildPosterWall",
+    "renderPosterWall", "scanPosterWall", "renderPickerLevel",
+    "openPosterWallFolderPicker",
+  ];
+  for (const name of required) {
+    const defs = html.match(new RegExp(`function ${name}\\s*\\(`, "g")) || [];
+    assert.equal(defs.length, 1, `${name} must be defined exactly once, got ${defs.length}`);
+  }
+});
+
+test("no duplicated top-level const declarations in inline script", () => {
+  // 重复 const 会让整个脚本块 SyntaxError 直接不执行，
+  // 表现为满屏 "xxx is not defined"。
+  const scripts = [...html.matchAll(/<script(?![^>]*src)[^>]*>([\s\S]*?)<\/script>/gi)]
+    .map((m) => m[1])
+    .filter((body) => !/application\/ld\+json/i.test(body));
+  for (const body of scripts) {
+    const seen = new Map();
+    for (const match of body.matchAll(/^\s{8}const\s+([A-Za-z_$][\w$]*)\s*=/gm)) {
+      const name = match[1];
+      seen.set(name, (seen.get(name) || 0) + 1);
+    }
+    for (const [name, count] of seen) {
+      assert.equal(count, 1, `const ${name} declared ${count} times in one script block`);
+    }
+  }
+});
