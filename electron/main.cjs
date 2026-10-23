@@ -235,7 +235,9 @@ async function start() {
   const SMB_VIDEO_EXTS = new Set(['.mp4', '.m4v', '.webm', '.mkv', '.avi', '.mov',
     '.ts', '.m2ts', '.flv', '.wmv', '.mpg', '.mpeg', '.3gp']);
 
-  function runCommand(cmd, args, timeoutMs = 20000) {
+  // encoding：子进程输出编码。Windows 的 net.exe 始终以系统 OEM/GBK 代码页输出，
+  // 直接按 UTF-8 解码会把中文共享名变成乱码（乱码共享名随后 net use 也连不上）
+  function runCommand(cmd, args, timeoutMs = 20000, encoding = 'utf8') {
     return new Promise((resolve) => {
       let child;
       try {
@@ -244,20 +246,25 @@ async function start() {
         resolve({ ok: false, stdout: '', stderr: err.message });
         return;
       }
-      let stdout = '';
-      let stderr = '';
+      const stdoutChunks = [];
+      const stderrChunks = [];
       const timer = setTimeout(() => {
         try { child.kill('SIGKILL'); } catch { /* 已退出 */ }
       }, timeoutMs);
-      child.stdout.on('data', (d) => { stdout += d.toString(); });
-      child.stderr.on('data', (d) => { stderr += d.toString(); });
+      child.stdout.on('data', (d) => { stdoutChunks.push(d); });
+      child.stderr.on('data', (d) => { stderrChunks.push(d); });
+      const decode = (chunks) => {
+        const buf = Buffer.concat(chunks);
+        try { return new TextDecoder(encoding).decode(buf); }
+        catch { return buf.toString(); }
+      };
       child.on('error', (err) => {
         clearTimeout(timer);
-        resolve({ ok: false, stdout, stderr: err.message });
+        resolve({ ok: false, stdout: decode(stdoutChunks), stderr: err.message });
       });
       child.on('close', (code) => {
         clearTimeout(timer);
-        resolve({ ok: code === 0, stdout, stderr });
+        resolve({ ok: code === 0, stdout: decode(stdoutChunks), stderr: decode(stderrChunks) });
       });
     });
   }
@@ -284,8 +291,8 @@ async function start() {
       return { ok: true, shares };
     }
     if (process.platform === 'win32') {
-      // net view \\host
-      const r = await runCommand('net', ['view', `\\\\${host}`]);
+      // net view \\host（net.exe 输出为系统 GBK 代码页，按 GBK 解码保中文共享名）
+      const r = await runCommand('net', ['view', `\\\\${host}`], 20000, 'gbk');
       if (!r.ok) {
         return { ok: false, error: (r.stderr || 'net view 失败').trim(), shares: [] };
       }

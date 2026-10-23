@@ -2133,8 +2133,8 @@
                     <div class="webdav-nav" id="posterWallNav">
                         <button class="pl-modal-btn" id="posterWallUpBtn"><i class="fa-solid fa-arrow-up"></i>&nbsp; 上级目录</button>
                         <span class="webdav-path-text" id="posterWallPathText">/</span>
-                        <button class="pl-modal-btn" id="posterWallScanHereBtn" title="扫描当前目录（结果并入当前来源）">
-                            <i class="fa-solid fa-radar"></i>&nbsp; 扫描此目录
+                        <button class="pl-modal-btn" id="posterWallScanHereBtn" title="选择要扫描的文件夹（结果并入当前来源）">
+                            <i class="fa-solid fa-radar"></i>&nbsp; 选择目录
                         </button>
                         <button class="pl-modal-btn" id="posterWallFilesBtn" title="管理已扫描的文件夹">
                             <i class="fa-solid fa-folder"></i>&nbsp; 文件夹
@@ -7396,17 +7396,28 @@
             }[m]));
         }
 
+        /// 海报墙输入归一化：调用方可能传原始目录条目（需要聚合），
+        /// 也可能传已聚合的影片数组（扫描实时渲染 / 快照恢复）。
+        /// 影片数组直接再进 buildPosterWall 会被全部当成「未识别文件」，
+        /// 导致扫到几百部影片墙面却显示「没有可识别的影片」
+        function ensurePosterGroups(entries, toUrl) {
+            const list = Array.isArray(entries) ? entries : [];
+            const isMovies = list.length > 0 && list.every((e) => e && Array.isArray(e.videos));
+            if (isMovies) return { movies: list, folders: [], others: [] };
+            return buildPosterWall(list, toUrl);
+        }
+
         function renderPosterWall(entries, toUrl, opts) {
             const options = opts || {};
             const container = options.container || webdavFileList;
             const onEnterFolder = options.onEnterFolder || ((f) => {
                 fetchWebdavDirectory(currentWebdavPath.replace(/\/$/, '') + '/' + f.name + '/');
             });
-            const { movies, folders, others } = buildPosterWall(entries, toUrl);
+            const { movies, folders, others } = ensurePosterGroups(entries, toUrl);
 
             if (!movies.length && !folders.length) {
                 container.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);">'
-                    + '当前目录没有可识别的影片<br><small>海报墙需要视频文件与同名封面图（-poster.jpg）/ nfo 位于同一文件夹</small></div>';
+                    + '当前目录没有可识别的影片<br><small>海报墙自动识别视频与同目录封面图（同名 .jpg 或 -poster.jpg）/ nfo</small></div>';
                 return;
             }
 
@@ -7499,7 +7510,7 @@
         /// 从海报墙起播：同目录所有影片视频组成连播队列，从当前碟起播
         function playMovieFromWall(movie, startVideo, entries, toUrl) {
             // 队列 = 当前目录全部电影的碟片（按影片名、碟号排序），保证跨片连播
-            const { movies } = buildPosterWall(entries, toUrl);
+            const { movies } = ensurePosterGroups(entries, toUrl);
             const queueItems = [];
             movies.forEach((m) => {
                 m.videos.forEach((v) => {
@@ -8537,13 +8548,9 @@
         const pwScanHereBtn = document.getElementById('posterWallScanHereBtn');
         if (pwScanHereBtn) {
             pwScanHereBtn.addEventListener('click', () => {
-                // 若当前在引导页，先选文件夹；否则扫描当前浏览路径
-                const snap = pwLoadSource(posterWallSourceId);
-                if (snap && (snap.movies || []).length) {
-                    pwScan(posterWallPickPath || '/');
-                } else {
-                    pwOpenFolderPicker();
-                }
+                // 始终打开目录选择器：已有结果时也能再挑新文件夹扫描；
+                // 选择器底部有「扫描当前目录」按钮完成起扫
+                pwOpenFolderPicker();
             });
         }
         if (posterWallUpBtn) {
