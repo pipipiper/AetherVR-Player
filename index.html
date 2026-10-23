@@ -7441,6 +7441,10 @@
             });
             const { movies, folders, others } = ensurePosterGroups(entries, toUrl);
 
+            // 每次渲染前清空容器：增量扫描会多次调用本函数，
+            // 只 append 不清空会让卡片成倍堆叠重复
+            container.innerHTML = '';
+
             if (!movies.length && !folders.length) {
                 container.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);">'
                     + '当前目录没有可识别的影片<br><small>海报墙自动识别视频与同目录封面图（同名 .jpg 或 -poster.jpg）/ nfo</small></div>';
