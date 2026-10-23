@@ -163,3 +163,36 @@ test("player controls expose a stop button and a usable progress bar", () => {
   assert.match(html, /class="controls-main-row"/);
   assert.match(html, /class="controls-side right"/);
 });
+
+test("new-file panel can always be closed (regression)", () => {
+  // 曾经用 videoPlayer.src 判断是否显示关闭按钮，
+  // blob:/ 或尚未赋值时为空串 → 关闭按钮被隐藏，面板再也退不出去。
+  assert.match(html, /const hasSource = Boolean\(/);
+  assert.match(html, /heroClose\.style\.display = hasSource/);
+  assert.match(html, /heroClose\.addEventListener\('click'/, "close handler must exist");
+});
+
+test("error state hides the video surface and uses a dark card", () => {
+  assert.match(html, /function setVideoSurfaceVisible\(visible\)/);
+  assert.match(html, /setVideoSurfaceVisible\(false\)/, "must hide video on error");
+  assert.match(html, /setVideoSurfaceVisible\(true\)/, "must restore video on success");
+  // 报错卡片不再是刺眼红框
+  assert.doesNotMatch(html, /box-shadow: 3px 3px 0 var\(--red\)/);
+});
+
+test("webdav/SMB list rows mirror the playlist row style", () => {
+  // 与 .playlist-item 对齐：8px/10px padding、8px 圆角、12.5px 字号
+  const row = html.match(/\.webdav-item\s*\{[^}]*\}/);
+  assert.ok(row, "webdav-item style missing");
+  assert.match(row[0], /padding:\s*8px 10px/);
+  assert.match(row[0], /border-radius:\s*8px/);
+  assert.match(row[0], /font-size:\s*12\.5px/);
+  // 深色 hover 与播放列表一致
+  assert.match(html, /\.webdav-item:hover \{ background: rgba\(255,255,255,\.08\); \}/);
+});
+
+test("SMB is desktop-only and bridged through preload", () => {
+  assert.match(html, /window\.vrDesktop\.smbListShares/);
+  assert.match(html, /window\.vrDesktop\.smbListDir/);
+  assert.match(html, /SMB 仅在桌面端可用/);
+});

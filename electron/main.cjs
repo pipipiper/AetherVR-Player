@@ -228,6 +228,114 @@ async function start() {
 
   // 让前端诊断面板能够区分“没有 HEVC 解码器”和“GPU 被禁用/回退”。
   // getGPUInfo 可能因驱动或沙箱失败，因此始终返回一个可序列化结果。
+  // ── SMB 支持（仅桌面端；浏览器无法直连 SMB 协议）──────────────
+  // 做法：用系统自带能力访问 SMB，不引入任何第三方依赖。
+  //  macOS：smbutil view / smbutil ls，或挂载到临时目录后按本地文件读
+  //  Windows：net use / dir，或已映射的网络驱动器
+  const SMB_VIDEO_EXTS = new Set(['.mp4', '.m4v', '.webm', '.mkv', '.avi', '.mov',
+    '.ts', '.m2ts', '.flv', '.wmv', '.mpg', '.mpeg', '.3gp']);
+
+  function runCommand(cmd, args, timeoutMs = 20000) {
+    return new Promise((resolve) => {
+      let child;
+      try {
+        child = require('child_process').spawn(cmd, args, { windowsHide: true });
+      } catch (err) {
+        resolve({ ok: false, stdout: '', stderr: err.message });
+        return;
+      }
+      let stdout = '';
+      let stderr = '';
+      const timer = setTimeout(() => {
+        try { child.kill('SIGKILL'); } catch { /* 已退出 */ }
+      }, timeoutMs);
+      child.stdout.on('data', (d) => { stdout += d.toString(); });
+      child.stderr.on('data', (d) => { stderr += d.toString(); });
+      child.on('error', (err) => {
+        clearTimeout(timer);
+        resolve({ ok: false, stdout, stderr: err.message });
+      });
+      child.on('close', (code) => {
+        clearTimeout(timer);
+        resolve({ ok: code === 0, stdout, stderr });
+      });
+    });
+  }
+
+  // 列出 SMB 服务器上的共享名
+  ipcMain.handle('smb:listShares', async (event, payload) => {
+    const host = String((payload && payload.host) || '').trim();
+    if (!host) return { ok: false, error: '缺少服务器地址', shares: [] };
+    if (process.platform === 'darwin') {
+      // smbutil view -g //user:pass@host
+      const user = String((payload && payload.user) || '').trim();
+      const pass = String((payload && payload.password) || '');
+      const target = user ? `//${user}:${pass}@${host}` : `//${host}`;
+      const r = await runCommand('smbutil', ['view', '-g', target]);
+      if (!r.ok) {
+        return { ok: false, error: (r.stderr || 'smbutil 调用失败').trim(), shares: [] };
+      }
+      const shares = r.stdout.split(/\r?\n/)
+        .map((line) => {
+          const m = /^(\S+)\s+(Disk|IPC)\b/.exec(line.trim());
+          return m && m[2] === 'Disk' ? m[1] : null;
+        })
+        .filter(Boolean);
+      return { ok: true, shares };
+    }
+    if (process.platform === 'win32') {
+      // net view \\host
+      const r = await runCommand('net', ['view', `\\\\${host}`]);
+      if (!r.ok) {
+        return { ok: false, error: (r.stderr || 'net view 失败').trim(), shares: [] };
+      }
+      const shares = r.stdout.split(/\r?\n/)
+        .map((line) => {
+          const m = /^(\S+)\s+Disk\b/i.exec(line.trim());
+          return m ? m[1] : null;
+        })
+        .filter(Boolean);
+      return { ok: true, shares };
+    }
+    return { ok: false, error: 'SMB 仅在 macOS 与 Windows 桌面端可用', shares: [] };
+  });
+
+  // 列目录（支持 UNC 或已挂载路径）
+  ipcMain.handle('smb:listDir', async (event, payload) => {
+    const dirPath = String((payload && payload.path) || '').trim();
+    if (!dirPath) return { ok: false, error: '缺少路径', entries: [] };
+    try {
+      const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+      const out = [];
+      for (const ent of entries) {
+        if (ent.name.startsWith('.')) continue;
+        const full = path.join(dirPath, ent.name);
+        let size = 0;
+        let modifiedAt = null;
+        try {
+          const st = await fs.promises.stat(full);
+          size = st.size;
+          modifiedAt = st.mtimeMs;
+        } catch { /* 无权限时忽略 */ }
+        out.push({
+          name: ent.name,
+          path: full,
+          isDirectory: ent.isDirectory(),
+          isVideo: !ent.isDirectory() && SMB_VIDEO_EXTS.has(path.extname(ent.name).toLowerCase()),
+          size,
+          modifiedAt,
+        });
+      }
+      out.sort((a, b) => {
+        if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+        return a.name.localeCompare(b.name, 'zh-Hans-CN', { numeric: true });
+      });
+      return { ok: true, entries: out };
+    } catch (err) {
+      return { ok: false, error: err.message || String(err), entries: [] };
+    }
+  });
+
   ipcMain.handle('gpu:diagnostics', async () => {
     let info = null;
     let error = '';

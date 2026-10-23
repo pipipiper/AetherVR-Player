@@ -217,11 +217,35 @@ function parseFfmpegDuration(text) {
   return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
 }
 
-function localProxyInput(target) {
+// ── 上游凭据传递（WebDAV / 私有源）─────────────────────────────
+// 说明：URL 内嵌凭据（http://user:pass@host/...）被 resolveSafeTarget 明确禁止，
+// 因此改为通过独立查询参数 cred 传递「base64(user:pass)」。
+// 仅供服务端内部的 /proxy 使用，前端不要直接拼接。
+function encodeUpstreamCred(username, password) {
+  if (!username && !password) return "";
+  return Buffer.from(`${username || ""}:${password || ""}`).toString("base64");
+}
+
+function decodeUpstreamCred(token) {
+  if (!token || typeof token !== "string" || token.length > 4096) return null;
+  try {
+    const text = Buffer.from(token, "base64").toString("utf8");
+    const idx = text.indexOf(":");
+    if (idx < 0) return null;
+    return { username: text.slice(0, idx), password: text.slice(idx + 1) };
+  } catch {
+    return null;
+  }
+}
+
+function localProxyInput(target, cred) {
   const localHost = ["0.0.0.0", "::", "::1", "localhost"].includes(HOST) ? "127.0.0.1" : HOST;
   const localAuthority = net.isIP(localHost) === 6 ? `[${localHost}]` : localHost;
-  return `http://${localAuthority}:${PORT}/proxy?url=${encodeURIComponent(target)}`;
+  const base = `http://${localAuthority}:${PORT}/proxy?url=${encodeURIComponent(target)}`;
+  return cred ? `${base}&cred=${encodeURIComponent(cred)}` : base;
 }
+
+
 
 function transcodeFailureMessage(stderr) {
   const text = String(stderr || "");
@@ -356,8 +380,8 @@ function startTranscode(target, ownerIp, res, start = 0) {
 
 /* ffprobe 远程视频信息探测：只读容器/流头（配合 Range 秒级返回），
  * 让前端在尝试播放前就知道编码是否可能不支持，避免长时间黑屏。 */
-function probeRemoteMedia(target, res) {
-  const proxyInput = localProxyInput(target);
+function probeRemoteMedia(target, res, cred) {
+  const proxyInput = localProxyInput(target, cred);
   const proc = spawn(FFPROBE, [
     "-v", "error",
     "-rw_timeout", "15000000",
@@ -572,7 +596,7 @@ function preflightRemote(target, redirects = 0) {
   });
 }
 
-async function proxyVideo(target, req, res, redirects = 0) {  let u;
+async function proxyVideo(target, req, res, redirects = 0, cred = null) {  let u;
   try {
     u = new URL(target);
   } catch {
@@ -592,7 +616,14 @@ async function proxyVideo(target, req, res, redirects = 0) {  let u;
     "User-Agent": req.headers["user-agent"] || "Mozilla/5.0",
     "Accept": req.headers.accept || "*/*",
   };
-  if (req.headers.authorization) headers.Authorization = req.headers.authorization;
+  // 优先用 cred 参数（服务端内部探测/转码用），其次沿用浏览器请求头
+  const credAuth = decodeUpstreamCred(cred);
+  if (credAuth) {
+    headers.Authorization = "Basic "
+      + Buffer.from(`${credAuth.username}:${credAuth.password}`).toString("base64");
+  } else if (req.headers.authorization) {
+    headers.Authorization = req.headers.authorization;
+  }
   if (req.headers.range) headers.Range = req.headers.range;
   const options = {
     protocol: u.protocol,
@@ -613,7 +644,7 @@ async function proxyVideo(target, req, res, redirects = 0) {  let u;
         res.writeHead(502).end("Too many redirects");
         return;
       }
-      proxyVideo(new URL(pres.headers.location, u).href, req, res, redirects + 1);
+      proxyVideo(new URL(pres.headers.location, u).href, req, res, redirects + 1, cred);
       return;
     }
     const h = {
@@ -1034,11 +1065,17 @@ const requestHandler = async (req, res) => {
         return;
       }
       let target;
+      let probeCred = "";
       try {
         const body = await readJson(req);
         target = typeof body.url === "string" ? body.url.trim() : "";
         if (!target || target.length > 4096) throw new Error("Invalid video URL");
         await resolveSafeTarget(new URL(target));
+        // WebDAV / 私有源需要 Basic 认证才能探测，凭据随请求体传入
+        probeCred = encodeUpstreamCred(
+          typeof body.username === "string" ? body.username : "",
+          typeof body.password === "string" ? body.password : ""
+        );
       } catch (err) {
         res.writeHead(400, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: err.message }));
@@ -1054,7 +1091,7 @@ const requestHandler = async (req, res) => {
           res.end(JSON.stringify({ preflight_error: pf.error }));
           return;
         }
-        probeRemoteMedia(target, res);
+        probeRemoteMedia(target, res, probeCred);
       });
       return;
     }
@@ -1082,12 +1119,14 @@ const requestHandler = async (req, res) => {
       return;
     }
     if (urlPath === "/proxy") {
-      const target = new URL(req.url, "http://local").searchParams.get("url");
+      const sp = new URL(req.url, "http://local").searchParams;
+      const target = sp.get("url");
       if (!target) {
         res.writeHead(400).end("Missing url parameter");
         return;
       }
-      proxyVideo(target, req, res, 0);
+      // cred: 服务端内部（ffprobe/ffmpeg）转发 WebDAV Basic 认证用
+      proxyVideo(target, req, res, 0, sp.get("cred") || null);
       return;
     }
     // ── 本地磁盘文件（仅 --local-fs，即 Electron 桌面端；需携带访问令牌）──

@@ -359,27 +359,47 @@
             display: flex; align-items: center;
         }
 
-        /* 进度条：轨道更粗、圆角，hover 时再加粗，便于精确拖动 */
-        .progress-container { flex: 1; min-width: 120px; }
+        /* 进度条：细轨道 + 亮色填充 + 圆形拖点，悬停时整体提亮。
+           避免"粗黑边框"的笨重观感，改为极简现代风。 */
+        .progress-container { flex: 1; min-width: 120px; display: flex; align-items: center; }
         .progress-bar {
-            width: 100%; height: 14px;
-            background: var(--surface-2);
-            border: 2px solid var(--border);
-            border-radius: 8px;
+            width: 100%; height: 22px;          /* 外层留出足够的可点区域 */
+            display: flex; align-items: center;
             cursor: pointer; position: relative;
-            transition: height .12s ease, border-color .12s ease;
-            overflow: hidden;
+            background: transparent; border: none;
         }
-        .progress-bar:hover { border-color: var(--yellow); height: 18px; }
-        .progress-bar:hover .progress-fill { background: var(--yellow); }
+        /* 轨道（细线） */
+        .progress-bar::before {
+            content: ''; position: absolute; left: 0; right: 0;
+            height: 5px; border-radius: 999px;
+            background: rgba(255, 255, 255, .16);
+            transition: height .14s ease;
+        }
+        .progress-bar:hover::before { height: 7px; }
 
         .progress-fill {
-            height: 100%;
-            background: var(--yellow);
-            border-radius: 6px;
+            position: absolute; left: 0;
+            height: 5px; border-radius: 999px;
+            background: linear-gradient(90deg, var(--yellow), #fff08a);
             width: 0%;
-            transition: width .08s linear;
+            transition: width .08s linear, height .14s ease;
+            box-shadow: 0 0 10px rgba(245, 230, 66, .35);
+            z-index: 1;
+            pointer-events: none;
         }
+        .progress-bar:hover .progress-fill { height: 7px; }
+
+        /* 拖点：仅悬停时出现，提示可拖动 */
+        .progress-bar::after {
+            content: ''; position: absolute;
+            width: 13px; height: 13px; border-radius: 50%;
+            background: #fff; border: 2px solid var(--yellow);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, .35);
+            left: var(--seek-pct, 0%); transform: translateX(-50%) scale(0);
+            transition: transform .14s ease, left .08s linear;
+            z-index: 2; pointer-events: none;
+        }
+        .progress-bar:hover::after { transform: translateX(-50%) scale(1); }
 
         /* ── time display ────────────────────────────────────── */
         .time-display {
@@ -467,18 +487,24 @@
         }
 
         /* ── error ───────────────────────────────────────────── */
+        /* 报错卡片：深色玻璃质感，与整体 UI 一致，不再是刺眼的红框 */
         .error-message {
-            color: var(--red);
-            background: #1A0808;
-            border: 2px solid var(--red);
-            box-shadow: 3px 3px 0 var(--red);
-            padding: 12px 16px;
-            margin-top: 12px;
+            color: #ffd9d9;
+            background: rgba(38, 20, 24, .92);
+            border: 1px solid rgba(239, 68, 68, .38);
+            border-radius: 12px;
+            box-shadow: 0 12px 32px rgba(0, 0, 0, .38);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            padding: 14px 18px;
+            margin-top: 14px;
             display: none;
-            font-size: 0.78em;
-            font-weight: 700;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
+            font-size: 0.8em;
+            font-weight: 600;
+            line-height: 1.65;
+            letter-spacing: 0.01em;
+            max-width: 620px;
+            text-align: left;
         }
         .error-message.active { display: block; }
 
@@ -985,8 +1011,9 @@
             font-family: 'JetBrains Mono', monospace;
         }
         .webdav-file-list {
-            max-height: 320px; overflow-y: auto; border: 1px solid var(--border);
-            border-radius: 12px; padding: 6px; background: var(--surface-3);
+            max-height: 360px; overflow-y: auto;
+            border-radius: 10px; padding: 4px;
+            background: #1b2330;
         }
         /* 未连接时列表为空：不渲染边框底色，避免悬一条空心胶囊 */
         .webdav-file-list:empty { display: none; }
@@ -1017,22 +1044,40 @@
         .webdav-recent-item:hover .webdav-recent-edit { opacity: 1; }
         .webdav-recent-del:hover { background: #fef2f0; color: var(--red); }
         .webdav-recent-edit:hover { background: var(--surface-2); color: var(--text); }
-        /* 列表行：与右侧播放列表保持一致的紧凑行样式 */
+        /* 列表行：**完全对齐右侧播放列表**的深色行样式
+           （播放列表见 .playlist-item：8px/10px padding、8px 圆角、12.5px 字号、
+             rgba(255,255,255,.08) hover） */
+        .webdav-file-list {
+            background: transparent;
+            border: none;
+            padding: 4px;
+        }
         .webdav-item {
-            display: flex; align-items: center; gap: 9px;
-            padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 12.5px;
-            transition: background .15s ease;
+            display: flex; align-items: center; gap: 8px;
+            padding: 8px 10px; border-radius: 8px;
+            cursor: pointer; font-size: 12.5px;
+            color: #e6ecf5;
+            transition: background .12s ease;
         }
-        .webdav-item:hover { background: var(--surface-2); }
+        .webdav-item:hover { background: rgba(255,255,255,.08); }
+        .webdav-item.is-dir .webdav-item-icon { color: #e8a23c; }
+        .webdav-item.is-video .webdav-item-icon { color: var(--yellow); }
         .webdav-item-icon {
-            width: 24px; height: 24px; display: grid; place-items: center;
-            border-radius: 7px; background: var(--surface-2);
-            color: var(--muted); font-size: 11px; flex: none;
+            width: 18px; flex: none;
+            display: grid; place-items: center;
+            font-size: 12px; color: #8b96a8;
+            background: transparent;
         }
-        .webdav-item.is-dir .webdav-item-icon { color: #e8a23c; background: rgba(232,162,60,.12); }
-        .webdav-item.is-video .webdav-item-icon { color: var(--yellow); background: rgba(59,108,255,.1); }
-        .webdav-item-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .webdav-item-size { font-size: 11px; color: var(--muted); flex: none; }
+        .webdav-item-name {
+            flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .webdav-item-size {
+            font-size: 11px; color: #7f8a9c; flex: none;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .webdav-item-actions { display: flex; gap: 4px; flex: none; opacity: 0; transition: opacity .12s; }
+        .webdav-item:hover .webdav-item-actions { opacity: 1; }
+
         /* 连接成功后隐藏连接表单 */
         .webdav-form.is-hidden,
         .webdav-recents.is-hidden,
@@ -4374,10 +4419,24 @@
         }
 
         // Keep the legacy inline message, and also show an always-visible dialog.
+        /// 出错时把视频画面整体隐藏，避免残留画面与新页面拼在一起显得杂乱
+        function setVideoSurfaceVisible(visible) {
+            const targets = [videoPlayer, document.getElementById('vrCanvas')];
+            targets.forEach((el) => {
+                if (!el) return;
+                el.style.opacity = visible ? '' : '0';
+                el.style.pointerEvents = visible ? '' : 'none';
+            });
+            const bigPlay = document.getElementById('bigPlayBtn');
+            if (bigPlay) bigPlay.style.display = visible ? '' : 'none';
+        }
+
         function showError(message) {
             const info = describeError(message);
             errorMessage.textContent = info.raw;
             errorMessage.classList.add('active');
+            // 报错后不再显示视频内容（用户要求：报错就不要显示视频区域）
+            setVideoSurfaceVisible(false);
             appErrorTitle.textContent = info.title;
             appErrorSummary.textContent = info.summary;
             appErrorDetails.textContent = info.raw;
@@ -4417,6 +4476,7 @@
         // Hide error message
         function hideError() {
             errorMessage.classList.remove('active');
+            setVideoSurfaceVisible(true);
         }
 
         // Report unsupported codec/container instead of a silent black screen
@@ -4543,19 +4603,27 @@
         let activeProbeController = null;
         let lastMediaProbe = null;
         let iosReadWatchdog = null;
-        async function probeRemoteMedia(url, signal, allowRetry = true) {
+        /// 当前 WebDAV 连接凭据（供编码探测/转码使用）
+        let activeUpstreamAuth = null;
+
+        async function probeRemoteMedia(url, signal, allowRetry = true, auth = null) {
             if (!probeAvailable) return null;
             try {
+                const payload = { url };
+                if (auth && (auth.username || auth.password)) {
+                    payload.username = auth.username || '';
+                    payload.password = auth.password || '';
+                }
                 const resp = await fetch(backendUrl('probe'), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url }),
+                    body: JSON.stringify(payload),
                     signal
                 });
                 if (resp.status === 429 && allowRetry) {
                     await new Promise((resolve) => setTimeout(resolve, 2100));
                     if (signal.aborted) return null;
-                    return probeRemoteMedia(url, signal, false);
+                    return probeRemoteMedia(url, signal, false, auth);
                 }
                 if (!resp.ok) return null;
                 return await resp.json();
@@ -4617,12 +4685,17 @@
 
             // 远程链接先做编码预探测：明显播不了就直接给转码入口，
             // 不再让视频元素长时间黑屏干等 error 事件。
+            //
+            // 注意：判断"是不是远程源"必须看**原始地址**，不能看 `playable`。
+            // WebDAV / 远程直链都会被 toPlayableURL 包成同源的 /proxy?url=...，
+            // 若用 playable 判断会误认为同源，从而跳过探测——
+            // 表现为 WebDAV 的 HEVC 视频直接黑屏然后报"无法解码"。
             const isRemoteUrl = /^https?:\/\//i.test(rawUrl) && !rawUrl.startsWith(location.origin);
             if (isRemoteUrl) {
                 const controller = new AbortController();
                 activeProbeController = controller;
                 showHeroLoading('正在检测视频编码信息…');
-                const probe = await probeRemoteMedia(rawUrl, controller.signal);
+                const probe = await probeRemoteMedia(rawUrl, controller.signal, true, activeUpstreamAuth);
                 if (requestId !== urlLoadRequestId) return;
                 if (activeProbeController === controller) activeProbeController = null;
                 hideHeroLoading();
@@ -5046,11 +5119,29 @@
         const heroClose = document.getElementById('heroClose');
         newVideoBtn.addEventListener('click', () => {
             if (!videoPlayer.paused) videoPlayer.pause();
-            heroClose.style.display = videoPlayer.src ? 'inline-flex' : 'none';
+            // 修复「播放新文件窗口关不掉」：
+            // 旧逻辑用 videoPlayer.src 判断，但 blob:/ 或尚未赋值时会是空串，
+            // 于是关闭按钮被隐藏，面板再也退不出去。
+            // 改为：只要存在任何可播放来源或正在播放，就显示关闭按钮。
+            const hasSource = Boolean(
+                videoPlayer.currentSrc || videoPlayer.src
+                || playlist.length > 0
+                || activeLocalFile
+            );
+            heroClose.style.display = hasSource ? 'inline-flex' : 'none';
             dropZone.classList.add('active');
         });
         heroClose.addEventListener('click', () => {
             dropZone.classList.remove('active');
+        });
+        // 面板内 Esc 关闭（桌面端习惯）
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && dropZone.classList.contains('active')) {
+                // 只有存在可返回的播放内容时才允许用 Esc 退出
+                if (videoPlayer.currentSrc || videoPlayer.src || playlist.length) {
+                    dropZone.classList.remove('active');
+                }
+            }
         });
 
         // 服务器实时转码播放：8K HEVC → 4K H.264 HLS（iPhone Safari 原生支持）
@@ -5113,6 +5204,7 @@
         // 有视频加载后才允许点停止
         videoPlayer.addEventListener('loadedmetadata', () => {
             if (stopBtn) stopBtn.disabled = false;
+            setVideoSurfaceVisible(true);
         });
         videoPlayer.addEventListener('play', () => {
             if (stopBtn) stopBtn.disabled = false;
@@ -5194,7 +5286,9 @@
             const dur = effectiveDuration();
             const cur = effectiveCurrentTime();
             if (dur) {
-                progressFill.style.width = (cur / dur) * 100 + '%';
+                const pct = (cur / dur) * 100;
+                progressFill.style.width = pct + '%';
+                progressBar.style.setProperty('--seek-pct', pct + '%');
                 durationDisplay.textContent = formatTime(dur);
             } else {
                 durationDisplay.textContent = '--:--';
@@ -5223,6 +5317,8 @@
                 // 先更新视觉：点击后进度条立即跟手（转码重启需要等几秒，
                 // 不能等加载完才跳）；再执行真实跳转 / 转码重启
                 progressFill.style.width = (pos * 100) + '%';
+            progressBar.style.setProperty('--seek-pct', (pos * 100) + '%');
+                progressBar.style.setProperty('--seek-pct', (pos * 100) + '%');
                 currentTimeDisplay.textContent = formatTime(pos * dur);
                 seekToGlobal(pos * dur);
             }
@@ -6698,6 +6794,13 @@
                 if (!el) return;
                 el.classList.toggle('is-hidden', !visible);
             });
+            // 已进入浏览态：弹窗标题同步为当前服务器名，避免仍显示"挂载"字样
+            const head = document.querySelector('#webdavModalMask .modal-head h3');
+            if (head) {
+                head.innerHTML = visible
+                    ? '<i class="fa-solid fa-server"></i>&nbsp; WebDAV 挂载与浏览'
+                    : '<i class="fa-solid fa-folder-open"></i>&nbsp; 文件浏览';
+            }
         }
 
         async function fetchWebdavDirectory(targetPath) {
@@ -6740,6 +6843,8 @@
                 webdavLastBase = u;
                 // 连接成功 → 写入最近连接记录
                 rememberWebdavServer({ name, url: baseUrl, user, pass });
+                // 记录凭据：后续编码探测与转码都要用它对上游做 Basic 认证
+                activeUpstreamAuth = (user || pass) ? { username: user || '', password: pass || '' } : null;
                 // 连接成功：收起连接表单与历史，只留目录浏览
                 setWebdavFormVisible(false);
                 renderWebdavItems(items, u);
@@ -7150,8 +7255,7 @@
                     url: s.url, user: s.user || '', pass: s.pass || '',
                 });
             });
-            // Web 端暂不提供 SMB（浏览器无法直接访问 SMB 协议），
-            // 仅当宿主环境注入了 getSmbServers 时才纳入来源列表
+            // SMB：仅桌面端可用（浏览器无法直连 SMB 协议，由 Electron 主进程桥接）
             const smbList = (typeof getSmbServers === 'function') ? getSmbServers() : [];
             smbList.forEach((s) => {
                 list.push({
@@ -7168,6 +7272,25 @@
         function posterWallCurrentSource() {
             const list = posterWallSources();
             return list.find((x) => x.id === posterWallSourceId) || list[0] || null;
+        }
+
+        // ── SMB 连接记录（仅桌面端）──────────────────────
+        const SMB_SERVERS_KEY = 'aethervr-smb-servers';
+        function getSmbServers() {
+            // 只在桌面端返回（网页版无法访问 SMB）
+            if (!window.vrDesktop || typeof window.vrDesktop.smbListShares !== 'function') return [];
+            try { return JSON.parse(localStorage.getItem(SMB_SERVERS_KEY)) || []; }
+            catch { return []; }
+        }
+        function saveSmbServers(list) {
+            try { localStorage.setItem(SMB_SERVERS_KEY, JSON.stringify(list)); } catch { /* 配额 */ }
+        }
+        function rememberSmbServer(server) {
+            const list = getSmbServers();
+            const idx = list.findIndex((x) => x.host === server.host && x.user === server.user);
+            if (idx >= 0) list[idx] = { ...list[idx], ...server };
+            else list.unshift(server);
+            saveSmbServers(list.slice(0, 20));
         }
 
         // ── 每来源独立存储 ────────────────────────────────
@@ -7364,6 +7487,13 @@
                     + src.name + (shortAddr && shortAddr !== src.name ? `  ·  ${shortAddr}` : '');
                 posterWallServerSelect.appendChild(opt);
             });
+            // 桌面端：提供 SMB 添加入口（浏览器端不支持）
+            if (window.vrDesktop && typeof window.vrDesktop.smbListShares === 'function') {
+                const addOpt = document.createElement('option');
+                addOpt.value = '__add_smb__';
+                addOpt.textContent = '＋ 添加 SMB 服务器…';
+                posterWallServerSelect.appendChild(addOpt);
+            }
             if (!list.some((x) => x.id === posterWallSourceId)) {
                 posterWallSourceId = list[0].id;
             }
@@ -7428,20 +7558,45 @@
 
         /// 列出 SMB 共享（作为一级目录）
         async function pwListSmbRoot(src) {
-            // 前端无法直接访问 SMB；通过后端桥接（若可用）
-            try {
-                const resp = await fetch('/api/webdav/list', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        url: `smb://${src.host}:${src.port}/`,
-                        username: src.user || '', password: src.pass || '',
-                    }),
-                });
-                if (!resp.ok) return [];
-                const xmlText = await resp.text();
-                return parseWebdavXml(xmlText, `smb://${src.host}`);
-            } catch { return []; }
+            if (!window.vrDesktop || typeof window.vrDesktop.smbListShares !== 'function') {
+                throw new Error('SMB 仅在桌面端可用');
+            }
+            const r = await window.vrDesktop.smbListShares(src.host, src.user, src.pass);
+            if (!r || !r.ok) {
+                throw new Error((r && r.error) || '无法连接 SMB 服务器');
+            }
+            return (r.shares || []).map((name) => ({
+                name,
+                href: `smb://${src.host}/${name}`,
+                isDir: true,
+                size: 0,
+            }));
+        }
+
+        /// 列出 SMB 目录内容
+        async function pwListSmbDir(src, dirPath) {
+            if (!window.vrDesktop || typeof window.vrDesktop.smbListDir !== 'function') {
+                throw new Error('SMB 仅在桌面端可用');
+            }
+            // 一级：/ShareName → 先解析成 UNC/挂载路径再列
+            let target = dirPath.replace(/^smb:\/\//, '');
+            if (!target.includes('/') && !target.includes('\\')) {
+                // 只有共享名，转成平台路径
+                const share = target;
+                target = window.vrDesktop.platform === 'win32'
+                    ? `\\\\${src.host}\\${share}`
+                    : `//${src.user ? encodeURIComponent(src.user) + '@' : ''}${src.host}/${share}`;
+            }
+            const r = await window.vrDesktop.smbListDir(target);
+            if (!r || !r.ok) {
+                throw new Error((r && r.error) || '无法读取 SMB 目录');
+            }
+            return (r.entries || []).map((e) => ({
+                name: e.name,
+                href: e.path,
+                isDir: e.isDirectory,
+                size: e.size || 0,
+            }));
         }
 
         async function pwRenderPicker(path) {
@@ -7473,7 +7628,7 @@
                         return norm !== curNorm && norm !== curNorm.slice(baseObj.origin.length);
                     });
                 } else {
-                    items = await pwListSmbRoot(src);
+                    items = path === '/' ? await pwListSmbRoot(src) : await pwListSmbDir(src, path);
                 }
             } catch (err) {
                 posterWallBody.innerHTML = `<div class="pw-empty"><i class="fa-solid fa-triangle-exclamation"></i>`
@@ -7599,6 +7754,14 @@
             };
 
             const listDir = async (path) => {
+                // SMB：交给主进程按本地路径列目录
+                if (src.kind === 'smb') {
+                    try {
+                        return await pwListSmbDir(src, path);
+                    } catch {
+                        return [];
+                    }
+                }
                 const resp = await fetch('/api/webdav/list', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -7963,8 +8126,25 @@
         }
         if (posterWallServerSelect) {
             posterWallServerSelect.addEventListener('change', () => {
-                pwSwitchSource(posterWallServerSelect.value);
+                const v = posterWallServerSelect.value;
+                if (v === '__add_smb__') {
+                    promptAddSmbServer();
+                    return;
+                }
+                pwSwitchSource(v);
             });
+        }
+
+        /// 添加 SMB 服务器（桌面端）
+        function promptAddSmbServer() {
+            const host = prompt('SMB 服务器地址（例：192.168.1.10 或 nas.local）');
+            if (!host) { pwRenderSourceSelect(); return; }
+            const user = prompt('用户名（留空表示匿名）') || '';
+            const pass = user ? (prompt('密码') || '') : '';
+            rememberSmbServer({ host: host.trim(), user, pass, port: 445 });
+            posterWallSourceId = 'smb|' + host.trim();
+            pwRenderSourceSelect();
+            pwSwitchSource(posterWallSourceId);
         }
         const pwFolderBtn = document.getElementById('posterWallFilesBtn');
         if (pwFolderBtn) pwFolderBtn.addEventListener('click', pwShowFolderManager);
