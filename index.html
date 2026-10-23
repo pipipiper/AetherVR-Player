@@ -1286,6 +1286,59 @@
         }
         .poster-scan-status i { color: var(--yellow); }
 
+        /* ── 海报墙整屏页面（替代原弹窗形式） ─────────────── */
+        .pw-page {
+            display: none; position: fixed; inset: 0; z-index: 60;
+            background: var(--bg);
+            flex-direction: column; overflow: hidden;
+        }
+        .pw-page.active { display: flex; }
+        .pw-page-inner {
+            display: flex; flex-direction: column; gap: 10px;
+            width: min(1400px, 100%); height: 100%; margin: 0 auto;
+            padding: 16px 22px 14px;
+            animation: pwPageIn .22s ease;
+        }
+        @keyframes pwPageIn {
+            from { opacity: 0; transform: translateY(12px); }
+            to   { opacity: 1; transform: none; }
+        }
+        .pw-page-head { display: flex; align-items: center; gap: 14px; flex: none; }
+        .pw-page-head h2 { margin: 0; font-size: 18px; font-weight: 700; white-space: nowrap; }
+        .pw-page-head h2 i { color: var(--yellow); }
+        .pw-back-btn {
+            display: inline-flex; align-items: center; gap: 2px;
+            border: 1px solid var(--border-hi); background: var(--surface);
+            color: var(--text); font-size: 13px; font-weight: 600;
+            padding: 7px 14px; border-radius: 10px; cursor: pointer;
+            transition: border-color .15s, color .15s;
+        }
+        .pw-back-btn:hover { border-color: var(--yellow); color: var(--yellow); }
+        .pw-head-source {
+            margin-left: auto; display: flex; align-items: center; gap: 8px;
+            min-width: 0; flex: 0 1 380px;
+        }
+        .pw-head-source label { color: var(--muted); font-size: 12px; flex: none; }
+        /* 整屏页面里列表区占满剩余高度（覆盖 .webdav-file-list 的 360px 限高） */
+        #posterWallBody {
+            max-height: none; flex: 1; min-height: 0;
+            overflow-y: auto; display: block;
+        }
+        /* 整屏时海报卡片更大一号 */
+        .pw-page .poster-wall {
+            grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+            gap: 14px;
+        }
+        /* 底部吸底的扫描按钮栏底色与整屏页面底色一致 */
+        .pw-page .poster-scan-bar {
+            background: linear-gradient(to top, var(--bg) 60%, transparent);
+        }
+        @media (max-width: 700px) {
+            .pw-page-inner { padding: 12px 12px 10px; }
+            .pw-page .poster-wall { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+            .pw-head-source { flex: 1 1 auto; }
+        }
+
         /* 多碟选择面板 */
         .disc-pick-list { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
         .disc-pick-btn {
@@ -2135,18 +2188,18 @@
                 </div>
             </div>
 
-            <!-- 海报墙（独立入口，不放在 WebDAV 文件浏览里） -->
-            <div class="pl-modal-mask" id="posterWallMask">
-                <div class="pl-modal pl-modal-lg">
-                    <div class="modal-head">
-                        <h3><i class="fa-solid fa-rectangle-list"></i>&nbsp; 海报墙</h3>
-                        <button class="modal-close-icon" id="posterWallClose"><i class="fa-solid fa-xmark"></i></button>
-                    </div>
-                    <!-- 来源选择（WebDAV / SMB 各自独立结果） -->
-                    <div class="webdav-backup-row" style="margin-bottom:10px;">
-                        <label>来源：</label>
-                        <select id="posterWallServerSelect" class="webdav-select"></select>
-                    </div>
+            <!-- 海报墙（整屏独立页面，不再是弹窗） -->
+            <div class="pw-page" id="posterWallMask">
+                <div class="pw-page-inner">
+                    <header class="pw-page-head">
+                        <button class="pw-back-btn" id="posterWallClose" title="返回"><i class="fa-solid fa-arrow-left"></i>&nbsp; 返回</button>
+                        <h2><i class="fa-solid fa-rectangle-list"></i>&nbsp; 海报墙</h2>
+                        <!-- 来源选择（WebDAV / SMB 各自独立结果） -->
+                        <div class="pw-head-source">
+                            <label>来源</label>
+                            <select id="posterWallServerSelect" class="webdav-select"></select>
+                        </div>
+                    </header>
                     <!-- 当前来源状态条 -->
                     <div class="poster-wall-statusbar" id="posterWallStatusBar"></div>
                     <div class="webdav-nav" id="posterWallNav">
@@ -2162,7 +2215,7 @@
                             <i class="fa-solid fa-cloud-arrow-up"></i>&nbsp; 备份
                         </button>
                     </div>
-                    <div class="webdav-file-list" id="posterWallBody"></div>
+                    <div class="webdav-file-list pw-page-body" id="posterWallBody"></div>
                     <input type="file" id="posterWallImportInput" accept=".json,application/json" style="display:none">
                 </div>
             </div>
@@ -2636,6 +2689,11 @@
         }
 
         function updateSummary() {
+            // 云端浏览模式下不显示播放列表摘要条
+            if (typeof cloudMode !== 'undefined' && cloudMode) {
+                playlistSummary.style.display = 'none';
+                return;
+            }
             if (!playlist.length) {
                 playlistSummary.style.display = 'none';
                 return;
@@ -2720,6 +2778,11 @@
 
         // ── 播放与授权 ──
         function playResolved(item) {
+            // 播放来源不是当前云端条目时，清掉云端列表里的播放高亮
+            if (typeof cloudPlayingKey !== 'undefined' && cloudPlayingKey
+                && (!item || item.originalPath !== cloudPlayingKey)) {
+                setCloudPlaying('');
+            }
             if (item.file) {
                 loadVideoFile(item.file);
             } else {
@@ -4425,6 +4488,8 @@
         // Load video file
         async function loadVideoFile(file) {
             if (!file) return;
+            // 播放本地文件时清除云端列表的播放高亮
+            if (typeof setCloudPlaying === 'function') setCloudPlaying('');
             urlLoadRequestId++;
             if (activeProbeController) activeProbeController.abort();
             activeProbeController = null;
@@ -6955,6 +7020,15 @@
 
         // 云端浏览模式：文件列表直接嵌入播放列表面板
         let cloudMode = false;
+        // 云端列表中正在播放的条目（WebDAV 记 href，SMB 记磁盘路径）；
+        // 起播后面板停留在云端列表，正在播放的行高亮
+        let cloudPlayingKey = '';
+        function setCloudPlaying(key) {
+            cloudPlayingKey = key || '';
+            document.querySelectorAll('#cloudBrowserFileList .cb-item').forEach((el) => {
+                el.classList.toggle('playing', !!cloudPlayingKey && el.dataset.cloudKey === cloudPlayingKey);
+            });
+        }
         function setCloudMode(on) {
             cloudMode = !!on;
             const show = cloudMode;
@@ -7233,6 +7307,9 @@
                 const el = document.createElement('div');
                 const isVideo = isWebdavVideo(item);
                 el.className = `playlist-item cb-item ${item.isDir ? 'is-dir' : (isVideo ? 'is-video' : '')}`;
+                // 记录条目 key：播放后重新渲染（刷新/进出目录）时恢复高亮
+                el.dataset.cloudKey = item.href;
+                if (cloudPlayingKey && item.href === cloudPlayingKey) el.classList.add('playing');
                 el.innerHTML = `
                     <div class="cb-item-icon">
                         <i class="fa-solid ${item.isDir ? 'fa-folder' : (isVideo ? 'fa-film' : 'fa-file')}"></i>
@@ -7254,8 +7331,8 @@
             });
         }
 
-        // WebDAV 视频起播：只播放当前点击的文件，
-        // 不把当前文件夹的全部内容自动塞进临时列表
+        // WebDAV 视频起播：只播放当前点击的文件，不灌入整个文件夹；
+        // 面板停留在云端列表，正在播放的条目高亮
         function playWebdavFromQueue(item, dirVideos, toPlayUrl) {
             const queue = [{
                 name: item.name,
@@ -7269,7 +7346,7 @@
             const t = ensureTempTab();
             activeTab = 'playlist';
             activePlId = t.id;
-            setCloudMode(false);   // 起播后回到播放列表视图
+            setCloudPlaying(item.href);   // 云端列表高亮当前播放
             renderTabs();
             setPlaylist(queue, 0);
             showSpatialToast(`起播 WebDAV：${item.name}`);
@@ -7329,6 +7406,9 @@
             entries.forEach((item) => {
                 const el = document.createElement('div');
                 el.className = `playlist-item cb-item ${item.isDirectory ? 'is-dir' : (item.isVideo ? 'is-video' : '')}`;
+                // 记录条目 key：播放后重新渲染（刷新/进出目录）时恢复高亮
+                el.dataset.cloudKey = item.path;
+                if (cloudPlayingKey && item.path === cloudPlayingKey) el.classList.add('playing');
                 el.innerHTML = `
                     <div class="cb-item-icon">
                         <i class="fa-solid ${item.isDirectory ? 'fa-folder' : (item.isVideo ? 'fa-film' : 'fa-file')}"></i>
@@ -7352,7 +7432,8 @@
         }
 
         // SMB 视频起播（直接走本地 /local 流式端点，原生极速 Seek）：
-        // 只播放当前点击的文件，不把当前文件夹内容自动加入临时列表
+        // 只播放当前点击的文件，不灌入整个文件夹；
+        // 面板停留在云端列表，正在播放的条目高亮
         function playSmbFromQueue(item, dirVideos) {
             const queue = [{
                 name: item.name,
@@ -7366,7 +7447,7 @@
             const t = ensureTempTab();
             activeTab = 'playlist';
             activePlId = t.id;
-            setCloudMode(false);   // 起播后回到播放列表视图
+            setCloudPlaying(item.path);   // 云端列表高亮当前播放
             renderTabs();
             setPlaylist(queue, 0);
             showSpatialToast(`起播 SMB：${item.name}`);
@@ -7766,6 +7847,32 @@
             return (snap.movies || []).filter((m) => m.missingSince);
         }
 
+        // /local URL 里的 token 每次启动都随机重新生成——落库前必须剥掉，
+        // 否则重启后快照里的封面/预览图全部 403，海报墙一片灰
+        function pwStripToken(u) {
+            if (!u) return '';
+            try {
+                const url = new URL(u, location.origin);
+                if (url.pathname === '/local') {
+                    url.searchParams.delete('token');
+                    return url.toString();
+                }
+            } catch { /* 非 URL 原样保留 */ }
+            return u;
+        }
+        /// 恢复快照时按当前会话重新补 token
+        function pwReviveUrl(u) {
+            if (!u) return '';
+            try {
+                const url = new URL(u, location.origin);
+                if (url.pathname === '/local') {
+                    const p = url.searchParams.get('path');
+                    return p ? localUrl(p) : '';
+                }
+            } catch { /* 非 URL 原样保留 */ }
+            return u;
+        }
+
         function pwSnapshotMovie(m, rootPath) {
             return {
                 key: m.key,
@@ -7773,16 +7880,18 @@
                 rootPath,
                 videos: (m.videos || []).map((v) => ({ name: v.name, href: v.href, size: v.size })),
                 poster: m.poster ? { name: m.poster.name, href: m.poster.href } : null,
-                posterUrl: m.posterUrl || '',
-                thumbs: m.thumbs || [],
-                fanartUrl: m.fanart || '',
+                posterUrl: pwStripToken(m.posterUrl || ''),
+                thumbs: (m.thumbs || []).map((t) => ({
+                    name: t.name || '', url: pwStripToken(t.url || ''),
+                })),
+                fanartUrl: pwStripToken(m.fanart || ''),
                 nfo: m.nfo ? { name: m.nfo.name, href: m.nfo.href } : null,
-                nfoUrl: m.nfoUrl || '',
+                nfoUrl: pwStripToken(m.nfoUrl || ''),
                 size: m.size || 0,
             };
         }
 
-        /// 快照 → 卡片可用结构
+        /// 快照 → 卡片可用结构（/local URL 按当前会话重新补 token）
         function pwRestoreMovies(snap) {
             return (snap.movies || []).map((m) => ({
                 key: m.key,
@@ -7790,11 +7899,13 @@
                 rawTitle: m.title || '',
                 videos: (m.videos || []).map((v) => ({ ...v })),
                 poster: m.poster ? { ...m.poster } : null,
-                posterUrl: m.posterUrl || '',
-                thumbs: m.thumbs || [],
-                fanart: m.fanartUrl || '',
+                posterUrl: pwReviveUrl(m.posterUrl || ''),
+                thumbs: (m.thumbs || []).map((t) => ({
+                    name: t.name || '', url: pwReviveUrl(t.url || ''),
+                })),
+                fanart: pwReviveUrl(m.fanartUrl || ''),
                 nfo: m.nfo ? { ...m.nfo } : null,
-                nfoUrl: m.nfoUrl || '',
+                nfoUrl: pwReviveUrl(m.nfoUrl || ''),
                 size: m.size || 0,
                 meta: null,
                 rootPath: m.rootPath || '',
