@@ -19,22 +19,30 @@ function arg(name, fallback) {
   return fallback;
 }
 
-// ── /local 图片磁盘缓存（海报墙封面加速）──────────────────────
-// SMB/NAS 上的封面每次从网络拉取很慢；按 路径+大小+mtime 缓存到本地临时目录，
-// 源文件变化（mtime/size 变）会自动换 key，不会用到过期缓存。
+// ── 图片磁盘缓存（海报墙封面加速）────────────────────────────
+// SMB（/local）与 WebDAV（/proxy）的图片统一缓存到本地临时目录：
+// 命中缓存直接返回，完全不再访问网络/ NAS。缓存 key 只含逻辑地址
+// （路径或 URL），不含会话 token，重启后依然命中。
+// 源文件变更不会自动失效——备份菜单里有「清除图片缓存」可手动刷新。
 const LOCAL_IMG_CACHE_DIR = path.join(require("os").tmpdir(), "aethervr-img-cache");
-function localImageCacheFile(target, stat) {
-  const key = crypto.createHash("sha1").update(target).digest("hex");
-  return path.join(
-    LOCAL_IMG_CACHE_DIR,
-    `${key}_${stat.size}_${Math.floor(stat.mtimeMs)}${path.extname(target).toLowerCase()}`
-  );
+const IMAGE_CACHE_EXTS = new Set([".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".avif"]);
+function imageCacheFile(key, ext) {
+  const hash = crypto.createHash("sha1").update(key).digest("hex");
+  return path.join(LOCAL_IMG_CACHE_DIR, hash + ext);
+}
+async function readImageCache(key, ext) {
+  try {
+    const f = imageCacheFile(key, ext);
+    const data = await fs.promises.readFile(f);
+    const st = await fs.promises.stat(f);
+    return { data, mtimeMs: st.mtimeMs };
+  } catch { return null; }
 }
 function writeImageCache(cacheFile, buf) {
   (async () => {
     try {
       await fs.promises.mkdir(LOCAL_IMG_CACHE_DIR, { recursive: true });
-      // 缓存文件数量兜底：超过 2000 个就不再写入（本地读已经够快，无需清理策略）
+      // 缓存文件数量兜底：超过 2000 个就不再写入
       const files = await fs.promises.readdir(LOCAL_IMG_CACHE_DIR);
       if (files.length > 2000) return;
       await fs.promises.writeFile(cacheFile, buf);
@@ -636,6 +644,22 @@ async function proxyVideo(target, req, res, redirects = 0, cred = null) {  let u
     res.writeHead(400).end("Bad proxy URL");
     return;
   }
+  // 图片缓存优先：命中直接返回，完全不访问线上（海报墙封面秒出/离线可显示）
+  const targetExt = path.extname(u.pathname).toLowerCase();
+  const cacheableImage = IMAGE_CACHE_EXTS.has(targetExt) && req.method !== "HEAD";
+  if (cacheableImage && redirects === 0) {
+    const cached = await readImageCache("proxy:" + target, targetExt);
+    if (cached) {
+      const lastMod = new Date(cached.mtimeMs).toUTCString();
+      if (req.headers["if-modified-since"] === lastMod) { res.writeHead(304).end(); return; }
+      res.writeHead(200, {
+        "Content-Type": MIME[targetExt] || "image/jpeg",
+        "Content-Length": cached.data.length,
+        "Cache-Control": "no-cache", "Last-Modified": lastMod, "Accept-Ranges": "bytes",
+      });
+      return res.end(cached.data);
+    }
+  }
   let resolved;
   try {
     resolved = await resolveSafeTarget(u);
@@ -687,8 +711,27 @@ async function proxyVideo(target, req, res, redirects = 0, cred = null) {  let u
     if (pres.headers["content-length"]) h["Content-Length"] = pres.headers["content-length"];
     if (pres.headers["content-range"]) h["Content-Range"] = pres.headers["content-range"];
     let ct = pres.headers["content-type"] || "";
-    if (!ct || ct === "application/octet-stream") ct = "video/mp4";
+    if (!ct || ct === "application/octet-stream") {
+      // 上游没给内容类型时按扩展名兜底（海报墙封面图走 /local 图片类型），
+      // 识别不了才按视频处理
+      const ext = path.extname(u.pathname).toLowerCase();
+      ct = VIDEO_MIME[ext] || MIME[ext] || "video/mp4";
+    }
     h["Content-Type"] = ct;
+    // 图片：缓冲整张小图 → 写入本地缓存 → 返回（之后命中缓存不再访问线上）
+    if (cacheableImage && pres.statusCode === 200) {
+      const chunks = [];
+      pres.on("data", (c) => chunks.push(c));
+      pres.on("end", () => {
+        const buf = Buffer.concat(chunks);
+        writeImageCache(imageCacheFile("proxy:" + target, targetExt), buf);
+        h["Content-Length"] = buf.length;
+        res.writeHead(200, h);
+        res.end(buf);
+      });
+      pres.on("error", () => { if (!res.headersSent) res.writeHead(502); res.end(); });
+      return;
+    }
     res.writeHead(pres.statusCode, h);
     pres.pipe(res);
   });
@@ -1168,6 +1211,60 @@ const requestHandler = async (req, res) => {
       proxyVideo(target, req, res, 0, sp.get("cred") || null);
       return;
     }
+    // ── 图片缓存管理（仅 --local-fs 桌面端；海报墙备份导入预热/清除）──
+    // POST /api/imgcache        { token, url, data(base64) } 把图片写入本地缓存
+    // POST /api/imgcache/clear  { token }                     清空图片缓存
+    if (LOCAL_FS && (urlPath === "/api/imgcache" || urlPath === "/api/imgcache/clear")) {
+      const send403 = () => { res.writeHead(403).end("Forbidden"); };
+      if (urlPath === "/api/imgcache/clear") {
+        try {
+          const body = await readJson(req, 4096);
+          if (body.token !== LOCAL_TOKEN) return send403();
+          await fs.promises.rm(LOCAL_IMG_CACHE_DIR, { recursive: true, force: true });
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: true }));
+        } catch (err) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: err.message }));
+        }
+        return;
+      }
+      try {
+        const body = await readJson(req, 64 * 1024 * 1024);
+        if (body.token !== LOCAL_TOKEN) return send403();
+        const rawUrl = String(body.url || "");
+        const data = String(body.data || "");
+        if (!rawUrl || !data) throw new Error("缺少 url 或 data");
+        // 由展示 URL 反推缓存 key：/local?path=X → local:X；/proxy?url=Y → proxy:Y；
+        // 裸 http(s) 地址（旧快照）→ proxy:裸地址
+        let key = "";
+        let ext = "";
+        const u = new URL(rawUrl, "http://local");
+        if (u.pathname === "/local") {
+          const p = u.searchParams.get("path") || "";
+          key = "local:" + p;
+          ext = path.extname(p).toLowerCase();
+        } else if (u.pathname === "/proxy") {
+          const inner = u.searchParams.get("url") || "";
+          key = "proxy:" + inner;
+          ext = path.extname(new URL(inner, "http://local").pathname).toLowerCase();
+        } else {
+          key = "proxy:" + rawUrl;
+          ext = path.extname(u.pathname).toLowerCase();
+        }
+        if (!key || !IMAGE_CACHE_EXTS.has(ext)) throw new Error("不支持的图片地址");
+        const buf = Buffer.from(data, "base64");
+        if (!buf.length) throw new Error("图片数据为空");
+        await fs.promises.mkdir(LOCAL_IMG_CACHE_DIR, { recursive: true });
+        await fs.promises.writeFile(imageCacheFile(key, ext), buf);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
+      } catch (err) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+      return;
+    }
     // ── 本地磁盘文件（仅 --local-fs，即 Electron 桌面端；需携带访问令牌）──
     if (LOCAL_FS && urlPath === "/local") {
       const sp = new URL(req.url, "http://local").searchParams;
@@ -1176,6 +1273,23 @@ const requestHandler = async (req, res) => {
         return;
       }
       const target = sp.get("path") || "";
+      // 海报墙封面/预览图也走 /local：除视频外补上常见图片类型
+      const ext = path.extname(target).toLowerCase();
+      const type = VIDEO_MIME[ext] || MIME[ext] || "application/octet-stream";
+      // 图片缓存优先：命中直接返回，完全不访问磁盘/网络（NAS 不在线也能出图）
+      if (IMAGE_CACHE_EXTS.has(ext) && !req.headers.range) {
+        const cached = await readImageCache("local:" + target, ext);
+        if (cached) {
+          const lastMod = new Date(cached.mtimeMs).toUTCString();
+          if (req.headers["if-modified-since"] === lastMod) { res.writeHead(304).end(); return; }
+          res.writeHead(200, {
+            "Content-Type": type, "Content-Length": cached.data.length,
+            "Cache-Control": "no-cache", "Last-Modified": lastMod,
+          });
+          if (req.method === "HEAD") return res.end();
+          return res.end(cached.data);
+        }
+      }
       let stat;
       try {
         stat = await fs.promises.stat(target);
@@ -1184,9 +1298,6 @@ const requestHandler = async (req, res) => {
         res.writeHead(404).end("Not found");
         return;
       }
-      // 海报墙封面/预览图也走 /local：除视频外补上常见图片类型
-      const ext = path.extname(target).toLowerCase();
-      const type = VIDEO_MIME[ext] || MIME[ext] || "application/octet-stream";
       const base = {
         "Content-Type": type,
         "Accept-Ranges": "bytes",
@@ -1198,19 +1309,11 @@ const requestHandler = async (req, res) => {
         res.writeHead(304).end();
         return;
       }
-      // 图片走本地磁盘缓存：SMB/NAS 上的封面每次从网络拉很慢，
-      // 首次读取后缓存到本地磁盘，之后（含重启后）打开海报墙秒出
-      if (type.startsWith("image/") && !req.headers.range) {
-        const cacheFile = localImageCacheFile(target, stat);
-        try {
-          const cached = await fs.promises.readFile(cacheFile);
-          res.writeHead(200, { ...base, "Content-Length": cached.length });
-          if (req.method === "HEAD") return res.end();
-          return res.end(cached);
-        } catch { /* 未缓存，读源文件并写缓存 */ }
+      // 图片未缓存：读源文件 → 写入本地缓存 → 返回（之后完全不再访问线上）
+      if (IMAGE_CACHE_EXTS.has(ext) && !req.headers.range) {
         try {
           const buf = await fs.promises.readFile(target);
-          writeImageCache(cacheFile, buf);   // 后台落盘，不阻塞响应
+          writeImageCache(imageCacheFile("local:" + target, ext), buf);   // 后台落盘，不阻塞响应
           res.writeHead(200, { ...base, "Content-Length": buf.length });
           if (req.method === "HEAD") return res.end();
           return res.end(buf);

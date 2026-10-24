@@ -771,7 +771,17 @@
             box-shadow: 0 16px 40px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.15);
             display: flex; flex-direction: column; gap: 10px;
             z-index: 30;
+            transition: opacity .35s ease;
         }
+        /* ── 沉浸模式：播放中 5 秒无操作自动隐藏 操作栏/播放列表/顶栏 ── */
+        body.immersive-idle { cursor: none; }
+        body.immersive-idle .controls,
+        body.immersive-idle .playlist-panel,
+        body.immersive-idle .top-bar {
+            opacity: 0; pointer-events: none;
+        }
+        .playlist-panel { transition: opacity .35s ease; }
+        .top-bar { transition: opacity .35s ease; }
 
         /* 第一行：进度条 + 时间（左右留足呼吸边距，彻底解决顶边溢出感） */
         .controls-progress-row {
@@ -1520,14 +1530,7 @@
             background: var(--yellow); border-radius: 999px;
             position: relative;
         }
-        /* 进度条头部的圆形滑块 */
-        .progress-fill::after {
-            content: ''; position: absolute; right: 0; top: 50%;
-            transform: translate(35%, -50%);
-            width: 12px; height: 12px; border-radius: 50%;
-            background: var(--yellow);
-            box-shadow: 0 1px 5px rgba(0,0,0,.35);
-        }
+        /* 进度条头部的蓝色圆点已按用户要求移除（与白色拖拽球重复） */
         .time-display { color: rgba(255,255,255,.65); font-size: 12px; }
         .volume-control, .speed-control { color: rgba(255,255,255,.65); }
         .volume-slider { accent-color: var(--yellow); }
@@ -1752,6 +1755,51 @@
             flex: none; max-width: 45%; color: #7f8a9c; font-size: 10.5px;
             overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
         }
+        /* ── 通用美化下拉（把所有原生 <select> 升级为样式化下拉） ── */
+        .select-native-hidden { display: none !important; }
+        .csel { position: relative; flex: 1; min-width: 0; }
+        .csel-btn {
+            width: 100%; display: flex; align-items: center; gap: 8px;
+            min-height: 32px; padding: 4px 10px; font-size: 12px; font-weight: 600;
+            font-family: inherit; border: 1px solid var(--border-hi); border-radius: 8px;
+            background: #fff; color: var(--text); cursor: pointer;
+            transition: border-color .15s, box-shadow .15s;
+        }
+        .csel-btn:hover, .csel.open .csel-btn {
+            border-color: var(--yellow); box-shadow: 0 3px 12px rgba(59,108,255,.14);
+        }
+        .csel-label { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .csel-btn > i { font-size: 10px; color: var(--muted); transition: transform .15s; }
+        .csel.open .csel-btn > i { transform: rotate(180deg); }
+        .csel-pop {
+            position: absolute; top: calc(100% + 5px); left: 0; right: 0; z-index: 40;
+            background: #fff; border: 1px solid var(--border); border-radius: 10px;
+            box-shadow: var(--shadow-pop); padding: 5px; max-height: 240px; overflow-y: auto;
+        }
+        .csel-item {
+            display: block; width: 100%; padding: 7px 10px; border: 0; background: none;
+            border-radius: 7px; font-size: 12.5px; font-family: inherit; color: var(--text);
+            cursor: pointer; text-align: left;
+        }
+        .csel-item:hover { background: rgba(59,108,255,.08); }
+        .csel-item.active { background: rgba(59,108,255,.12); font-weight: 600; }
+        /* 播放器控制栏内的深色变体（倍速选择器） */
+        .controls .csel-btn {
+            background: rgba(255,255,255,.10); color: #e8ecf3;
+            border-color: rgba(255,255,255,.18); min-height: 0; padding: 2px 8px;
+        }
+        .controls .csel-btn:hover, .controls .csel.open .csel-btn {
+            border-color: rgba(255,255,255,.35); box-shadow: none;
+        }
+        .controls .csel-btn > i { color: #94a3b8; }
+        .controls .csel-pop {
+            background: #1a2030; border-color: rgba(255,255,255,.14);
+            box-shadow: 0 12px 32px rgba(0,0,0,.5);
+            top: auto; bottom: calc(100% + 5px);   /* 控制栏在底部，向上弹出 */
+        }
+        .controls .csel-item { color: #e2e8f0; }
+        .controls .csel-item:hover { background: rgba(255,255,255,.08); }
+        .controls .csel-item.active { background: rgba(47,107,255,.30); }
         /* 云端列表：无法播放的非视频文件灰掉 */
         .cb-item.is-disabled { opacity: .35; cursor: default; }
         .cb-item.is-disabled:hover { background: none; }
@@ -1776,6 +1824,40 @@
 
         /* 海报墙 A-Z：无内容的字母灰掉 */
         .pw-az-btn.disabled { opacity: .28; cursor: default; pointer-events: none; }
+
+        /* ── 海报墙管理模式：单个/批量删除 ── */
+        .pw-manage-bar {
+            display: flex; align-items: center; gap: 8px; flex: none;
+            padding: 8px 10px; border-radius: 10px;
+            background: var(--surface-3); border: 1px solid var(--border);
+        }
+        .pw-manage-count { flex: 1; font-size: 12.5px; color: var(--muted); }
+        .pw-manage-bar .pl-modal-btn { padding: 6px 12px; font-size: 12px; }
+        .pw-card-check {
+            display: none; position: absolute; top: 6px; left: 6px; z-index: 6;
+            width: 22px; height: 22px; border-radius: 50%;
+            border: 2px solid rgba(255,255,255,.9); background: rgba(10,16,28,.45);
+            color: #fff; font-size: 11px; place-items: center;
+            backdrop-filter: blur(4px);
+        }
+        .pw-card-del {
+            display: none; position: absolute; top: 6px; right: 6px; z-index: 6;
+            width: 24px; height: 24px; border-radius: 50%; border: 0;
+            background: rgba(224,73,47,.92); color: #fff; font-size: 11px;
+            cursor: pointer; place-items: center;
+        }
+        .pw-card-del:hover { background: #c13a1f; }
+        .pw-page.managing .pw-card-check { display: grid; }
+        .pw-page.managing .pw-card-del { display: grid; }
+        .pw-page.managing .poster-badges { display: none; }
+        .pw-page.managing .poster-card { cursor: default; }
+        .pw-page.managing .poster-card.pw-selected { border-color: var(--yellow); box-shadow: 0 0 0 2px var(--yellow); }
+        .pw-page.managing .poster-card.pw-selected .pw-card-check {
+            background: var(--yellow); border-color: var(--yellow);
+        }
+        /* 横版图上下黑边完整显示（不裁剪） */
+        .poster-img.is-landscape { object-fit: contain; background: #000; }
+        .poster-preview.is-landscape { object-fit: contain; background: #000; }
 
         /* 播放器顶栏左上角返回按钮（从哪来回哪去） */
         .player-back-btn {
@@ -2410,6 +2492,17 @@
                         <button class="pl-modal-btn" id="posterWallBackupBtn" title="导出 / 导入扫描结果备份">
                             <i class="fa-solid fa-cloud-arrow-up"></i>&nbsp; 备份
                         </button>
+                        <button class="pl-modal-btn" id="posterWallManageBtn" title="管理海报墙内容（单个/批量删除）">
+                            <i class="fa-solid fa-check-double"></i>&nbsp; 管理
+                        </button>
+                    </div>
+                    <!-- 管理模式操作栏 -->
+                    <div class="pw-manage-bar" id="pwManageBar" style="display:none">
+                        <span class="pw-manage-count" id="pwManageCount">已选 0 项</span>
+                        <button class="pl-modal-btn" id="pwManageSelectAll">全选</button>
+                        <button class="pl-modal-btn" id="pwManageRestore" title="清除删除记录，重新扫描后恢复">恢复已删</button>
+                        <button class="pl-modal-btn danger" id="pwManageDelete">删除所选</button>
+                        <button class="pl-modal-btn primary" id="pwManageDone">完成</button>
                     </div>
                     <div class="webdav-file-list pw-page-body" id="posterWallBody"></div>
                     <input type="file" id="posterWallImportInput" accept=".json,application/json" style="display:none">
@@ -2608,10 +2701,25 @@
         });
 
         // 进入 VR 的待触发标记消费。
+        // 自动识别：VR 视频（文件名带 VR 标记，或宽高比 ≈2:1 的等距柱状/SBS）
+        // 进入 VR 模式；普通横版视频（16:9 等）进入普通模式。
+        function detectAutoVr() {
+            const name = String(fileName.textContent || '');
+            // 文件名带 VR 标记（[DSVR-xxx]、【VR】、8KVR 等）→ VR
+            if (/VR/i.test(name)) return true;
+            // 宽高比 ≈ 2:1（360° 等距柱状 / 180° SBS 双方眼排布）→ VR
+            const w = videoPlayer.videoWidth, h = videoPlayer.videoHeight;
+            if (w && h) {
+                const ratio = w / h;
+                if (ratio >= 1.9 && ratio <= 2.3) return true;
+            }
+            return false;
+        }
         function consumePendingVr() {
             if (pendingVrMode) {
                 pendingVrMode = false;
-                enterVRView();
+                if (detectAutoVr()) enterVRView();
+                else switchToNormalView();
             }
         }
 
@@ -5358,6 +5466,10 @@
         playlistBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             maybeAskLibraryDir();
+            // 从播放页打开列表：始终落在播放列表页签（退出云端浏览模式），
+            // 海报墙/云端起播的内容在临时列表页
+            if (typeof setCloudMode === 'function') setCloudMode(false);
+            if (typeof switchTab === 'function') switchTab('playlist');
             playlistPanel.classList.toggle('active');
         });
         document.getElementById('playlistClose').addEventListener('click', () => {
@@ -5688,6 +5800,24 @@
             document.querySelector('.container')?.classList.remove('has-video');
             videoContainer.classList.remove('active');
         }
+
+        // ── 沉浸模式：播放中 5 秒无操作，自动隐藏 操作栏/播放列表/顶栏 ──
+        let immersiveTimer = null;
+        function immersiveWake() {
+            document.body.classList.remove('immersive-idle');
+            if (immersiveTimer) clearTimeout(immersiveTimer);
+            immersiveTimer = setTimeout(() => {
+                // 只在播放中进入沉浸；暂停/未加载/弹层打开时保持界面可见
+                if (videoPlayer.paused || !document.body.classList.contains('has-video')) return;
+                if (posterWallMask && posterWallMask.classList.contains('active')) return;
+                document.body.classList.add('immersive-idle');
+            }, 5000);
+        }
+        ['mousemove', 'pointerdown', 'wheel', 'keydown', 'touchstart'].forEach((evt) => {
+            document.addEventListener(evt, immersiveWake, { passive: true });
+        });
+        videoPlayer.addEventListener('pause', () => document.body.classList.remove('immersive-idle'));
+        videoPlayer.addEventListener('ended', () => document.body.classList.remove('immersive-idle'));
 
         // 「返回首页」：卸载当前播放，回到全屏首页（hero 就是首页，不是覆盖弹窗）
         const newVideoBtn = document.getElementById('newVideoBtn');
@@ -7191,6 +7321,10 @@
                 const resp = await fetch(nfoUrl);
                 if (!resp.ok) return null;
                 const text = await resp.text();
+                // 防止网盘/代理返回的 HTML 错误页被当成 nfo 解析
+                // （openlist 对不存在/无权限的路径会回 200 + HTML 首页，
+                // 其 <title> 会把影片名覆盖成 "OpenList"）
+                if (/<html[\s>]/i.test(text) || !/<\/?(movie|episodedetails|tvshow|video)[\s>]/i.test(text)) return null;
                 const pick = (tag) => {
                     const m = text.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`, 'i'));
                     return m ? m[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').trim() : '';
@@ -7950,6 +8084,64 @@
             }[m]));
         }
 
+        // ── 通用美化下拉：把原生 <select> 升级为样式化下拉 ──
+        // 原 select 隐藏但保留（值/change 事件不变，现有逻辑零改动）；
+        // options 变化（动态重建）通过 MutationObserver 自动同步。
+        function beautifySelect(sel) {
+            if (!sel || sel.dataset.beautified) return;
+            sel.dataset.beautified = '1';
+            sel.classList.add('select-native-hidden');
+            const wrap = document.createElement('div');
+            wrap.className = 'csel';
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'csel-btn';
+            const label = document.createElement('span');
+            label.className = 'csel-label';
+            const arrow = document.createElement('i');
+            arrow.className = 'fa-solid fa-chevron-down';
+            btn.append(label, arrow);
+            const pop = document.createElement('div');
+            pop.className = 'csel-pop';
+            pop.style.display = 'none';
+            wrap.append(btn, pop);
+            sel.parentNode.insertBefore(wrap, sel.nextSibling);
+
+            const rebuild = () => {
+                const cur = sel.options[sel.selectedIndex];
+                label.textContent = cur ? cur.textContent : '请选择';
+                pop.innerHTML = '';
+                [...sel.options].forEach((o) => {
+                    const item = document.createElement('button');
+                    item.type = 'button';
+                    item.className = 'csel-item' + (o.value === sel.value ? ' active' : '');
+                    item.textContent = o.textContent;
+                    item.addEventListener('click', () => {
+                        sel.value = o.value;
+                        sel.dispatchEvent(new Event('change', { bubbles: true }));
+                        close();
+                    });
+                    pop.appendChild(item);
+                });
+            };
+            const close = () => { pop.style.display = 'none'; wrap.classList.remove('open'); };
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const opening = pop.style.display === 'none';
+                if (opening) rebuild();
+                pop.style.display = opening ? '' : 'none';
+                wrap.classList.toggle('open', opening);
+            });
+            document.addEventListener('click', (e) => { if (!wrap.contains(e.target)) close(); });
+            // 外部代码改 value / 重建 options 时同步
+            new MutationObserver(rebuild).observe(sel, { childList: true });
+            sel.addEventListener('change', rebuild);
+            rebuild();
+        }
+        // 应用全部原生 select（倍速 + WebDAV 云同步备份的两个下拉）
+        ['speedSelect', 'webdavBackupServerSelect', 'webdavBackupFreqSelect']
+            .forEach((id) => beautifySelect(document.getElementById(id)));
+
         /// 海报墙输入归一化：调用方可能传原始目录条目（需要聚合），
         /// 也可能传已聚合的影片数组（扫描实时渲染 / 快照恢复）。
         /// 影片数组直接再进 buildPosterWall 会被全部当成「未识别文件」，
@@ -7961,13 +8153,59 @@
             return buildPosterWall(list, toUrl);
         }
 
+        // nfo 元数据按需加载：只有卡片进入视口时才读取，且最多 2 个并发。
+        // 之前一次给几百张卡片同时发 nfo 请求，挤满连接导致封面图始终加载不出来。
+        let pwNfoObserver = null;
+        let pwNfoActive = 0;
+        const pwNfoQueue = [];
+        const pwNfoSeen = new WeakSet();
+        function pwObserveNfo(movie, card) {
+            if (pwNfoSeen.has(card)) return;
+            pwNfoSeen.add(card);
+            if (!pwNfoObserver) {
+                pwNfoObserver = new IntersectionObserver((entries) => {
+                    entries.forEach((entry) => {
+                        if (!entry.isIntersecting) return;
+                        pwNfoObserver.unobserve(entry.target);
+                        const m = entry.target._pwMovie;
+                        if (m && m.nfoUrl) pwQueueNfo(m, entry.target);
+                    });
+                }, { rootMargin: '120px' });
+            }
+            card._pwMovie = movie;
+            pwNfoObserver.observe(card);
+        }
+        function pwQueueNfo(movie, card) {
+            pwNfoQueue.push({ movie, card });
+            pwPumpNfo();
+        }
+        function pwPumpNfo() {
+            while (pwNfoActive < 2 && pwNfoQueue.length) {
+                const { movie, card } = pwNfoQueue.shift();
+                pwNfoActive++;
+                loadNfoMeta(movie.nfoUrl, movie).then((meta) => {
+                    if (meta && meta.title) {
+                        const t = card.querySelector('.poster-title');
+                        if (t) { t.textContent = meta.title; t.title = meta.title; }
+                    }
+                    movie.meta = meta;
+                }).finally(() => {
+                    pwNfoActive--;
+                    pwPumpNfo();
+                });
+            }
+        }
+
         /// 构建一张影片卡片（完整渲染与增量渲染共用）
         function buildPosterCard(movie, entries, toUrl) {
             const card = document.createElement('div');
             card.className = 'poster-card';
             card.dataset.key = movie.key || '';
+            // 横版图（fanart/只有横图时）：上下黑边完整显示，不裁剪
             const posterHtml = movie.posterUrl
-                ? `<img class="poster-img" src="${movie.posterUrl}" alt="" loading="lazy" onerror="this.style.display='none';this.parentElement.classList.add('no-poster')">`
+                ? `<img class="poster-img" src="${movie.posterUrl}" alt="" loading="lazy"`
+                    + ` onload="if(this.naturalWidth>this.naturalHeight)this.classList.add('is-landscape')"`
+                    + ` onerror="this.style.display='none';this.parentElement.classList.add('no-poster')">`
                 : '';
             const multiDisc = movie.videos.length > 1
                 ? `<span class="poster-badge"><i class="fa-solid fa-layer-group"></i> ${movie.videos.length}</span>`
@@ -7981,6 +8219,8 @@
                     <div class="poster-fallback"><i class="fa-solid fa-film"></i></div>
                     <div class="poster-hover-hint"><i class="fa-solid fa-circle-play"></i></div>
                     <div class="poster-badges">${multiDisc}${nfoBadge}</div>
+                    <div class="pw-card-check"><i class="fa-solid fa-check"></i></div>
+                    <button class="pw-card-del" title="从海报墙移除"><i class="fa-solid fa-xmark"></i></button>
                 </div>
                 <div class="poster-meta">
                     <div class="poster-title" title="${movie.title}">${movie.title}</div>
@@ -7989,16 +8229,38 @@
                     </div>
                 </div>
             `;
-            // 悬停时把缩略图作为背景淡入（模拟 Infuse / VidHub 的预览体验）
-            if (movie.thumbs.length) {
+            // 管理模式：卡片点击 = 勾选切换；删除按钮 = 单个移除
+            const delBtn = card.querySelector('.pw-card-del');
+            if (delBtn) {
+                delBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    pwDeleteMovies(new Set([movie.key]));
+                });
+            }
+            // 悬停预览：同时有横版竖版时，鼠标指上显示横版图（上下留黑边）；
+            // 没有横版 fanart 时保持原有的缩略图预览
+            const hoverUrl = movie.fanart || (movie.thumbs.length ? movie.thumbs[0].url : '');
+            if (hoverUrl) {
                 const thumb = card.querySelector('.poster-thumb');
                 const previewImg = document.createElement('img');
-                previewImg.className = 'poster-preview';
-                previewImg.src = movie.thumbs[0].url;
+                previewImg.className = 'poster-preview' + (movie.fanart ? ' is-landscape' : '');
+                previewImg.src = hoverUrl;
                 previewImg.alt = '';
                 thumb.appendChild(previewImg);
             }
             card.addEventListener('click', () => {
+                // 管理模式：点击卡片 = 勾选/取消
+                if (pwManaging) {
+                    if (pwSelected.has(movie.key)) {
+                        pwSelected.delete(movie.key);
+                        card.classList.remove('pw-selected');
+                    } else {
+                        pwSelected.add(movie.key);
+                        card.classList.add('pw-selected');
+                    }
+                    pwUpdateManageBar();
+                    return;
+                }
                 // 单碟：直接起播；多碟：展开选择
                 if (movie.videos.length === 1) {
                     playMovieFromWall(movie, movie.videos[0], entries, toUrl);
@@ -8006,16 +8268,8 @@
                     showMovieDiscPicker(movie, entries, toUrl);
                 }
             });
-            // 异步补读 nfo 标题（本地文本，不联网）
-            if (movie.nfoUrl) {
-                loadNfoMeta(movie.nfoUrl, movie).then((meta) => {
-                    if (meta && meta.title) {
-                        const t = card.querySelector('.poster-title');
-                        if (t) { t.textContent = meta.title; t.title = meta.title; }
-                    }
-                    movie.meta = meta;
-                });
-            }
+            // nfo 只在卡片进入视口后按需读取（避免几百个并发请求挤占封面加载）
+            if (movie.nfoUrl) pwObserveNfo(movie, card);
             return card;
         }
 
@@ -8331,7 +8585,10 @@
             } catch { /* 非 URL 原样保留 */ }
             return u;
         }
-        /// 恢复快照时按当前会话重新补 token
+        /// 恢复快照时按当前会话重新补 token；WebDAV 旧快照里的直连图片地址
+        /// 重新走 /proxy 带凭据（直连 <img> 会 401 导致封面全黑）
+        /// 注意：不要对 URL 再套 encodeURI——快照里的 %5C/%E6 等已编码片段
+        /// 会被二次编码成 %255C/%25E6，导致封面 404。
         function pwReviveUrl(u) {
             if (!u) return '';
             try {
@@ -8339,6 +8596,14 @@
                 if (url.pathname === '/local') {
                     const p = url.searchParams.get('path');
                     return p ? localUrl(p) : '';
+                }
+                if (url.pathname === '/proxy') return u;   // 已是代理地址
+                // WebDAV 旧快照的直连图片/nfo → 重新代理
+                const src = posterWallCurrentSource();
+                if (src && src.kind === 'webdav'
+                    && /^https?:$/i.test(url.protocol)
+                    && /\.(jpe?g|png|webp|bmp|avif|gif|nfo)$/i.test(url.pathname)) {
+                    return posterWallToUrl(url.href);
                 }
             } catch { /* 非 URL 原样保留 */ }
             return u;
@@ -8493,7 +8758,7 @@
                 const addItem = document.createElement('button');
                 addItem.type = 'button';
                 addItem.className = 'pw-source-item pw-source-add';
-                addItem.innerHTML = '<i class="fa-solid fa-plus"></i>&nbsp; 添加 SMB 服务器…';
+                addItem.innerHTML = '<i class="fa-solid fa-plus"></i>&nbsp; 添加服务器…';
                 addItem.addEventListener('click', () => {
                     pwCloseSourcePop();
                     promptAddSmbServer();
@@ -8801,13 +9066,34 @@
 
         /// 海报墙条目 → 可播放/可加载的地址
         /// WebDAV：源站 origin + href；SMB：主进程返回的磁盘路径走 /local 流式端点
+        /// 注意：WebDAV 的图片/nfo 必须走 /proxy 带凭据——<img>/fetch 无法携带
+        /// Basic 认证，直连会 401 导致封面全黑。视频保持原始地址，
+        /// 由 loadVideoURL 的代理/转码链路处理（避免 /proxy 二次包装）。
         function posterWallToUrl(item) {
             const href = typeof item === 'string' ? item : String((item && item.href) || '');
             const src = posterWallCurrentSource();
             if (src && src.kind === 'smb') return localUrl(href);
-            if (src && src.kind === 'webdav' && (src.user || src.pass)) {
-                // 海报墙直接起播时补齐代理转码所需的上游凭据
-                activeUpstreamAuth = { username: src.user || '', password: src.pass || '' };
+            if (src && src.kind === 'webdav') {
+                if (src.user || src.pass) {
+                    // 海报墙直接起播时补齐代理转码所需的上游凭据
+                    activeUpstreamAuth = { username: src.user || '', password: src.pass || '' };
+                }
+                const full = /^https?:\/\//i.test(href) ? href : (() => {
+                    try {
+                        const base = new URL(src.url || location.origin);
+                        return base.origin + (href.startsWith('/') ? '' : '/') + href;
+                    } catch { return href; }
+                })();
+                // 图片/nfo → 代理带凭据（server 端还有磁盘缓存，取一次后不再访问线上）
+                if (/\.(jpe?g|png|webp|bmp|avif|gif|nfo)$/i.test(full)) {
+                    let target = 'proxy?url=' + encodeURIComponent(full);
+                    if (src.user || src.pass) {
+                        const rawCred = (src.user || '') + ':' + (src.pass || '');
+                        target += '&cred=' + encodeURIComponent(btoa(unescape(encodeURIComponent(rawCred))));
+                    }
+                    return backendUrl(target);
+                }
+                return full;
             }
             if (/^https?:\/\//i.test(href)) return href;
             try {
@@ -9262,6 +9548,74 @@
             document.body.appendChild(mask);
         }
 
+        // ── 海报墙备份：导出含全部图片，导入时把图片写回本地缓存 ──
+        /// 抓取 URL 内容并转 base64（走本地缓存/代理，基本都是本地读）
+        async function pwUrlToBase64(url) {
+            try {
+                const resp = await fetch(url);
+                if (!resp.ok) return '';
+                const bytes = new Uint8Array(await resp.arrayBuffer());
+                let bin = '';
+                for (let i = 0; i < bytes.length; i += 0x8000) {
+                    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+                }
+                return btoa(bin);
+            } catch { return ''; }
+        }
+
+        /// 构建含图片的备份：每部影片的 封面/预览图/剧照 全部内嵌 base64
+        async function pwBuildBackupWithImages(snap) {
+            const out = { ...snap, exportedAt: Date.now(), withImages: true };
+            const src = (snap.movies || []);
+            const movies = new Array(src.length);
+            let idx = 0;
+            const worker = async () => {
+                while (idx < src.length) {
+                    const i = idx++;
+                    const m = src[i];
+                    const copy = { ...m };
+                    if (m.posterUrl) copy.posterData = await pwUrlToBase64(pwReviveUrl(m.posterUrl));
+                    if (m.fanartUrl) copy.fanartData = await pwUrlToBase64(pwReviveUrl(m.fanartUrl));
+                    if ((m.thumbs || []).length) {
+                        copy.thumbs = [];
+                        for (const t of m.thumbs) {
+                            copy.thumbs.push({ name: t.name, url: t.url, data: await pwUrlToBase64(pwReviveUrl(t.url)) });
+                        }
+                    }
+                    movies[i] = copy;
+                }
+            };
+            await Promise.all(Array.from({ length: 4 }, worker));
+            out.movies = movies;
+            return out;
+        }
+
+        /// 导入时把内嵌图片写回本地图片缓存（预热）：之后打开海报墙离线也能出封面
+        async function pwPrewarmImageCache(movies) {
+            const tasks = [];
+            movies.forEach((m) => {
+                if (m.posterData && m.posterUrl) tasks.push({ url: m.posterUrl, data: m.posterData });
+                if (m.fanartData && m.fanartUrl) tasks.push({ url: m.fanartUrl, data: m.fanartData });
+                (m.thumbs || []).forEach((t) => { if (t.data && t.url) tasks.push({ url: t.url, data: t.data }); });
+            });
+            if (!tasks.length) return 0;
+            let idx = 0, done = 0;
+            const worker = async () => {
+                while (idx < tasks.length) {
+                    const t = tasks[idx++];
+                    try {
+                        await fetch('/api/imgcache', {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ token: window.__LOCAL_TOKEN__ || '', url: t.url, data: t.data }),
+                        });
+                    } catch { /* 忽略单张失败 */ }
+                    done++;
+                }
+            };
+            await Promise.all(Array.from({ length: 4 }, worker));
+            return done;
+        }
+
         function pwShowBackupMenu() {
             const src = posterWallCurrentSource();
             const snap = pwLoadSource(posterWallSourceId);
@@ -9277,14 +9631,17 @@
                     </div>
                     <p class="pl-modal-desc">
                         当前来源「<b>${src ? src.name : '—'}</b>」共 <b>${count}</b> 部影片。
-                        导出后可在其他设备/浏览器导入，避免重新扫描。
+                        导出包含全部封面图片，每次导出生成一个独立备份包（文件名带时间戳）。
                     </p>
                     <div class="pl-modal-btns" style="flex-direction:column;gap:8px;">
                         <button class="pl-modal-btn primary" data-export ${count ? '' : 'disabled'}>
-                            <i class="fa-solid fa-file-export"></i>&nbsp; 导出扫描结果 (.json)
+                            <i class="fa-solid fa-file-export"></i>&nbsp; 导出扫描结果（含全部图片 .json）
                         </button>
                         <button class="pl-modal-btn" data-import>
                             <i class="fa-solid fa-file-import"></i>&nbsp; 导入扫描结果 (.json)
+                        </button>
+                        <button class="pl-modal-btn" data-clear-cache>
+                            <i class="fa-solid fa-images"></i>&nbsp; 清除本地图片缓存
                         </button>
                         <button class="pl-modal-btn danger-ghost" data-clear ${count ? '' : 'disabled'}>
                             <i class="fa-solid fa-trash"></i>&nbsp; 清空当前来源结果
@@ -9294,29 +9651,54 @@
             mask.querySelector('[data-close]').addEventListener('click', () => mask.remove());
             mask.addEventListener('click', (e) => { if (e.target === mask) mask.remove(); });
 
-            mask.querySelector('[data-export]').addEventListener('click', () => {
+            mask.querySelector('[data-export]').addEventListener('click', async () => {
                 const s = pwLoadSource(posterWallSourceId);
                 if (!s) return;
-                const blob = new Blob([JSON.stringify(s, null, 2)], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                const d = new Date();
-                const pad = (n) => String(n).padStart(2, '0');
-                a.download = `AetherVR-海报墙-${(src ? src.name : 'export')}-`
-                    + `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}`
-                    + `-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.json`;
-                a.href = url;
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                URL.revokeObjectURL(url);
-                mask.remove();
-                showSpatialToast('✅ 扫描结果已导出');
+                const btn = mask.querySelector('[data-export]');
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>&nbsp; 正在打包图片…';
+                try {
+                    const out = await pwBuildBackupWithImages(s);
+                    const blob = new Blob([JSON.stringify(out)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    const d = new Date();
+                    const pad = (n) => String(n).padStart(2, '0');
+                    a.download = `AetherVR-海报墙-${(src ? src.name : 'export')}-`
+                        + `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}`
+                        + `-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.json`;
+                    a.href = url;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    URL.revokeObjectURL(url);
+                    mask.remove();
+                    showSpatialToast('✅ 已导出（含全部封面图片）');
+                } catch (err) {
+                    showSpatialToast('导出失败：' + err.message);
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fa-solid fa-file-export"></i>&nbsp; 导出扫描结果（含全部图片 .json）';
+                }
             });
 
             mask.querySelector('[data-import]').addEventListener('click', () => {
                 mask.remove();
                 if (posterWallImportInput) posterWallImportInput.click();
+            });
+
+            mask.querySelector('[data-clear-cache]').addEventListener('click', async () => {
+                if (!confirm('清除本地图片缓存？下次打开海报墙会重新从来源拉取一次封面（之后仍走缓存）。')) return;
+                try {
+                    const resp = await fetch('/api/imgcache/clear', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ token: window.__LOCAL_TOKEN__ || '' }),
+                    });
+                    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                    showSpatialToast('🗑️ 图片缓存已清除');
+                } catch (err) {
+                    showSpatialToast('清除失败：' + err.message);
+                }
+                mask.remove();
             });
 
             mask.querySelector('[data-clear]').addEventListener('click', () => {
@@ -9362,6 +9744,12 @@
                         }
                         pwRenderSourceSelect();
                         showSpatialToast(`✅ 已导入 ${snap.movies.length} 部影片`);
+                        // 备份含内嵌图片：写回本地图片缓存（预热），之后离线也能出封面
+                        if (snap.withImages) {
+                            pwPrewarmImageCache(snap.movies || []).then((n) => {
+                                if (n) showSpatialToast(`🖼️ 已恢复 ${n} 张图片到本地缓存`);
+                            });
+                        }
                     } catch (err) {
                         alert('导入失败：' + err.message);
                     }
@@ -9370,6 +9758,86 @@
                 e.target.value = '';
             });
         }
+
+        // ── 海报墙管理模式：单个/批量删除 ──────────────────────
+        let pwManaging = false;
+        const pwSelected = new Set();   // 选中的影片 key
+        const pwManageBar = document.getElementById('pwManageBar');
+        const pwManageCount = document.getElementById('pwManageCount');
+
+        function pwSetManaging(on) {
+            pwManaging = !!on;
+            pwSelected.clear();
+            posterWallMask.classList.toggle('managing', pwManaging);
+            if (pwManageBar) pwManageBar.style.display = pwManaging ? 'flex' : 'none';
+            pwUpdateManageBar();
+        }
+        function pwUpdateManageBar() {
+            if (pwManageCount) pwManageCount.textContent = `已选 ${pwSelected.size} 项`;
+            const delBtn = document.getElementById('pwManageDelete');
+            if (delBtn) delBtn.disabled = !pwSelected.size;
+        }
+
+        /// 从当前来源删除指定影片（记录到 removed，重扫也不会回来）
+        function pwDeleteMovies(keys, { silent } = {}) {
+            if (!keys || !keys.size) return;
+            const snap = pwLoadSource(posterWallSourceId);
+            if (!snap) return;
+            snap.movies = (snap.movies || []).filter((m) => !keys.has(m.key));
+            // 记录删除的 key：重扫时不再重新添加
+            snap.removed = [...new Set([...(snap.removed || []), ...keys])];
+            snap.updatedAt = Date.now();
+            pwSaveSource(snap);
+            pwRenderStatusBar(snap);
+            pwAllMovies = pwAllMovies.filter((m) => !keys.has(m.key));
+            keys.forEach((k) => pwSelected.delete(k));
+            pwApplyView();
+            pwUpdateManageBar();
+            if (!silent) showSpatialToast(`已移除 ${keys.size} 部`);
+        }
+
+        const pwManageBtn = document.getElementById('posterWallManageBtn');
+        if (pwManageBtn) {
+            pwManageBtn.addEventListener('click', () => {
+                if (!pwAllMovies.length) { showSpatialToast('海报墙为空，无可管理内容'); return; }
+                pwSetManaging(!pwManaging);
+            });
+        }
+        const pwManageSelectAll = document.getElementById('pwManageSelectAll');
+        if (pwManageSelectAll) {
+            pwManageSelectAll.addEventListener('click', () => {
+                const allKeys = pwAllMovies.map((m) => m.key);
+                if (pwSelected.size === allKeys.length) pwSelected.clear();
+                else allKeys.forEach((k) => pwSelected.add(k));
+                document.querySelectorAll('#posterWallBody .poster-card').forEach((c) => {
+                    c.classList.toggle('pw-selected', pwSelected.has(c.dataset.key));
+                });
+                pwUpdateManageBar();
+            });
+        }
+        const pwManageDelete = document.getElementById('pwManageDelete');
+        if (pwManageDelete) {
+            pwManageDelete.addEventListener('click', () => {
+                if (!pwSelected.size) return;
+                if (!confirm(`确定从海报墙移除选中的 ${pwSelected.size} 部影片？（不会删除源文件；重扫也不会再加回，可在「恢复已删」还原）`)) return;
+                pwDeleteMovies(new Set(pwSelected));
+            });
+        }
+        const pwManageRestore = document.getElementById('pwManageRestore');
+        if (pwManageRestore) {
+            pwManageRestore.addEventListener('click', () => {
+                const snap = pwLoadSource(posterWallSourceId);
+                if (!snap || !(snap.removed || []).length) {
+                    showSpatialToast('没有已删除的记录');
+                    return;
+                }
+                snap.removed = [];
+                pwSaveSource(snap);
+                showSpatialToast('已清除删除记录，重新扫描后恢复显示');
+            });
+        }
+        const pwManageDone = document.getElementById('pwManageDone');
+        if (pwManageDone) pwManageDone.addEventListener('click', () => pwSetManaging(false));
 
         // ── 入口与事件绑定 ─────────────────────────────────
         if (posterWallBtn) {
@@ -9411,10 +9879,12 @@
                 }
             });
         }
-        /// 添加 SMB 服务器（桌面端）：
-        /// Electron 不支持 window.prompt，改为打开连接弹窗并切到 SMB 页签
+        /// 添加服务器（WebDAV / SMB）：打开连接弹窗。
+        /// 注意层级：海报墙是整屏页面（z-60），连接弹窗默认也是 z-60 且 DOM 在海报墙
+        /// 之前会被盖住——这里把弹窗临时提到海报墙之上。
         function promptAddSmbServer() {
-            if (typeof tabTypeSmb !== 'undefined' && tabTypeSmb) tabTypeSmb.click();
+            const mask = document.getElementById('connectSourceModalMask');
+            if (mask) mask.style.zIndex = '10080';
             openConnectSourceModal();
         }
         const pwFolderBtn = document.getElementById('posterWallFilesBtn');
