@@ -165,12 +165,12 @@ test("player controls expose a stop button and a usable progress bar", () => {
   assert.match(html, /class="controls-side right"/);
 });
 
-test("new-file panel can always be closed (regression)", () => {
-  // 曾经用 videoPlayer.src 判断是否显示关闭按钮，
-  // blob:/ 或尚未赋值时为空串 → 关闭按钮被隐藏，面板再也退不出去。
-  assert.match(html, /const hasSource = Boolean\(/);
-  assert.match(html, /heroClose\.style\.display = hasSource/);
-  assert.match(html, /heroClose\.addEventListener\('click'/, "close handler must exist");
+test("home is a full page: no return-to-playback button, 返回首页 unloads video", () => {
+  // 「返回播放」按钮已按用户要求移除：首页就是全屏首页，不再是覆盖弹窗
+  assert.doesNotMatch(html, /id="heroClose"/);
+  // 返回首页真正卸载视频（释放解码器/转码会话）而不是仅覆盖一层弹窗
+  assert.match(html, /function unloadCurrentVideo\(\)/);
+  assert.match(html, /videoPlayer\.removeAttribute\('src'\)/);
 });
 
 test("error state hides the video surface and uses a dark card", () => {
@@ -205,7 +205,8 @@ test("cloud browser is embedded directly into the playlist panel", () => {
   assert.match(html, /playlist-item cb-item/);
   // 连接信息在独立弹层中，面板内只展示纯净列表
   assert.match(html, /id="connectSourceModalMask"/);
-  assert.match(html, /id="cloudSourceSelect"/);
+  assert.match(html, /id="cbSourceBtn"/);
+  assert.match(html, /id="cbSourcePop"/);
   assert.match(html, /id="cloudBrowserFileList"/);
   assert.match(html, /id="cloudBrowserPathBar"/);
   // 云端工具行 / 路径栏 / 文件列表都在播放列表面板内

@@ -615,13 +615,6 @@
         }
         .pages-notice i { margin-right: 6px; color: #6b93d6; }
         .pages-notice b { color: #33507e; font-weight: 600; }
-        .hero-close {
-            margin-top: 20px; display: none; align-items: center; gap: 6px;
-            padding: 7px 16px; font-size: 12.5px; font-family: inherit;
-            color: var(--muted); background: none;
-            border: 1px solid var(--border); border-radius: 999px; cursor: pointer;
-        }
-        .hero-close:hover { color: var(--text); border-color: var(--border-hi); }
 
         /* ── url input + play button inside hero ───────────── */
         .url-input-wrapper input {
@@ -1716,6 +1709,52 @@
             outline: none; max-width: 170px; cursor: pointer;
         }
         .cb-source-select option { background: #121620; color: #fff; }
+        /* 云端来源选择器：自定义美化下拉（深色面板配套） */
+        .cb-source { position: relative; flex: 1; min-width: 0; }
+        .cb-source-btn {
+            width: 100%; display: flex; align-items: center; gap: 6px;
+            background: rgba(255,255,255,.08); color: #fff;
+            border: 1px solid rgba(255,255,255,.15); border-radius: 8px;
+            padding: 5px 9px; font-size: 12px; font-weight: 600;
+            font-family: inherit; cursor: pointer; transition: background .15s;
+        }
+        .cb-source-btn:hover { background: rgba(255,255,255,.15); }
+        .cb-source-btn-text {
+            flex: 1; min-width: 0; text-align: left;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .cb-source-btn > i { font-size: 10px; color: #94a3b8; transition: transform .15s; }
+        .cb-source.open .cb-source-btn > i { transform: rotate(180deg); }
+        .cb-source-pop {
+            position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 30;
+            background: #1a2030; border: 1px solid rgba(255,255,255,.14);
+            border-radius: 10px; box-shadow: 0 12px 32px rgba(0,0,0,.5);
+            padding: 5px; max-height: 280px; overflow-y: auto;
+        }
+        .cb-source-item {
+            display: flex; align-items: center; gap: 7px; width: 100%;
+            padding: 7px 9px; border: 0; background: none; border-radius: 7px;
+            color: #e2e8f0; font-size: 12px; font-family: inherit;
+            cursor: pointer; text-align: left;
+        }
+        .cb-source-item:hover { background: rgba(255,255,255,.08); }
+        .cb-source-item.active { background: rgba(47,107,255,.30); }
+        .cb-source-chip {
+            flex: none; font-size: 10px; padding: 1px 6px; border-radius: 5px;
+            background: rgba(59,108,255,.18); color: #9cc4ff;
+        }
+        .cb-source-chip.is-smb { background: rgba(16,185,129,.18); color: #6ee7b7; }
+        .cb-source-item-name {
+            flex: 1; min-width: 0; font-weight: 600;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .cb-source-item-addr {
+            flex: none; max-width: 45%; color: #7f8a9c; font-size: 10.5px;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        /* 云端列表：无法播放的非视频文件灰掉 */
+        .cb-item.is-disabled { opacity: .35; cursor: default; }
+        .cb-item.is-disabled:hover { background: none; }
         .cb-path-bar {
             padding: 6px 12px; font-size: 11px; color: #94a3b8;
             background: rgba(0, 0, 0, 0.25); border-bottom: 1px solid rgba(255, 255, 255, 0.06);
@@ -1750,7 +1789,7 @@
         /* ── 云端浏览嵌入播放列表面板（WebDAV / SMB 连接成功后的列表直接进播放列表） ── */
         .cb-cloud-bar { align-items: center; flex-wrap: nowrap; }
         .cb-cloud-icon { color: #f59e0b; font-size: 13px; flex: none; }
-        .cb-cloud-bar .cb-source-select { flex: 1; min-width: 0; max-width: none; }
+        .cb-cloud-bar .cb-source { flex: 1; min-width: 0; }
         .cb-cloud-bar .pl-tab-nav { font-size: 12px; padding: 4px 6px; }
 
         /* ── 条目位置标记（起播跳转点）──────────────────── */
@@ -1971,7 +2010,6 @@
                     </button>
                 </div>
                 <p class="hero-hint"><i class="fa-solid fa-hand-pointer"></i>&nbsp; 也可以直接把视频文件或 .dpl 播放列表拖到这里</p>
-                <button id="heroClose" class="hero-close" style="display:none"><i class="fa-solid fa-xmark"></i>&nbsp; 返回播放</button>
                 <div class="hero-loading" id="heroLoading"><div class="seek-loading-spinner"></div><span id="heroLoadingText">正在检测…</span></div>
                 <div class="error-message" id="errorMessage"></div>
                 <button id="transcodeBtn" class="url-play-btn transcode-btn" style="display:none"><i class="fa-solid fa-gears"></i>&nbsp; 服务器转码播放（实时转为 4K H.264）</button>
@@ -2142,7 +2180,13 @@
                 <!-- 云端/网络文件浏览（WebDAV / SMB）：连接成功后直接嵌入本面板 -->
                 <div class="playlist-tools cb-cloud-bar" id="cloudBar" style="display:none">
                     <i class="fa-solid fa-folder-tree cb-cloud-icon"></i>
-                    <select id="cloudSourceSelect" class="cb-source-select" title="切换网络/云端文件源"></select>
+                    <div class="cb-source" id="cbSource">
+                        <button type="button" class="cb-source-btn" id="cbSourceBtn" title="切换网络/云端文件源">
+                            <span class="cb-source-btn-text" id="cbSourceBtnText">选择文件源</span>
+                            <i class="fa-solid fa-chevron-down"></i>
+                        </button>
+                        <div class="cb-source-pop" id="cbSourcePop" style="display:none"></div>
+                    </div>
                     <button class="pl-tab-nav" id="cloudBrowserUpBtn" title="返回上级目录"><i class="fa-solid fa-arrow-up"></i></button>
                     <button class="pl-tab-nav" id="cloudBrowserRefreshBtn" title="刷新目录"><i class="fa-solid fa-rotate-right"></i></button>
                     <button class="pl-tab-nav" id="cloudBrowserAddBtn" title="连接新服务器 (WebDAV / SMB)"><i class="fa-solid fa-plus"></i></button>
@@ -2597,6 +2641,66 @@
             return transcodeSrcUrl ? hlsOffset + videoPlayer.currentTime : videoPlayer.currentTime;
         }
 
+        // ── 播放进度记忆（海报墙 / 播放列表 / 收藏夹 / WebDAV / SMB 通用）──
+        // key 规则：/local 按磁盘路径（剥掉每次启动都变的 token），远程按原始 URL，
+        // 本地 File 按 文件名+大小。看完（剩余<30s 或 >95%）自动清除记录。
+        const POS_STORE_KEY = 'aethervr-playback-positions-v1';
+        let posStore = {};
+        try { posStore = JSON.parse(localStorage.getItem(POS_STORE_KEY)) || {}; } catch { posStore = {}; }
+        let posCurrentKey = '';
+        let posSaveTimer = null;
+
+        function posKeyFromUrl(url) {
+            if (!url) return '';
+            try {
+                const u = new URL(url, location.origin);
+                if (u.pathname === '/local') {
+                    const p = u.searchParams.get('path');
+                    return p ? 'local:' + p : '';
+                }
+                return 'url:' + u.href;
+            } catch { return 'url:' + String(url); }
+        }
+        function posKeyFromFile(file) {
+            return file ? `file:${file.name}:${file.size}` : '';
+        }
+
+        /// 立即记录当前播放进度
+        function posSaveNow() {
+            if (!posCurrentKey) return;
+            const t = effectiveCurrentTime();
+            if (!isFinite(t)) return;
+            const d = videoPlayer.duration;
+            const dur = isFinite(d) ? d : 0;
+            if (dur > 0 && (t > dur - 30 || t / dur > 0.95)) {
+                delete posStore[posCurrentKey];   // 看完/快看完 → 清除记录
+            } else if (t >= 5) {
+                posStore[posCurrentKey] = { pos: Math.floor(t), dur: Math.floor(dur), updatedAt: Date.now() };
+            } else {
+                return;
+            }
+            // 最多保留 500 条，超出删最旧
+            const keys = Object.keys(posStore);
+            if (keys.length > 500) {
+                keys.map((k) => [k, posStore[k].updatedAt || 0]).sort((a, b) => a[1] - b[1])
+                    .slice(0, keys.length - 500).forEach(([k]) => delete posStore[k]);
+            }
+            try { localStorage.setItem(POS_STORE_KEY, JSON.stringify(posStore)); } catch { /* 忽略 */ }
+        }
+        function posScheduleSave() {
+            if (posSaveTimer) return;
+            posSaveTimer = setTimeout(() => { posSaveTimer = null; posSaveNow(); }, 4000);
+        }
+        /// 起播位置：最近的观看记录优先，其次条目自带 position（dpl/收藏夹）
+        function posResumePosition(key, explicit) {
+            const saved = key ? posStore[key] : null;
+            if (saved && saved.pos > 5) return saved.pos;
+            return explicit > 0 ? explicit : null;
+        }
+        // 播放中每 4s 记录一次；暂停时立即记录
+        videoPlayer.addEventListener('timeupdate', posScheduleSave);
+        videoPlayer.addEventListener('pause', posSaveNow);
+
         // ── 播放列表（文件夹 / 多选 / .dpl 导入 + 渐进式授权）────────
         // 条目状态机：ready（已匹配本地文件）/ remote（在线链接）/
         // unresolved（未授权）/ missing（授权过目录仍未找到）/ conflict（同名冲突）
@@ -2747,6 +2851,7 @@
             activeLocalObjectURL = null;
         }
         window.addEventListener('pagehide', () => {
+            try { posSaveNow(); } catch { /* 页面退出前记录播放进度 */ }
             releaseLocalObjectURL();
             if (transcodeSrcUrl && backendAvailable) {
                 try { navigator.sendBeacon(backendUrl('transcode/stop')); } catch { /* 页面正在退出 */ }
@@ -2907,8 +3012,10 @@
                 showLoadSpin('加载中…'); // 远程条目先做编码预探测，期间盖住画面
                 loadVideoURL(item.url);
             }
-            // 条目带起播位置（dpl position 字段 / 收藏时记录）：元数据就绪后跳转
-            pendingSeekPosition = item.position > 0 ? item.position : null;
+            // 起播位置：最近的观看记录优先（posStore），其次条目自带 position（dpl/收藏夹）
+            const posKey = item.file ? posKeyFromFile(item.file) : posKeyFromUrl(item.url);
+            if (posKey) posCurrentKey = posKey;
+            pendingSeekPosition = posResumePosition(posKey, item.position);
         }
         function playAt(i) {
             const item = playlist[i];
@@ -3511,7 +3618,8 @@
         function playTarget(name, url, position) {
             showLoadSpin('加载中…');
             loadVideoURL(url);
-            pendingSeekPosition = position > 0 ? position : null;
+            // 起播位置：最近的观看记录优先，其次收藏时记录的位置
+            pendingSeekPosition = posResumePosition(posKeyFromUrl(url), position);
             fileName.textContent = name;
         }
 
@@ -4610,6 +4718,7 @@
             playedFromPosterWall = false;   // 本地文件起播，停止后回首页
             // 播放本地文件时清除云端列表的播放高亮
             if (typeof setCloudPlaying === 'function') setCloudPlaying('');
+            try { posSaveNow(); } catch { /* 切走前记录旧视频进度 */ }
             urlLoadRequestId++;
             if (activeProbeController) activeProbeController.abort();
             activeProbeController = null;
@@ -4649,6 +4758,10 @@
             releaseLocalObjectURL();
             pendingSeekPosition = null;
             activeLocalFile = file;
+            // 播放进度记忆：本地文件按 文件名+大小 记 key，续播上次位置
+            posCurrentKey = posKeyFromFile(file);
+            const savedFilePos = posResumePosition(posCurrentKey, 0);
+            if (savedFilePos) pendingSeekPosition = savedFilePos;
             const videoURL = URL.createObjectURL(file);
             activeLocalObjectURL = videoURL;
             const generation = ++mediaLoadGeneration;
@@ -4805,10 +4918,6 @@
             // 报错文案在中央面板里，而视频加载后面板是隐藏的——重新弹出面板让用户看到报错
             if (!videoPlayer.paused) videoPlayer.pause();
             dropZone.classList.add('active');
-            const heroCloseBtn = document.getElementById('heroClose');
-            if (heroCloseBtn && videoPlayer.src) {
-                heroCloseBtn.style.display = 'inline-flex';
-            }
             // 编码不支持 + 源是远程链接 → 提供服务器实时转码播放入口
             const transcodeBtn = document.getElementById('transcodeBtn');
             if (transcodeBtn) {
@@ -4986,6 +5095,7 @@
         }
 
         async function loadVideoURL(url) {
+            try { posSaveNow(); } catch { /* 切走前记录旧视频进度 */ }
             const requestId = ++urlLoadRequestId;
             if (activeProbeController) activeProbeController.abort();
             activeProbeController = null;
@@ -4993,6 +5103,12 @@
             pendingSeekPosition = null;
             activeLocalFile = null;
             const rawUrl = (url || '').trim();
+            // 播放进度记忆：转码 HLS 会话地址属于同一片子的延续，不换 key
+            if (!isTranscodePlaylistUrl(rawUrl)) {
+                posCurrentKey = posKeyFromUrl(rawUrl);
+                const savedPos = posResumePosition(posCurrentKey, 0);
+                if (savedPos) pendingSeekPosition = savedPos;
+            }
             if (!isTranscodePlaylistUrl(rawUrl)) lastMediaProbe = null;
             if (!backendAvailable && /^https?:\/\//i.test(rawUrl)) {
                 hideLoadSpin();
@@ -5442,35 +5558,40 @@
             handleFiles(e.dataTransfer.files);
         });
 
-        // "打开新视频" reopens the central panel (pausing playback);
-        // the close button returns to the video
-        const newVideoBtn = document.getElementById('newVideoBtn');
-        const heroClose = document.getElementById('heroClose');
-        newVideoBtn.addEventListener('click', () => {
-            if (!videoPlayer.paused) videoPlayer.pause();
-            // 修复「播放新文件窗口关不掉」：
-            // 旧逻辑用 videoPlayer.src 判断，但 blob:/ 或尚未赋值时会是空串，
-            // 于是关闭按钮被隐藏，面板再也退不出去。
-            // 改为：只要存在任何可播放来源或正在播放，就显示关闭按钮。
-            const hasSource = Boolean(
-                videoPlayer.currentSrc || videoPlayer.src
-                || playlist.length > 0
-                || activeLocalFile
-            );
-            heroClose.style.display = hasSource ? 'inline-flex' : 'none';
-            dropZone.classList.add('active');
-        });
-        heroClose.addEventListener('click', () => {
-            dropZone.classList.remove('active');
-        });
-        // 面板内 Esc 关闭（桌面端习惯）
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && dropZone.classList.contains('active')) {
-                // 只有存在可返回的播放内容时才允许用 Esc 退出
-                if (videoPlayer.currentSrc || videoPlayer.src || playlist.length) {
-                    dropZone.classList.remove('active');
-                }
+        // 卸载当前播放：真正释放视频（供「返回首页」与「停止播放」共用）
+        function unloadCurrentVideo() {
+            try { posSaveNow(); } catch { /* 进度记录失败忽略 */ }
+            try { videoPlayer.pause(); } catch { /* 忽略 */ }
+            try { releaseRemoteTranscode(); } catch { /* 忽略 */ }
+            try { hideLoadSpin(); } catch { /* 忽略 */ }
+            try { hideHeroLoading(); } catch { /* 忽略 */ }
+            try {
+                videoPlayer.removeAttribute('src');
+                videoPlayer.load();   // 卸载后 currentSrc 为空，error 事件会被错误处理忽略
+            } catch { /* 忽略 */ }
+            // VR 模式复位（不调用 switchToNormalView：它会因无 src 报错）
+            if (isVrMode) {
+                isVrMode = false;
+                videoPlayer.classList.remove('video-hidden');
+                vrCanvas.classList.remove('active');
+                vrInfo.classList.remove('active');
+                vrInfo.classList.remove('compact');
+                normalViewBtn.classList.add('active');
+                vrViewBtn.classList.remove('active');
             }
+            playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
+            bigPlayBtn.classList.add('show');
+            if (stopBtn) stopBtn.disabled = true;
+            document.body.classList.remove('has-video');
+            document.querySelector('.container')?.classList.remove('has-video');
+            videoContainer.classList.remove('active');
+        }
+
+        // 「返回首页」：卸载当前播放，回到全屏首页（hero 就是首页，不是覆盖弹窗）
+        const newVideoBtn = document.getElementById('newVideoBtn');
+        newVideoBtn.addEventListener('click', () => {
+            unloadCurrentVideo();
+            dropZone.classList.add('active');
         });
 
         // 服务器实时转码播放：8K HEVC → 4K H.264 HLS（iPhone Safari 原生支持）
@@ -5518,40 +5639,15 @@
         });
 
         // Play/Pause button - works in both normal and VR mode
-        // 停止播放：真正停止并返回（不是只暂停）
-        //  - 卸载视频源：释放解码器/缓冲区，否则旧流仍在后台占用资源，
-        //    下一次播放可能因残留状态无法起播
-        //  - 停掉服务端转码会话（若有）
-        //  - VR 画面复位到普通模式
-        //  - 返回首页；若当前是从海报墙起播的，则返回海报墙
+        // 停止播放：真正停止（卸载视频源/停转码会话/VR 复位）+ 清空临时列表
+        //  + 返回首页；若当前是从海报墙起播的，则返回海报墙
         const stopBtn = document.getElementById('stopBtn');
         function stopPlayback() {
-            try { videoPlayer.pause(); } catch { /* 忽略 */ }
-            try { releaseRemoteTranscode(); } catch { /* 忽略 */ }
-            try { hideLoadSpin(); } catch { /* 忽略 */ }
-            try { hideHeroLoading(); } catch { /* 忽略 */ }
-            try {
-                videoPlayer.removeAttribute('src');
-                videoPlayer.load();   // 卸载后 currentSrc 为空，error 事件会被错误处理忽略
-            } catch { /* 元数据未就绪时忽略 */ }
-            // VR 模式复位（不调用 switchToNormalView：它会因无 src 报错）
-            if (isVrMode) {
-                isVrMode = false;
-                videoPlayer.classList.remove('video-hidden');
-                vrCanvas.classList.remove('active');
-                vrInfo.classList.remove('active');
-                vrInfo.classList.remove('compact');
-                normalViewBtn.classList.add('active');
-                vrViewBtn.classList.remove('active');
-            }
-            playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
-            bigPlayBtn.classList.add('show');
-            if (stopBtn) stopBtn.disabled = true;
-            // 视频已卸载：退出 has-video 状态，hero 面板不提供「回到视频」
-            document.body.classList.remove('has-video');
-            document.querySelector('.container')?.classList.remove('has-video');
-            videoContainer.classList.remove('active');
-            heroClose.style.display = 'none';
+            unloadCurrentVideo();
+            // 停止退出播放后清空临时列表（临时列表只服务当前播放会话）
+            const t = playlists.find((p) => p.id === TEMP_TAB_ID);
+            if (t) { t.items = []; t.entries = null; }
+            if (activePlId === TEMP_TAB_ID) clearPlaylist();
             if (playedFromPosterWall && posterWallMask) {
                 // 从海报墙起播 → 停止后回到海报墙页面
                 posterWallMask.classList.add('active');
@@ -7010,7 +7106,10 @@
         // 云端/网络文件浏览：嵌入播放列表面板（不再是独立浮层）
         const cloudBar = document.getElementById('cloudBar');
         const cloudBrowserPathBar = document.getElementById('cloudBrowserPathBar');
-        const cloudSourceSelect = document.getElementById('cloudSourceSelect');
+        const cbSource = document.getElementById('cbSource');
+        const cbSourceBtn = document.getElementById('cbSourceBtn');
+        const cbSourceBtnText = document.getElementById('cbSourceBtnText');
+        const cbSourcePop = document.getElementById('cbSourcePop');
         const cloudBrowserUpBtn = document.getElementById('cloudBrowserUpBtn');
         const cloudBrowserRefreshBtn = document.getElementById('cloudBrowserRefreshBtn');
         const cloudBrowserAddBtn = document.getElementById('cloudBrowserAddBtn');
@@ -7140,33 +7239,92 @@
             });
         }
 
-        // 渲染右侧面板顶部的来源选择下拉
-        function renderCloudSourceSelect() {
-            if (!cloudSourceSelect) return;
-            cloudSourceSelect.innerHTML = '';
-            const wList = getWebdavServers();
-            const sList = getSmbServers();
-            if (!wList.length && !sList.length) {
-                const opt = document.createElement('option');
-                opt.value = '';
-                opt.textContent = '暂无已连接文件源';
-                cloudSourceSelect.appendChild(opt);
+        // 渲染右侧面板顶部的来源选择（自定义美化下拉，深色面板配套）
+        function cbCloseSourcePop() {
+            if (cbSourcePop) cbSourcePop.style.display = 'none';
+            if (cbSource) cbSource.classList.remove('open');
+        }
+        if (cbSourceBtn) {
+            cbSourceBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const opening = cbSourcePop.style.display === 'none';
+                if (opening) renderCloudSourceSelect();
+                cbSourcePop.style.display = opening ? '' : 'none';
+                cbSource.classList.toggle('open', opening);
+            });
+        }
+        document.addEventListener('click', (e) => {
+            if (cbSource && !cbSource.contains(e.target)) cbCloseSourcePop();
+        });
+
+        /// 选择云端来源（下拉面各项点击时调用）
+        function cbChooseSource(val) {
+            cbCloseSourcePop();
+            if (!val) return;
+            // 海报墙选目录模式：切换的是海报墙来源，回到该来源根目录重选
+            if (cloudPickMode) {
+                pwSwitchSource(val);
+                pwRenderPickerPanel('/');
                 return;
             }
+            const [kind, idOrUrl] = val.split('|');
+            if (kind === 'webdav') {
+                const found = getWebdavServers().find((x) => (x.id || x.url) === idOrUrl);
+                if (found) {
+                    currentCloudSource = { kind: 'webdav', ...found };
+                    currentWebdavPath = '/';
+                    fetchWebdavDirectory('/');
+                }
+            } else if (kind === 'smb') {
+                const found = getSmbServers().find((x) => (x.id || x.host) === idOrUrl);
+                if (found) {
+                    currentCloudSource = { kind: 'smb', ...found };
+                    currentSmbPath = '/';
+                    fetchSmbDirectory('/');
+                }
+            }
+            renderCloudSourceSelect();
+        }
+
+        function renderCloudSourceSelect() {
+            if (!cbSourcePop || !cbSourceBtnText) return;
+            cbSourcePop.innerHTML = '';
+            const wList = getWebdavServers();
+            const sList = getSmbServers();
+            const curId = currentCloudSource
+                ? currentCloudSource.kind + '|' + (currentCloudSource.id || currentCloudSource.url || currentCloudSource.host)
+                : '';
+            const addItem = (id, chip, isSmb, name, addr) => {
+                const item = document.createElement('button');
+                item.type = 'button';
+                item.className = 'cb-source-item' + (id === curId ? ' active' : '');
+                item.innerHTML = `<span class="cb-source-chip ${isSmb ? 'is-smb' : ''}">${chip}</span>`
+                    + `<span class="cb-source-item-name">${escapeHtml(name)}</span>`
+                    + (addr ? `<span class="cb-source-item-addr">${escapeHtml(addr)}</span>` : '');
+                item.addEventListener('click', () => cbChooseSource(id));
+                cbSourcePop.appendChild(item);
+            };
             wList.forEach((s) => {
-                const opt = document.createElement('option');
-                opt.value = 'webdav|' + (s.id || s.url);
-                opt.textContent = '[WebDAV] ' + (s.name || hostnameOfUrl(s.url));
-                cloudSourceSelect.appendChild(opt);
+                addItem('webdav|' + (s.id || s.url), 'WebDAV', false,
+                    s.name || hostnameOfUrl(s.url),
+                    (s.url || '').replace(/^https?:\/\//i, '').replace(/\/$/, ''));
             });
             sList.forEach((s) => {
-                const opt = document.createElement('option');
-                opt.value = 'smb|' + (s.id || s.host);
-                opt.textContent = '[SMB] ' + (s.name || s.host + (s.share ? '/' + s.share : ''));
-                cloudSourceSelect.appendChild(opt);
+                addItem('smb|' + (s.id || s.host), 'SMB', true,
+                    s.name || s.host + (s.share ? '/' + s.share : ''), s.host || '');
             });
-            if (currentCloudSource) {
-                cloudSourceSelect.value = currentCloudSource.kind + '|' + (currentCloudSource.id || currentCloudSource.url || currentCloudSource.host);
+            if (!wList.length && !sList.length) {
+                cbSourceBtnText.textContent = '暂无已连接文件源';
+                return;
+            }
+            const cur = [...wList.map((s) => ({ kind: 'webdav', ...s })),
+                         ...sList.map((s) => ({ kind: 'smb', ...s }))]
+                .find((s) => (s.kind + '|' + (s.id || s.url || s.host)) === curId);
+            if (cur) {
+                cbSourceBtnText.textContent = (cur.kind === 'smb' ? '[SMB] ' : '[WebDAV] ')
+                    + (cur.name || (cur.kind === 'smb' ? cur.host : hostnameOfUrl(cur.url)));
+            } else {
+                cbSourceBtnText.textContent = '选择文件源';
             }
         }
 
@@ -7326,34 +7484,6 @@
                 openConnectSourceModal();
             });
         }
-        if (cloudSourceSelect) {
-            cloudSourceSelect.addEventListener('change', () => {
-                const val = cloudSourceSelect.value;
-                if (!val) return;
-                // 海报墙选目录模式：切换的是海报墙来源，回到该来源根目录重选
-                if (cloudPickMode) {
-                    pwSwitchSource(val);
-                    pwRenderPickerPanel('/');
-                    return;
-                }
-                const [kind, idOrUrl] = val.split('|');
-                if (kind === 'webdav') {
-                    const found = getWebdavServers().find((x) => (x.id || x.url) === idOrUrl);
-                    if (found) {
-                        currentCloudSource = { kind: 'webdav', ...found };
-                        currentWebdavPath = '/';
-                        fetchWebdavDirectory('/');
-                    }
-                } else if (kind === 'smb') {
-                    const found = getSmbServers().find((x) => (x.id || x.host) === idOrUrl);
-                    if (found) {
-                        currentCloudSource = { kind: 'smb', ...found };
-                        currentSmbPath = '/';
-                        fetchSmbDirectory('/');
-                    }
-                }
-            });
-        }
 
         // 加载当前云端/网络目录
         function loadCurrentCloudDirectory(path) {
@@ -7476,7 +7606,8 @@
             filtered.forEach(item => {
                 const el = document.createElement('div');
                 const isVideo = isWebdavVideo(item);
-                el.className = `playlist-item cb-item ${item.isDir ? 'is-dir' : (isVideo ? 'is-video' : '')}`;
+                // 无法播放的格式（jpg/ifo/txt 等）灰掉且不响应点击
+                el.className = `playlist-item cb-item ${item.isDir ? 'is-dir' : (isVideo ? 'is-video' : 'is-disabled')}`;
                 // 记录条目 key：播放后重新渲染（刷新/进出目录）时恢复高亮
                 el.dataset.cloudKey = item.href;
                 if (cloudPlayingKey && item.href === cloudPlayingKey) el.classList.add('playing');
@@ -7493,9 +7624,8 @@
                         fetchWebdavDirectory(sub);
                     } else if (isVideo) {
                         playWebdavFromQueue(item, dirVideos, toPlayUrl);
-                    } else {
-                        showSpatialToast('该文件不是受支持的视频格式');
                     }
+                    // 非视频文件：灰掉，点击不响应
                 });
                 cloudBrowserFileList.appendChild(el);
             });
@@ -7576,7 +7706,8 @@
 
             entries.forEach((item) => {
                 const el = document.createElement('div');
-                el.className = `playlist-item cb-item ${item.isDirectory ? 'is-dir' : (item.isVideo ? 'is-video' : '')}`;
+                // 无法播放的格式（jpg/ifo/txt 等）灰掉且不响应点击
+                el.className = `playlist-item cb-item ${item.isDirectory ? 'is-dir' : (item.isVideo ? 'is-video' : 'is-disabled')}`;
                 // 记录条目 key：播放后重新渲染（刷新/进出目录）时恢复高亮
                 el.dataset.cloudKey = item.path;
                 if (cloudPlayingKey && item.path === cloudPlayingKey) el.classList.add('playing');
@@ -7594,9 +7725,8 @@
                         fetchSmbDirectory('/' + nextSub);
                     } else if (item.isVideo) {
                         playSmbFromQueue(item, dirVideos);
-                    } else {
-                        showSpatialToast('该文件不是受支持的视频格式');
                     }
+                    // 非视频文件：灰掉，点击不响应
                 });
                 cloudBrowserFileList.appendChild(el);
             });
@@ -7818,23 +7948,17 @@
             container.appendChild(wrap);
         }
 
-        /// 从海报墙起播：同目录所有影片视频组成连播队列，从当前碟起播
+        /// 从海报墙起播：把当前影片（番号）的几个分段加入临时播放列表，从当前碟起播
         function playMovieFromWall(movie, startVideo, entries, toUrl) {
-            // 队列 = 当前目录全部电影的碟片（按影片名、碟号排序），保证跨片连播
-            const { movies } = ensurePosterGroups(entries, toUrl);
-            const queueItems = [];
-            movies.forEach((m) => {
-                m.videos.forEach((v) => {
-                    queueItems.push({
-                        name: m.videos.length > 1 ? `${m.title} · ${v.name}` : m.title,
-                        originalPath: v.href,
-                        normalizedPath: normalizePath(v.href),
-                        url: toUrl(v),
-                        file: null, fileHandle: null,
-                        status: 'remote', error: '', position: 0,
-                    });
-                });
-            });
+            // 队列 = 当前番号的各碟片/分段（不再跨片连播整个目录）
+            const queueItems = (movie.videos || []).map((v) => ({
+                name: movie.videos.length > 1 ? `${movie.title} · ${v.name}` : movie.title,
+                originalPath: v.href,
+                normalizedPath: normalizePath(v.href),
+                url: toUrl(v),
+                file: null, fileHandle: null,
+                status: 'remote', error: '', position: 0,
+            }));
             const startUrl = toUrl(startVideo);
             const startIdx = Math.max(0, queueItems.findIndex((q) => q.url === startUrl));
 
@@ -7848,7 +7972,7 @@
             activePlId = t.id;
             renderTabs();
             setPlaylist(queueItems, startIdx);
-            showSpatialToast(`▶ ${movie.title}${movie.videos.length > 1 ? `（多碟）` : ''} · 已加入连播队列`);
+            showSpatialToast(`▶ ${movie.title}${movie.videos.length > 1 ? `（${movie.videos.length} 个分段已加入临时列表）` : ''}`);
         }
 
         /// 多碟影片：弹出选择面板
@@ -8283,12 +8407,38 @@
         let pwSortBy = 'title';      // title | size | recent
         let pwSortAsc = true;
 
-        /// 标题归类的首字母：跳过标点/括号/空白看真正的首个字符，
-        /// 拉丁字母 → 对应大写字母，其余（中日文等）→ '#'
+        // 日文假名 → 罗马音行首字母（用于 A-Z 分组）
+        const PW_KANA_ROWS = [
+            ['A', 'あいうえおぁぃぅぇぉアイウエオァィゥェォ'], ['K', 'かきくけこカキクケコ'],
+            ['G', 'がぎぐげごガギグゲゴ'], ['S', 'さしすせそサシスセソ'], ['Z', 'ざじずぜぞザジズゼゾ'],
+            ['T', 'たちつてとタチツテト'], ['D', 'だぢづでどダヂヅデド'], ['N', 'なにぬねのナニヌネノ'],
+            ['H', 'はひふへほハヒフヘホ'], ['B', 'ばびぶべぼバビブベボ'], ['P', 'ぱぴぷぺぽパピプペポ'],
+            ['M', 'まみむめもマミムメモ'], ['Y', 'やゆよゃゅょヤユヨャュョ'], ['R', 'らりるれろラリルレロ'],
+            ['W', 'わをんゎワヲンヮ'],
+        ];
+        // 汉字拼音边界字（CLDR zh 排序按拼音；取不大于该字的最大边界）
+        const PW_PINYIN_BOUNDS = [
+            ['阿', 'A'], ['八', 'B'], ['嚓', 'C'], ['哒', 'D'], ['妸', 'E'], ['发', 'F'],
+            ['旮', 'G'], ['哈', 'H'], ['讥', 'J'], ['咔', 'K'], ['垃', 'L'], ['妈', 'M'],
+            ['拿', 'N'], ['哦', 'O'], ['妑', 'P'], ['七', 'Q'], ['呥', 'R'], ['仨', 'S'],
+            ['它', 'T'], ['穵', 'W'], ['夕', 'X'], ['丫', 'Y'], ['匝', 'Z'],
+        ];
+        /// 标题归类的首字母：跳过标点/括号看首字符，
+        /// 拉丁字母直接用；假名按罗马音行；汉字按拼音（zh 排序规则）
         function pwTitleLetter(title) {
             const s = String(title || '').replace(/^[\s\[【（(《「『"'*·\-–—]+/, '');
-            const m = /^[A-Za-z]/.exec(s);
-            return m ? m[0].toUpperCase() : '#';
+            const ch = s[0];
+            if (!ch) return '#';
+            if (/[A-Za-z]/.test(ch)) return ch.toUpperCase();
+            for (const [L, chars] of PW_KANA_ROWS) { if (chars.includes(ch)) return L; }
+            if (/[0-9]/.test(ch)) return '#';
+            if (/[\u3400-\u9fff]/.test(ch)) {
+                for (let i = PW_PINYIN_BOUNDS.length - 1; i >= 0; i--) {
+                    if (ch.localeCompare(PW_PINYIN_BOUNDS[i][0], 'zh-Hans-CN') >= 0) return PW_PINYIN_BOUNDS[i][1];
+                }
+                return '#';
+            }
+            return '#';
         }
 
         /// 应用 搜索 + A-Z 筛选 + 排序 后渲染。
@@ -8310,7 +8460,8 @@
                 if (pwSortBy === 'recent') {
                     return dir * ((a.lastSeenAt || a.firstSeenAt || 0) - (b.lastSeenAt || b.firstSeenAt || 0));
                 }
-                return dir * String(a.title || '').localeCompare(String(b.title || ''), undefined, { numeric: true });
+                // 标题排序：zh 排序规则让中文按拼音排，numeric 让序号自然排序
+                return dir * String(a.title || '').localeCompare(String(b.title || ''), 'zh-Hans-CN', { numeric: true });
             });
             pwRenderMovies(list, opts);
         }
@@ -8360,8 +8511,8 @@
                 const b = document.createElement('button');
                 b.type = 'button';
                 b.className = 'pw-az-btn' + (L === '' ? ' active' : '');
-                b.textContent = L === '' ? '全部' : (L === '#' ? '# 中日文' : L);
-                b.title = L === '#' ? '中日文等非拉丁字母开头的标题' : (L === '' ? '显示全部' : `以 ${L} 开头`);
+                b.textContent = L === '' ? '全部' : L;
+                b.title = L === '#' ? '数字/符号等非字母开头' : (L === '' ? '显示全部' : `拼音/字母 ${L} 开头`);
                 b.addEventListener('click', () => {
                     pwLetterFilter = L;
                     pwAzBar.querySelectorAll('.pw-az-btn').forEach((x) => x.classList.remove('active'));
@@ -8395,7 +8546,6 @@
             playlistPanel.classList.add('active');
             setCloudMode(true);
             renderCloudSourceSelect();
-            if (cloudSourceSelect) cloudSourceSelect.value = posterWallSourceId;
             setCloudPickMode(true);
             await pwRenderPickerPanel('/');
         }
@@ -8515,7 +8665,7 @@
             // 云端来源切换与添加服务器按钮（来源由海报墙页面顶部选择器决定）
             const topTabs = document.querySelector('.panel-top-tabs');
             if (topTabs) topTabs.style.display = cloudPickMode ? 'none' : '';
-            if (cloudSourceSelect) cloudSourceSelect.style.display = cloudPickMode ? 'none' : '';
+            if (cbSource) cbSource.style.display = cloudPickMode ? 'none' : '';
             if (cloudBrowserAddBtn) cloudBrowserAddBtn.style.display = cloudPickMode ? 'none' : '';
             const cloudIcon = document.querySelector('.cb-cloud-icon');
             if (cloudIcon) cloudIcon.style.display = cloudPickMode ? 'none' : '';
@@ -9039,12 +9189,7 @@
                 if (posterScanAbort) posterScanAbort.aborted = true;
                 pwFlushPersist();   // 关闭前落库，避免丢进度
                 posterWallMask.classList.remove('active');
-                // 返回首页：有播放内容时 hero 带关闭按钮可回到视频
-                const hasSource = Boolean(
-                    videoPlayer.currentSrc || videoPlayer.src
-                    || playlist.length > 0 || activeLocalFile
-                );
-                heroClose.style.display = hasSource ? 'inline-flex' : 'none';
+                // 返回首页（hero 即首页）
                 dropZone.classList.add('active');
             });
         }
@@ -9057,17 +9202,11 @@
                 }
             });
         }
-        /// 添加 SMB 服务器（桌面端）
+        /// 添加 SMB 服务器（桌面端）：
+        /// Electron 不支持 window.prompt，改为打开连接弹窗并切到 SMB 页签
         function promptAddSmbServer() {
-            const host = prompt('SMB 服务器地址（例：192.168.1.10 或 nas.local）');
-            if (!host) { pwRenderSourceSelect(); return; }
-            const user = prompt('用户名（留空表示匿名）') || '';
-            const pass = user ? (prompt('密码') || '') : '';
-            rememberSmbServer({ host: host.trim(), user, pass, port: 445 });
-            posterWallSourceId = 'smb|' + host.trim();
-            pwSaveLastSource(posterWallSourceId);
-            pwRenderSourceSelect();
-            pwSwitchSource(posterWallSourceId);
+            if (typeof tabTypeSmb !== 'undefined' && tabTypeSmb) tabTypeSmb.click();
+            openConnectSourceModal();
         }
         const pwFolderBtn = document.getElementById('posterWallFilesBtn');
         if (pwFolderBtn) pwFolderBtn.addEventListener('click', pwShowFolderManager);
