@@ -19,6 +19,29 @@ function arg(name, fallback) {
   return fallback;
 }
 
+// ── /local 图片磁盘缓存（海报墙封面加速）──────────────────────
+// SMB/NAS 上的封面每次从网络拉取很慢；按 路径+大小+mtime 缓存到本地临时目录，
+// 源文件变化（mtime/size 变）会自动换 key，不会用到过期缓存。
+const LOCAL_IMG_CACHE_DIR = path.join(require("os").tmpdir(), "aethervr-img-cache");
+function localImageCacheFile(target, stat) {
+  const key = crypto.createHash("sha1").update(target).digest("hex");
+  return path.join(
+    LOCAL_IMG_CACHE_DIR,
+    `${key}_${stat.size}_${Math.floor(stat.mtimeMs)}${path.extname(target).toLowerCase()}`
+  );
+}
+function writeImageCache(cacheFile, buf) {
+  (async () => {
+    try {
+      await fs.promises.mkdir(LOCAL_IMG_CACHE_DIR, { recursive: true });
+      // 缓存文件数量兜底：超过 2000 个就不再写入（本地读已经够快，无需清理策略）
+      const files = await fs.promises.readdir(LOCAL_IMG_CACHE_DIR);
+      if (files.length > 2000) return;
+      await fs.promises.writeFile(cacheFile, buf);
+    } catch { /* 缓存失败不影响播放 */ }
+  })();
+}
+
 /* 运行配置：由 startServer() 设置（CLI 在文件底部解析 argv 后调用）。
  * --local-fs（仅 Electron 桌面端传入）：开放 /local 接口，
  * 允许页面按绝对路径流式读取本机磁盘文件（带 Range，可拖动进度）。
@@ -1168,7 +1191,31 @@ const requestHandler = async (req, res) => {
         "Content-Type": type,
         "Accept-Ranges": "bytes",
         "Cache-Control": "no-cache",
+        "Last-Modified": new Date(stat.mtimeMs).toUTCString(),
       };
+      // 条件请求：内容没变直接 304，省下整个响应体（海报墙几百张封面）
+      if (req.headers["if-modified-since"] === base["Last-Modified"]) {
+        res.writeHead(304).end();
+        return;
+      }
+      // 图片走本地磁盘缓存：SMB/NAS 上的封面每次从网络拉很慢，
+      // 首次读取后缓存到本地磁盘，之后（含重启后）打开海报墙秒出
+      if (type.startsWith("image/") && !req.headers.range) {
+        const cacheFile = localImageCacheFile(target, stat);
+        try {
+          const cached = await fs.promises.readFile(cacheFile);
+          res.writeHead(200, { ...base, "Content-Length": cached.length });
+          if (req.method === "HEAD") return res.end();
+          return res.end(cached);
+        } catch { /* 未缓存，读源文件并写缓存 */ }
+        try {
+          const buf = await fs.promises.readFile(target);
+          writeImageCache(cacheFile, buf);   // 后台落盘，不阻塞响应
+          res.writeHead(200, { ...base, "Content-Length": buf.length });
+          if (req.method === "HEAD") return res.end();
+          return res.end(buf);
+        } catch { /* 读失败则回落到下面的流式传输 */ }
+      }
       const range = req.headers.range;
       if (range) {
         const m = /^bytes=(\d*)-(\d*)$/.exec(range);

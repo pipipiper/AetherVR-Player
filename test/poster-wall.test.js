@@ -27,8 +27,8 @@ function loadPosterHelpers() {
 const helpers = loadPosterHelpers();
 const toUrl = (item) => `https://nas.local${item.href}`;
 
-/// 构造 WebDAV 风格目录条目
-function entry(name, { dir = false, size = 1024 } = {}) {
+/// 构造 WebDAV 风格目录条目（默认 200MB，超过海报墙 150MB 小文件过滤阈值）
+function entry(name, { dir = false, size = 200 * 1024 * 1024 } = {}) {
   return { name, href: `/${encodeURIComponent(name)}`, isDir: dir, size };
 }
 
@@ -167,4 +167,18 @@ test("segment numbering beyond 9 and zero-padded forms still merge", () => {
   // cd01/cd02/cd08/seg9 应合并；_10 是纯数字分段也应合并
   assert.equal(movies.length, 1, `expected 1 movie, got ${movies.length}: ${movies.map((m) => m.title)}`);
   assert.equal(movies[0].videos.length, 5);
+});
+
+test("videos smaller than 150MB are filtered out (extrafanart clips, samples)", () => {
+  const entries = [
+    entry("Movie A-cd1.mp4"),
+    entry("Movie A-poster.jpg", { size: 500_000 }),
+    // extrafanart 素材小视频 / sample 预告片不应上墙
+    entry("fanart1.mp4", { size: 120_000 }),
+    entry("Movie A-sample.mp4", { size: 100 * 1024 * 1024 }),
+  ];
+  const { movies } = helpers.buildPosterWall(entries, toUrl);
+  assert.equal(movies.length, 1, `expected only the real movie, got ${movies.map((m) => m.title)}`);
+  assert.equal(movies[0].title, "Movie A");
+  assert.equal(movies[0].videos.length, 1, "sample segment must be dropped from the group");
 });

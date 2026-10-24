@@ -1755,6 +1755,36 @@
         /* 云端列表：无法播放的非视频文件灰掉 */
         .cb-item.is-disabled { opacity: .35; cursor: default; }
         .cb-item.is-disabled:hover { background: none; }
+
+        /* ── 面板 A-Z 竖向筛选条（播放列表/收藏夹/云端共用，贴右侧） ── */
+        .panel-lists { display: flex; flex: 1; min-height: 0; }
+        .panel-lists > .playlist-items, .panel-lists > .cb-items { flex: 1; min-width: 0; }
+        .az-side {
+            flex: none; width: 24px; overflow-y: auto; scrollbar-width: none;
+            display: flex; flex-direction: column; gap: 1px; padding: 4px 2px;
+            border-left: 1px solid rgba(255,255,255,.06);
+        }
+        .az-side::-webkit-scrollbar { display: none; }
+        .az-side-btn {
+            flex: none; border: 0; background: none; color: #8a93a5;
+            font-size: 10px; font-weight: 600; font-family: inherit;
+            padding: 2px 0; border-radius: 4px; cursor: pointer; text-align: center;
+        }
+        .az-side-btn:hover { color: #fff; background: rgba(255,255,255,.10); }
+        .az-side-btn.active { color: #fff; background: rgba(47,107,255,.45); }
+        .az-side-btn.disabled { color: rgba(138,147,165,.28); cursor: default; pointer-events: none; }
+
+        /* 海报墙 A-Z：无内容的字母灰掉 */
+        .pw-az-btn.disabled { opacity: .28; cursor: default; pointer-events: none; }
+
+        /* 播放器顶栏左上角返回按钮（从哪来回哪去） */
+        .player-back-btn {
+            flex: none; width: 32px; height: 32px; display: grid; place-items: center;
+            border: 1px solid var(--border-hi); background: rgba(255,255,255,.85);
+            color: var(--text); border-radius: 999px; cursor: pointer; font-size: 13px;
+            margin-right: 8px; transition: border-color .15s, color .15s;
+        }
+        .player-back-btn:hover { border-color: var(--yellow); color: var(--yellow); }
         .cb-path-bar {
             padding: 6px 12px; font-size: 11px; color: #94a3b8;
             background: rgba(0, 0, 0, 0.25); border-bottom: 1px solid rgba(255, 255, 255, 0.06);
@@ -1946,6 +1976,7 @@
         <p class="sr-only">在浏览器中播放本地与在线的 360° 全景、SBS（左右分屏）VR 视频，支持拖拽加载，无需上传。</p>
         <div class="top-bar">
             <div class="left">
+                <button class="player-back-btn" id="playerBackBtn" title="返回（从哪来回哪去）"><i class="fa-solid fa-arrow-left"></i></button>
                 <div class="file-info" id="fileInfo">
                     <p class="fi-name"><strong>文件:</strong> <span id="fileName"></span></p>
                     <p class="fi-size"><strong>大小:</strong> <span id="fileSize"></span></p>
@@ -2197,10 +2228,14 @@
                     <span class="cb-path-text" id="cloudBrowserPathText">/</span>
                 </div>
                 <div class="playlist-summary" id="playlistSummary" style="display:none"></div>
-                <ul class="playlist-items" id="playlistItems"></ul>
-                <ul class="playlist-items" id="favItems" style="display:none"></ul>
-                <!-- 云端文件列表项容器（与播放列表项同一套样式） -->
-                <div class="cb-items" id="cloudBrowserFileList" style="display:none"></div>
+                <div class="panel-lists">
+                    <ul class="playlist-items" id="playlistItems"></ul>
+                    <ul class="playlist-items" id="favItems" style="display:none"></ul>
+                    <!-- 云端文件列表项容器（与播放列表项同一套样式） -->
+                    <div class="cb-items" id="cloudBrowserFileList" style="display:none"></div>
+                    <!-- A-Z 竖向筛选条（右侧）：播放列表 / 收藏夹 / 云端文件共用 -->
+                    <div class="az-side" id="panelAzBar" style="display:none"></div>
+                </div>
                 <!-- 海报墙「选目录」模式：底部固定扫描按钮 -->
                 <div class="playlist-tools" id="cloudPickBar" style="display:none; padding-top:6px;">
                     <button class="pl-tool-btn" id="cloudPickScanBtn" style="flex:1; padding:9px 4px; font-size:12.5px;">
@@ -2706,6 +2741,7 @@
         // unresolved（未授权）/ missing（授权过目录仍未找到）/ conflict（同名冲突）
         let playlist = [];          // [{name, originalPath, normalizedPath, url, file, fileHandle, status, error}]
         let playedFromPosterWall = false;  // 当前播放是否从海报墙起播（停止播放后决定回海报墙还是首页）
+        let playOrigin = 'home';  // 起播来源：home | poster | cloud | fav | playlist（播放器返回按钮用）
         let playlistIndex = -1;
         let lastDplEntries = null;  // 最近导入的 dpl 条目（用于重新匹配）
         let dplResolved = true;
@@ -2859,12 +2895,71 @@
         });
 
         // ── 渲染 ──
+        // ── 面板 A-Z 竖向筛选（播放列表 / 收藏夹 / 云端文件共用，贴右侧）──
+        let panelAzFilter = '';
+        const panelAzBar = document.getElementById('panelAzBar');
+
+        /// 重建右侧竖向字母条；无内容的字母灰掉；条目太少时不显示
+        function updatePanelAzBar(names) {
+            if (!panelAzBar) return;
+            if (!names || names.length < 10) {
+                panelAzBar.style.display = 'none';
+                if (panelAzFilter) { panelAzFilter = ''; }
+                return;
+            }
+            const avail = new Set(names.map((n) => pwTitleLetter(n)));
+            // 当前选中的字母在新数据里没内容 → 自动回「全部」
+            if (panelAzFilter && !avail.has(panelAzFilter)) panelAzFilter = '';
+            panelAzBar.style.display = '';
+            panelAzBar.innerHTML = '';
+            const letters = ['', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ', '#'];
+            letters.forEach((L) => {
+                const b = document.createElement('button');
+                b.type = 'button';
+                const enabled = L === '' || avail.has(L);
+                b.className = 'az-side-btn' + (panelAzFilter === L ? ' active' : '') + (enabled ? '' : ' disabled');
+                b.textContent = L === '' ? '全' : L;
+                b.title = L === '' ? '显示全部' : `拼音/字母 ${L} 开头`;
+                if (enabled) {
+                    b.addEventListener('click', () => {
+                        panelAzFilter = panelAzFilter === L ? '' : L;
+                        panelAzRefresh();
+                    });
+                }
+                panelAzBar.appendChild(b);
+            });
+        }
+
+        /// 重新渲染当前面板视图以应用字母筛选
+        function panelAzRefresh() {
+            if (cloudMode) {
+                if (cloudPickMode) { pwRenderPickerPanel(posterWallPickPath || '/'); return; }
+                if (currentCloudSource && currentCloudSource.kind === 'smb' && smbLastEntries) {
+                    renderSmbItems(smbLastEntries, cloudBrowserPathText.textContent);
+                } else if (webdavLastItems && webdavLastBase) {
+                    renderWebdavItems(webdavLastItems, webdavLastBase);
+                }
+                return;
+            }
+            if (activeTab === 'favs') renderFavs();
+            else renderPlaylist();
+        }
+
+        /// 条目名称是否通过当前字母筛选
+        function panelAzPass(name) {
+            return !panelAzFilter || pwTitleLetter(name) === panelAzFilter;
+        }
+
         function renderPlaylist() {
             playlistItems.innerHTML = '';
+            // A-Z 筛选：更新右侧竖向字母条（无内容的字母灰掉）
+            updatePanelAzBar(playlist.map((it) => it.name));
             playlist.forEach((item, i) => {
                 const li = document.createElement('li');
                 li.className = 'playlist-item st-' + item.status
                     + (i === playlistIndex ? ' playing' : '');
+                // A-Z 字母筛选：不匹配的条目隐藏
+                if (!panelAzPass(item.name)) li.style.display = 'none';
                 if (selecting) {
                     const cb = document.createElement('input');
                     cb.type = 'checkbox';
@@ -3033,6 +3128,7 @@
         function onItemClick(i) {
             const item = playlist[i];
             if (!item) return;
+            playOrigin = 'playlist';   // 从播放列表点播，返回按钮回到播放列表
             if (!backendAvailable && item.status === 'remote') {
                 playlistIndex = i;
                 renderPlaylist();
@@ -3525,9 +3621,13 @@
         }
         function renderFavs() {
             favItems.innerHTML = '';
+            // A-Z 筛选：更新右侧竖向字母条（无内容的字母灰掉）
+            updatePanelAzBar(favorites.map((f) => f.name));
             favorites.forEach((f, i) => {
                 const li = document.createElement('li');
                 li.className = 'playlist-item st-' + (f.kind === 'online' ? 'remote' : 'ready');
+                // A-Z 字母筛选：不匹配的条目隐藏
+                if (!panelAzPass(f.name)) li.style.display = 'none';
                 if (selecting) {
                     const cb = document.createElement('input');
                     cb.type = 'checkbox';
@@ -3597,6 +3697,7 @@
             const f = favorites[i];
             if (!f) return;
             playedFromPosterWall = false;   // 收藏夹起播，停止后回首页
+            playOrigin = 'fav';
             if (f.kind === 'local') {
                 let rec = null;
                 try {
@@ -4716,6 +4817,7 @@
         async function loadVideoFile(file) {
             if (!file) return;
             playedFromPosterWall = false;   // 本地文件起播，停止后回首页
+            playOrigin = 'home';
             // 播放本地文件时清除云端列表的播放高亮
             if (typeof setCloudPlaying === 'function') setCloudPlaying('');
             try { posSaveNow(); } catch { /* 切走前记录旧视频进度 */ }
@@ -5230,9 +5332,9 @@
         const videoUrlInput = document.getElementById('videoUrl');
         const openUrlBtn = document.getElementById('openUrlBtn');
         // 直接输入链接播放时脱离当前播放列表（先与真实页签脱钩，避免清空写回 dpl 文件）
-        openUrlBtn.addEventListener('click', () => { detachPlaylistTab(); clearPlaylist(); loadVideoURL(videoUrlInput.value); });
+        openUrlBtn.addEventListener('click', () => { playOrigin = 'home'; playedFromPosterWall = false; detachPlaylistTab(); clearPlaylist(); loadVideoURL(videoUrlInput.value); });
         videoUrlInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') { detachPlaylistTab(); clearPlaylist(); loadVideoURL(videoUrlInput.value); }
+            if (e.key === 'Enter') { playOrigin = 'home'; playedFromPosterWall = false; detachPlaylistTab(); clearPlaylist(); loadVideoURL(videoUrlInput.value); }
         });
 
         // File input change handler（多选 / .dpl / 单文件统一入口）
@@ -5593,6 +5695,31 @@
             unloadCurrentVideo();
             dropZone.classList.add('active');
         });
+
+        // 播放器左上角返回按钮：从哪来回哪去
+        // 海报墙起播 → 回海报墙；云端浏览 → 回云端列表；收藏夹/播放列表 → 回对应面板；其它 → 回首页
+        const playerBackBtn = document.getElementById('playerBackBtn');
+        if (playerBackBtn) {
+            playerBackBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const origin = playOrigin;
+                unloadCurrentVideo();
+                if (origin === 'poster' && typeof posterWallMask !== 'undefined' && posterWallMask) {
+                    posterWallMask.classList.add('active');
+                } else if (origin === 'cloud') {
+                    playlistPanel.classList.add('active');
+                    if (typeof setCloudMode === 'function') setCloudMode(true);
+                } else if (origin === 'fav') {
+                    playlistPanel.classList.add('active');
+                    switchTab('favs');
+                } else if (origin === 'playlist') {
+                    playlistPanel.classList.add('active');
+                    switchTab('playlist');
+                } else {
+                    dropZone.classList.add('active');
+                }
+            });
+        }
 
         // 服务器实时转码播放：8K HEVC → 4K H.264 HLS（iPhone Safari 原生支持）
         const transcodeBtn = document.getElementById('transcodeBtn');
@@ -6898,6 +7025,8 @@
         // ═══════════════════════════════════════════════════════════
         const POSTER_VIDEO_EXT = /\.(mp4|m4v|mkv|mov|webm|avi|wmv|ts|m2ts|flv|3gp|ogv|ogg|iso)$/i;
         const POSTER_IMAGE_EXT = /\.(jpg|jpeg|png|webp|bmp|avif)$/i;
+        /// 低于 150MB 的视频不上墙：extrafanart 素材、预告片等小文件不是正片
+        const PW_MIN_VIDEO_SIZE = 150 * 1024 * 1024;
 
         /// 去掉扩展名
         function stripExt(name) {
@@ -6967,6 +7096,8 @@
                 if (it.isDir) { folders.push(it); return; }
                 const base = stripExt(it.name);
                 if (POSTER_VIDEO_EXT.test(it.name)) {
+                    // 低于 150MB 的小视频（素材/预告片）不上墙；size 未知(0)时保留
+                    if (it.size > 0 && it.size < PW_MIN_VIDEO_SIZE) return;
                     ensure(posterKeyOf(base)).videos.push(it);
                 } else if (POSTER_IMAGE_EXT.test(it.name)) {
                     const kind = posterKindOf(base);
@@ -7137,6 +7268,7 @@
         let currentSmbMountRoot = '';    // 本地挂载根或 UNC 根
         let webdavLastItems = null;
         let webdavLastBase = null;
+        let smbLastEntries = null;   // SMB 当前目录缓存（A-Z 筛选重渲染用）
 
         function getWebdavServers() {
             try { return JSON.parse(localStorage.getItem(WEBDAV_SERVERS_KEY)) || []; }
@@ -7593,6 +7725,9 @@
                 return a.name.localeCompare(b.name, undefined, { numeric: true });
             });
 
+            // A-Z 筛选：更新右侧竖向字母条（无内容的字母灰掉）
+            updatePanelAzBar(filtered.map((it) => it.name));
+
             const toPlayUrl = (it) => {
                 let playUrl = it.href;
                 if (!/^https?:\/\//i.test(playUrl)) {
@@ -7604,6 +7739,8 @@
             const dirVideos = filtered.filter((it) => !it.isDir && isWebdavVideo(it));
 
             filtered.forEach(item => {
+                // A-Z 字母筛选：不匹配的条目不渲染
+                if (!panelAzPass(item.name)) return;
                 const el = document.createElement('div');
                 const isVideo = isWebdavVideo(item);
                 // 无法播放的格式（jpg/ifo/txt 等）灰掉且不响应点击
@@ -7647,6 +7784,7 @@
             activeTab = 'playlist';
             activePlId = t.id;
             playedFromPosterWall = false;
+            playOrigin = 'cloud';
             setCloudPlaying(item.href);   // 云端列表高亮当前播放
             renderTabs();
             setPlaylist(queue, 0);
@@ -7696,15 +7834,21 @@
         }
 
         function renderSmbItems(entries, currentDiskPath) {
+            smbLastEntries = entries;   // A-Z 筛选重渲染用
             cloudBrowserFileList.innerHTML = '';
             if (!entries.length) {
                 cloudBrowserFileList.innerHTML = '<div class="cb-empty"><i class="fa-solid fa-folder-open"></i><span>此目录为空</span></div>';
                 return;
             }
 
+            // A-Z 筛选：更新右侧竖向字母条（无内容的字母灰掉）
+            updatePanelAzBar(entries.map((e) => e.name));
+
             const dirVideos = entries.filter((e) => !e.isDirectory && e.isVideo);
 
             entries.forEach((item) => {
+                // A-Z 字母筛选：不匹配的条目不渲染
+                if (!panelAzPass(item.name)) return;
                 const el = document.createElement('div');
                 // 无法播放的格式（jpg/ifo/txt 等）灰掉且不响应点击
                 el.className = `playlist-item cb-item ${item.isDirectory ? 'is-dir' : (item.isVideo ? 'is-video' : 'is-disabled')}`;
@@ -7749,6 +7893,7 @@
             activeTab = 'playlist';
             activePlId = t.id;
             playedFromPosterWall = false;
+            playOrigin = 'cloud';
             setCloudPlaying(item.path);   // 云端列表高亮当前播放
             renderTabs();
             setPlaylist(queue, 0);
@@ -7965,6 +8110,7 @@
             // 关键：海报墙是整屏页面，起播必须关掉它，
             // 否则视频只在后台播放、前台被海报墙盖住
             playedFromPosterWall = true;
+            playOrigin = 'poster';
             if (posterWallMask) posterWallMask.classList.remove('active');
             lastDplEntries = null;
             const t = ensureTempTab();
@@ -8445,7 +8591,22 @@
         /// opts.incremental：扫描中实时追加（不清空重建，防闪烁）
         function pwApplyView(movies, opts) {
             if (movies) pwAllMovies = movies;
-            let list = pwAllMovies;
+            // 过滤掉低于 150MB 的小文件影片（extrafanart 素材/预告片等）
+            let list = pwAllMovies.filter((m) => !(m.size > 0 && m.size < PW_MIN_VIDEO_SIZE));
+            // A-Z 字母条：无内容的字母灰掉
+            if (pwAzBar) {
+                const avail = new Set(list.map((m) => pwTitleLetter(m.title || m.rawTitle)));
+                if (pwLetterFilter && !avail.has(pwLetterFilter)) {
+                    pwLetterFilter = '';
+                    pwAzBar.querySelectorAll('.pw-az-btn').forEach((x) => x.classList.remove('active'));
+                    const all = pwAzBar.querySelector('.pw-az-btn');
+                    if (all) all.classList.add('active');
+                }
+                pwAzBar.querySelectorAll('.pw-az-btn').forEach((b) => {
+                    const L = b.dataset.letter || '';
+                    b.classList.toggle('disabled', L !== '' && !avail.has(L));
+                });
+            }
             if (pwSearchText) {
                 const q = pwSearchText.toLowerCase();
                 list = list.filter((m) => String(m.title || '').toLowerCase().includes(q)
@@ -8511,6 +8672,7 @@
                 const b = document.createElement('button');
                 b.type = 'button';
                 b.className = 'pw-az-btn' + (L === '' ? ' active' : '');
+                b.dataset.letter = L;
                 b.textContent = L === '' ? '全部' : L;
                 b.title = L === '#' ? '数字/符号等非字母开头' : (L === '' ? '显示全部' : `拼音/字母 ${L} 开头`);
                 b.addEventListener('click', () => {
@@ -8724,6 +8886,9 @@
             const folders = items.filter((it) => it.isDir)
                 .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { numeric: true }));
 
+            // A-Z 筛选：更新右侧竖向字母条（无内容的字母灰掉）
+            updatePanelAzBar(folders.map((f) => f.name));
+
             cloudBrowserFileList.innerHTML = '';
             if (!folders.length) {
                 cloudBrowserFileList.innerHTML = '<div class="cb-empty">'
@@ -8732,6 +8897,7 @@
                 return;
             }
             folders.forEach((f) => {
+                if (!panelAzPass(f.name)) return;
                 const el = document.createElement('div');
                 el.className = 'playlist-item cb-item is-dir';
                 el.innerHTML = `
@@ -8815,8 +8981,12 @@
                     + `<i class="fa-solid fa-radar fa-spin"></i> 正在后台扫描…</div>`;
             }
 
-            const MAX_DIRS = 2000, MAX_DEPTH = 10, CONCURRENCY = 4;
+            const MAX_DIRS = 8000, MAX_DEPTH = 10, CONCURRENCY = 4;
+            // 跳过纯素材目录（Kodi/Infuse 约定，含 extrafanart_copy 等变体）：
+            // 里面只有剧照/缩略图，扫它们白白消耗大量目录请求还容易被网盘限流
+            const SKIP_SCAN_DIRS = /^(\.actors|extrafanart|extrathumbs)/i;
             let visited = 0;
+            let failedDirs = 0;    // 读取失败的目录数（指数退避重试 3 次仍失败才计）
             let allEntries = [];
             const queue = [{ path: rootPath, depth: 0 }];
             const seen = new Set();
@@ -8827,35 +8997,47 @@
             const updateStatus = () => {
                 const el = statusEl();
                 if (el) el.innerHTML = `<i class="fa-solid fa-radar fa-spin"></i> 扫描中 · `
-                    + `${visited} 目录 · ${allEntries.length} 文件`;
+                    + `${visited} 目录 · ${allEntries.length} 文件`
+                    + (failedDirs ? ` · <span style="color:#f59e0b;">${failedDirs} 个目录读取失败</span>` : '');
             };
 
+            // 单个目录读取：返回 { items } 正常 / { retry:true } 可稍后重试（限流/抖动/超时）
+            // / { perm:true } 永久失败（404/410/403，重试无意义）
             const listDir = async (path) => {
                 // SMB：交给主进程按本地路径列目录
                 if (src.kind === 'smb') {
                     try {
-                        return await pwListSmbDir(src, path);
+                        return { items: await pwListSmbDir(src, path) };
                     } catch {
-                        return [];
+                        return { retry: true };
                     }
                 }
-                const resp = await fetch('/api/webdav/list', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        url: posterWallUrlFor(src.url, path),
-                        username: src.user || '', password: src.pass || '',
-                    }),
-                });
-                if (!resp.ok) return [];
-                const xmlText = await resp.text();
-                const baseObj = new URL(posterWallUrlFor(src.url, path));
-                const items = parseWebdavXml(xmlText, baseObj.origin);
-                const curNorm = baseObj.pathname.replace(/\/$/, '');
-                return items.filter((it) => {
-                    const norm = it.href.replace(/\/$/, '');
-                    return norm !== curNorm && norm !== curNorm.slice(baseObj.origin.length);
-                });
+                try {
+                    const resp = await fetch('/api/webdav/list', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            url: posterWallUrlFor(src.url, path),
+                            username: src.user || '', password: src.pass || '',
+                        }),
+                    });
+                    if (resp.status === 404 || resp.status === 410 || resp.status === 403) {
+                        return { perm: true };
+                    }
+                    if (!resp.ok) return { retry: true };
+                    const xmlText = await resp.text();
+                    const baseObj = new URL(posterWallUrlFor(src.url, path));
+                    const items = parseWebdavXml(xmlText, baseObj.origin);
+                    const curNorm = baseObj.pathname.replace(/\/$/, '');
+                    return {
+                        items: items.filter((it) => {
+                            const norm = it.href.replace(/\/$/, '');
+                            return norm !== curNorm && norm !== curNorm.slice(baseObj.origin.length);
+                        }),
+                    };
+                } catch {
+                    return { retry: true };
+                }
             };
 
             // 实时合并：已有 ∪ 本次扫描
@@ -8897,13 +9079,31 @@
                 const results = await Promise.all(batch.map(async (job) => {
                     visited += 1;
                     updateStatus();
-                    try { return { job, items: await listDir(job.path) }; }
-                    catch { return { job, items: [] }; }
+                    // 先快速原地重试一次（800ms），覆盖瞬时抖动；
+                    // 仍失败则交由队尾重排（限流窗口过去后再来）
+                    let r = await listDir(job.path);
+                    if (r.retry) {
+                        await new Promise((res) => setTimeout(res, 800));
+                        r = await listDir(job.path);
+                    }
+                    return { job, r };
                 }));
-                for (const { job, items } of results) {
-                    for (const it of items) {
+                for (const { job, r } of results) {
+                    // 读取失败且非永久：排到队尾稍后重试（最多 3 次），
+                    // 让网盘限流窗口过去，而不是原地反复重试拖慢整个扫描
+                    if (r.retry) {
+                        if ((job.retries || 0) < 3) {
+                            queue.push({ ...job, retries: (job.retries || 0) + 1 });
+                        } else {
+                            failedDirs++;
+                            updateStatus();
+                        }
+                        continue;
+                    }
+                    if (r.perm) { failedDirs++; updateStatus(); continue; }
+                    for (const it of r.items) {
                         if (!seen.has(it.href)) { seen.add(it.href); allEntries.push(it); }
-                        if (it.isDir && job.depth + 1 <= MAX_DEPTH) {
+                        if (it.isDir && !SKIP_SCAN_DIRS.test(it.name) && job.depth + 1 <= MAX_DEPTH) {
                             const sub = job.path.replace(/\/$/, '') + '/' + it.name + '/';
                             if (!seen.has('DIR:' + sub)) {
                                 seen.add('DIR:' + sub);
@@ -8935,6 +9135,7 @@
                 let msg = `<i class="fa-solid fa-circle-check"></i> 本次扫到 ${finalMovies.length} 部`;
                 msg += ` · 该来源共 ${total} 部`;
                 if (missing) msg += ` · <span style="color:#f59e0b;">${missing} 部疑似失效</span>`;
+                if (failedDirs) msg += ` · <span style="color:#f59e0b;">${failedDirs} 个目录读取失败（可重新扫描）</span>`;
                 st.innerHTML = msg;
                 setTimeout(() => { const e = statusEl(); if (e) e.remove(); }, 6000);
             }
@@ -9182,12 +9383,20 @@
                 } else {
                     pwShowEmptyGuide();
                 }
+                // 扫描在后台进行中：重新打开时恢复进度显示
+                if (posterScanAbort && !posterScanAbort.aborted) {
+                    const st = document.createElement('div');
+                    st.className = 'poster-scan-status';
+                    st.id = 'posterScanStatus';
+                    st.innerHTML = `<i class="fa-solid fa-radar fa-spin"></i> 后台扫描中…`;
+                    posterWallBody.insertBefore(st, posterWallBody.firstChild);
+                }
             });
         }
         if (posterWallClose) {
             posterWallClose.addEventListener('click', () => {
-                if (posterScanAbort) posterScanAbort.aborted = true;
-                pwFlushPersist();   // 关闭前落库，避免丢进度
+                // 后台静默扫描：退出海报墙页面不中断扫描，只落库进度
+                pwFlushPersist();
                 posterWallMask.classList.remove('active');
                 // 返回首页（hero 即首页）
                 dropZone.classList.add('active');
@@ -9196,7 +9405,7 @@
         if (posterWallMask) {
             posterWallMask.addEventListener('click', (e) => {
                 if (e.target === posterWallMask) {
-                    if (posterScanAbort) posterScanAbort.aborted = true;
+                    // 后台静默扫描：退出页面不中断扫描
                     pwFlushPersist();
                     posterWallMask.classList.remove('active');
                 }
