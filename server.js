@@ -41,13 +41,26 @@ async function readImageCache(key, ext) {
 function writeImageCache(cacheFile, buf) {
   (async () => {
     try {
+      // 只缓存真正的图片：openlist 对不存在/无权限路径可能回 200 + HTML，
+      // 绝不能把错误页当封面永久缓存下来
+      if (!isProbablyImage(buf)) return;
       await fs.promises.mkdir(LOCAL_IMG_CACHE_DIR, { recursive: true });
-      // 缓存文件数量兜底：超过 2000 个就不再写入
-      const files = await fs.promises.readdir(LOCAL_IMG_CACHE_DIR);
-      if (files.length > 2000) return;
+      // 按用户要求全量持久化：不再限制缓存图片数量
       await fs.promises.writeFile(cacheFile, buf);
     } catch { /* 缓存失败不影响播放 */ }
   })();
+}
+
+/// 简单魔数识别，防止 HTML/JSON 被当成图片落库
+function isProbablyImage(buf) {
+  if (!buf || buf.length < 12) return false;
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return true;  // JPEG
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return true; // PNG
+  if (buf.toString('ascii', 0, 3) === 'GIF') return true;                 // GIF
+  if (buf.toString('ascii', 0, 2) === 'BM') return true;                  // BMP
+  if (buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 4) === 'WEBP') return true;
+  if (buf.toString('ascii', 4, 4) === 'ftyp') return true;               // AVIF/HEIF
+  return false;
 }
 
 /* 运行配置：由 startServer() 设置（CLI 在文件底部解析 argv 后调用）。
@@ -637,18 +650,21 @@ function preflightRemote(target, redirects = 0, cred = null) {
   });
 }
 
-async function proxyVideo(target, req, res, redirects = 0, cred = null) {  let u;
+async function proxyVideo(target, req, res, redirects = 0, cred = null, cacheKey = null) {  let u;
   try {
     u = new URL(target);
   } catch {
     res.writeHead(400).end("Bad proxy URL");
     return;
   }
+  // 图片缓存 key 固定为最初的 WebDAV 地址：openlist 会 302 到 CDN，
+  // 不能让临时 CDN 地址成为缓存 key，否则重启后永远重新回源。
+  if (cacheKey === null) cacheKey = "proxy:" + target;
   // 图片缓存优先：命中直接返回，完全不访问线上（海报墙封面秒出/离线可显示）
   const targetExt = path.extname(u.pathname).toLowerCase();
   const cacheableImage = IMAGE_CACHE_EXTS.has(targetExt) && req.method !== "HEAD";
   if (cacheableImage && redirects === 0) {
-    const cached = await readImageCache("proxy:" + target, targetExt);
+    const cached = await readImageCache(cacheKey, targetExt);
     if (cached) {
       const lastMod = new Date(cached.mtimeMs).toUTCString();
       if (req.headers["if-modified-since"] === lastMod) { res.writeHead(304).end(); return; }
@@ -701,7 +717,7 @@ async function proxyVideo(target, req, res, redirects = 0, cred = null) {  let u
         res.writeHead(502).end("Too many redirects");
         return;
       }
-      proxyVideo(new URL(pres.headers.location, u).href, req, res, redirects + 1, cred);
+      proxyVideo(new URL(pres.headers.location, u).href, req, res, redirects + 1, cred, cacheKey);
       return;
     }
     const h = {
@@ -724,7 +740,7 @@ async function proxyVideo(target, req, res, redirects = 0, cred = null) {  let u
       pres.on("data", (c) => chunks.push(c));
       pres.on("end", () => {
         const buf = Buffer.concat(chunks);
-        writeImageCache(imageCacheFile("proxy:" + target, targetExt), buf);
+        writeImageCache(imageCacheFile(cacheKey, targetExt), buf);
         h["Content-Length"] = buf.length;
         res.writeHead(200, h);
         res.end(buf);

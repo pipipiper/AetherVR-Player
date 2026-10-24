@@ -1292,6 +1292,12 @@
             border: 1px solid var(--border);
         }
         .poster-scan-status i { color: var(--yellow); }
+        .poster-scan-status .pw-inline-btn {
+            flex: none; border: 1px solid var(--border-hi); background: var(--surface);
+            color: var(--muted); font-size: 11px; font-family: inherit;
+            padding: 3px 10px; border-radius: 7px; cursor: pointer;
+        }
+        .poster-scan-status .pw-inline-btn:hover { color: var(--red); border-color: var(--red); }
 
         /* ── 海报墙整屏页面（替代原弹窗形式） ─────────────── */
         .pw-page {
@@ -2471,6 +2477,14 @@
                     </header>
                     <!-- 当前来源状态条 -->
                     <div class="poster-wall-statusbar" id="posterWallStatusBar"></div>
+                    <!-- 后台图片缓存进度（启动即预加载，可手动终止） -->
+                    <div class="poster-scan-status" id="posterImageStatus" style="display:none">
+                        <i class="fa-solid fa-images"></i>
+                        <span id="posterImageStatusText" style="flex:1"></span>
+                        <button class="pw-inline-btn" id="posterImageAbortBtn" title="终止后台图片加载">
+                            <i class="fa-solid fa-stop"></i>&nbsp; 终止
+                        </button>
+                    </div>
                     <!-- 搜索 / 排序 / A-Z 筛选工具行（有影片时显示） -->
                     <div class="pw-toolbar" id="pwToolbar" style="display:none">
                         <label class="pw-search">
@@ -8589,7 +8603,7 @@
         /// 重新走 /proxy 带凭据（直连 <img> 会 401 导致封面全黑）
         /// 注意：不要对 URL 再套 encodeURI——快照里的 %5C/%E6 等已编码片段
         /// 会被二次编码成 %255C/%25E6，导致封面 404。
-        function pwReviveUrl(u) {
+        function pwReviveUrl(u, srcOverride) {
             if (!u) return '';
             try {
                 const url = new URL(u, location.origin);
@@ -8599,11 +8613,11 @@
                 }
                 if (url.pathname === '/proxy') return u;   // 已是代理地址
                 // WebDAV 旧快照的直连图片/nfo → 重新代理
-                const src = posterWallCurrentSource();
+                const src = srcOverride || posterWallCurrentSource();
                 if (src && src.kind === 'webdav'
                     && /^https?:$/i.test(url.protocol)
                     && /\.(jpe?g|png|webp|bmp|avif|gif|nfo)$/i.test(url.pathname)) {
-                    return posterWallToUrl(url.href);
+                    return posterWallToUrl(url.href, src);
                 }
             } catch { /* 非 URL 原样保留 */ }
             return u;
@@ -9069,9 +9083,9 @@
         /// 注意：WebDAV 的图片/nfo 必须走 /proxy 带凭据——<img>/fetch 无法携带
         /// Basic 认证，直连会 401 导致封面全黑。视频保持原始地址，
         /// 由 loadVideoURL 的代理/转码链路处理（避免 /proxy 二次包装）。
-        function posterWallToUrl(item) {
+        function posterWallToUrl(item, srcOverride) {
             const href = typeof item === 'string' ? item : String((item && item.href) || '');
-            const src = posterWallCurrentSource();
+            const src = srcOverride || posterWallCurrentSource();
             if (src && src.kind === 'smb') return localUrl(href);
             if (src && src.kind === 'webdav') {
                 if (src.user || src.pass) {
@@ -9899,6 +9913,104 @@
                 pwOpenFolderPicker();
             });
         }
+        // ── 启动后台图片预加载：不进入海报墙也逐张落缓存 ─────────────
+        let posterImageJob = null;
+
+        function pwRenderImageStatus() {
+            const el = document.getElementById('posterImageStatus');
+            const text = document.getElementById('posterImageStatusText');
+            const abortBtn = document.getElementById('posterImageAbortBtn');
+            if (!el || !text) return;
+            const job = posterImageJob;
+            if (!job || !job.total) { el.style.display = 'none'; return; }
+            el.style.display = 'flex';
+            if (abortBtn) abortBtn.style.display = job.running ? '' : 'none';
+            if (job.running) {
+                text.textContent = job.aborted
+                    ? `正在终止图片缓存 ${job.done}/${job.total}…`
+                    : `后台图片缓存 ${job.done}/${job.total}`
+                        + (job.failed ? ` · 失败 ${job.failed}` : '');
+                if (abortBtn) abortBtn.disabled = !!job.aborted;
+            } else if (job.aborted) {
+                text.textContent = `已终止图片缓存 ${job.done}/${job.total}`;
+            } else {
+                text.textContent = `图片缓存完成 ${job.done}/${job.total}`
+                    + (job.failed ? ` · 失败 ${job.failed}` : '');
+            }
+        }
+
+        const posterImageAbortBtn = document.getElementById('posterImageAbortBtn');
+        if (posterImageAbortBtn) {
+            posterImageAbortBtn.addEventListener('click', () => {
+                if (!posterImageJob || !posterImageJob.running) return;
+                posterImageJob.aborted = true;
+                pwRenderImageStatus();
+            });
+        }
+
+        async function pwStartImagePrefetch() {
+            if (!backendAvailable) return;   // 静态托管没有代理/本地文件接口
+            if (posterImageJob && posterImageJob.running) return;
+
+            // 汇总所有来源快照里引用的图片（封面/剧照/预览图），URL 去重
+            const tasks = [];
+            const seen = new Set();
+            posterWallSources().forEach((src) => {
+                const snap = pwLoadSource(src.id);
+                if (!snap) return;
+                (snap.movies || []).forEach((m) => {
+                    const urls = [m.posterUrl, m.fanartUrl];
+                    (m.thumbs || []).forEach((t) => { if (t && t.url) urls.push(t.url); });
+                    urls.forEach((raw) => {
+                        if (!raw) return;
+                        const u = pwReviveUrl(raw, src);
+                        if (!u || seen.has(u)) return;
+                        seen.add(u);
+                        tasks.push(u);
+                    });
+                });
+            });
+            if (!tasks.length) return;
+
+            const job = {
+                running: true, aborted: false, finished: false,
+                total: tasks.length, done: 0, failed: 0,
+            };
+            posterImageJob = job;
+            pwRenderImageStatus();
+
+            let idx = 0;
+            const worker = async () => {
+                while (idx < tasks.length && !job.aborted) {
+                    const url = tasks[idx++];
+                    try {
+                        const resp = await fetch(url, { cache: 'default' });
+                        if (!resp.ok) {
+                            job.failed++;
+                        } else {
+                            // 必须读完数据，/proxy 才会把图片写入本地缓存
+                            await resp.arrayBuffer();
+                        }
+                    } catch { job.failed++; }
+                    job.done++;
+                    pwRenderImageStatus();
+                }
+            };
+            // 小并发后台加载，避免触发网盘限流
+            await Promise.all(Array.from({ length: 2 }, worker));
+            job.running = false;
+            job.finished = true;
+            pwRenderImageStatus();
+            setTimeout(() => {
+                if (posterImageJob === job) {
+                    const el = document.getElementById('posterImageStatus');
+                    if (el) el.style.display = 'none';
+                }
+            }, 6000);
+        }
+        // 启动后自动预热缓存；只有真正进入海报墙时才显示进度，不打扰首页
+        setTimeout(() => { pwStartImagePrefetch(); }, 3500);
+
         // Clean up object URL when page unloads
         window.addEventListener('beforeunload', () => {
             // 扫描进度落库后再离开，避免中途退出丢结果
