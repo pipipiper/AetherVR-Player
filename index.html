@@ -809,10 +809,11 @@
         .progress-fill {
             position: absolute; left: 0; top: 0; bottom: 0;
             border-radius: 999px;
-            background: linear-gradient(90deg, #38bdf8, #818cf8);
+            /* 已播放部分固定为蓝色，和未播放的灰色轨道区分开 */
+            background: linear-gradient(90deg, #2f6bff, #38bdf8);
             width: 0%;
             pointer-events: none;
-            box-shadow: 0 0 10px rgba(56, 189, 248, 0.5);
+            box-shadow: 0 0 10px rgba(47, 107, 255, 0.55);
             transition: width 0.06s linear;
         }
         /* 滑块拖拽球 */
@@ -959,13 +960,14 @@
             background: rgba(56, 189, 248, 0.38); border-radius: 999px;
         }
 
-        /* 空间计算轻量级 Toast */
+        /* 空间计算轻量级 Toast：放在画面中间偏下，不贴底、不遮挡控制栏 */
         .spatial-toast {
-            position: absolute; bottom: 90px; left: 50%; transform: translateX(-50%);
+            position: absolute; bottom: 22vh; left: 50%; transform: translateX(-50%);
+            max-width: min(760px, 86vw); text-align: center;
             background: rgba(10, 15, 25, 0.88);
             backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
             border: 1px solid rgba(255, 255, 255, 0.16);
-            color: #f1f5f9; padding: 9px 18px; border-radius: 999px;
+            color: #f1f5f9; padding: 9px 18px; border-radius: 14px;
             font-size: 13px; font-weight: 600; pointer-events: none;
             box-shadow: 0 8px 24px rgba(0,0,0,0.5); z-index: 50;
             opacity: 0; transition: opacity 0.25s ease, transform 0.25s ease;
@@ -1533,7 +1535,8 @@
         }
         .progress-bar:hover { border: none; }
         .progress-fill {
-            background: var(--yellow); border-radius: 999px;
+            background: linear-gradient(90deg, #2f6bff, #38bdf8);
+            border-radius: 999px;
             position: relative;
         }
         /* 进度条头部的蓝色圆点已按用户要求移除（与白色拖拽球重复） */
@@ -5242,6 +5245,48 @@
         function hideLoadSpin() {
             seekLoading.classList.remove('active');
         }
+
+        // 加载时实测下载速度：只读前 64KB 就取消，不额外下载整片
+        function formatNetworkSpeed(bytesPerSecond) {
+            if (!isFinite(bytesPerSecond) || bytesPerSecond <= 0) return '';
+            const kbps = bytesPerSecond / 1024;
+            return kbps >= 1024 ? `${(kbps / 1024).toFixed(2)} MB/s` : `${kbps.toFixed(0)} KB/s`;
+        }
+        async function measureDownloadSpeed(url) {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 10000);
+            let reader = null;
+            try {
+                const started = performance.now();
+                const resp = await fetch(url, {
+                    headers: { Range: 'bytes=0-65535' },
+                    cache: 'no-store', signal: controller.signal,
+                });
+                if (!resp.ok || !resp.body) return null;
+                reader = resp.body.getReader();
+                let loaded = 0;
+                while (loaded < 65536) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    loaded += value ? value.byteLength : 0;
+                }
+                const seconds = Math.max((performance.now() - started) / 1000, 0.001);
+                return loaded > 0 ? loaded / seconds : null;
+            } catch {
+                return null;
+            } finally {
+                clearTimeout(timer);
+                if (reader) { try { await reader.cancel(); } catch { /* 已结束 */ } }
+            }
+        }
+        async function showLoadingSpeed(url, requestId) {
+            const speed = await measureDownloadSpeed(url);
+            // 加载已结束/已切换视频时不重新弹出提示
+            if (requestId !== urlLoadRequestId || !seekLoading.classList.contains('active')) return;
+            showLoadSpin(speed
+                ? `视频加载中… · 当前网速 ${formatNetworkSpeed(speed)}`
+                : '视频加载中…');
+        }
         // 首帧就绪或出错时收起「加载中」提示
         ['loadeddata', 'canplay', 'error'].forEach((evt) => {
             videoPlayer.addEventListener(evt, hideLoadSpin);
@@ -5448,7 +5493,9 @@
             // VR/360 is the default view once metadata is ready
             pendingVrMode = true;
             videoPlayer.load();
-            showLoadSpin('视频加载中…');
+            showLoadSpin('视频加载中… · 测速中…');
+            // 前 64KB 实测下载速度，加载期间显示在提示条里
+            showLoadingSpeed(playable, requestId);
         }
 
         const videoUrlInput = document.getElementById('videoUrl');
