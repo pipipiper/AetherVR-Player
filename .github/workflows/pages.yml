@@ -29,6 +29,9 @@ jobs:
           cp index.html favicon.svg background-pic.jpg _site/
           cp -R vendor _site/vendor
           touch _site/.nojekyll
+      - name: Inject app version
+        run: |
+          node -e 'const fs=require("fs"); const v=require("./package.json").version; const p="_site/index.html"; fs.writeFileSync(p, fs.readFileSync(p,"utf8").replace(/__APP_VERSION__/g, v));'
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:

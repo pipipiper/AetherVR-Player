@@ -45,6 +45,20 @@ function findFreePort() {
 // 否则每次启动都是新源，收藏夹/播放列表持久化会丢。被占用时才退回随机端口。
 const PREFERRED_PORT = 17395;
 
+// 所有 IPC 统一做 sender 同源校验：只信任本窗口加载的 127.0.0.1/localhost
+// 页面，防止被注入内容或第三方页面直接调用本地文件读写/ SMB 能力。
+const originalIpcHandle = ipcMain.handle.bind(ipcMain);
+ipcMain.handle = (channel, listener) => originalIpcHandle(channel, (event, ...args) => {
+  let host = '';
+  try {
+    host = new URL((event.senderFrame && event.senderFrame.url) || '').hostname;
+  } catch { host = ''; }
+  if (host !== '127.0.0.1' && host !== 'localhost' && host !== '::1') {
+    throw new Error('Untrusted IPC sender');
+  }
+  return listener(event, ...args);
+});
+
 let mainWindow = null;
 
 async function start() {
@@ -314,6 +328,10 @@ async function start() {
     const user = String((payload && payload.user) || '').trim();
     const pass = String((payload && payload.password) || '');
     if (!host || !share) return { ok: false, error: '缺少主机或共享名' };
+    // net.exe 会把以 / 或 - 开头的口令当成选项，必须提前拒绝
+    if (pass.startsWith('/') || pass.startsWith('-')) {
+      return { ok: false, error: 'SMB 密码不能以 / 或 - 开头' };
+    }
 
     if (process.platform === 'win32') {
       const unc = `\\\\${host}\\${share}`;

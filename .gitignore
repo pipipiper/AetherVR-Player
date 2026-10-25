@@ -14,3 +14,7 @@ original-site.png
 # Electron 打包产物
 dist/
 out/
+
+# 使用 npm 的 package-lock.json；pnpm 本地锁文件不入库，避免两套锁不一致
+pnpm-lock.yaml
+.env

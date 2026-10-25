@@ -5,7 +5,7 @@ const http = require("node:http");
 const test = require("node:test");
 
 process.env.AETHERVR_TRUST_PRIVATE_SOURCES = "1";
-const { startServer } = require("../server.js");
+const { startServer, FFPROBE_AVAILABLE } = require("../server.js");
 
 function request(port, pathname, { method = "GET", headers = {}, body = "" } = {}) {
   return new Promise((resolve, reject) => {
@@ -20,7 +20,7 @@ function request(port, pathname, { method = "GET", headers = {}, body = "" } = {
   });
 }
 
-test("trusted LAN mode allows any private source port", async (t) => {
+test("trusted LAN mode allows any private source port", { skip: !FFPROBE_AVAILABLE ? "ffprobe not installed" : false }, async (t) => {
   const running = await startServer({ host: "127.0.0.1", port: 0 });
   t.after(async () => { await new Promise((resolve) => running.server.close(resolve)); });
 

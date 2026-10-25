@@ -7,6 +7,16 @@ const test = require("node:test");
 const vm = require("node:vm");
 
 const html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
+const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
+
+test("home page shows the current package version", () => {
+  assert.equal((html.match(/id=["']heroVersion["']/g) || []).length, 1);
+  // 版本号只有一个来源：package.json；页面只允许占位符，禁止手写版本
+  assert.match(html, /id="heroVersion">v__APP_VERSION__</);
+  assert.doesNotMatch(html, /id="heroVersion">v\d+\.\d+\.\d+</);
+  assert.match(pkg.version, /^\d+\.\d+\.\d+/);
+  assert.match(html, /capabilities\.version/);
+});
 
 test("executable inline scripts parse", () => {
   const scripts = [...html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)]

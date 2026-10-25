@@ -444,7 +444,14 @@
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC',
                          'Hiragino Sans GB', 'Microsoft YaHei', 'Segoe UI', sans-serif;
+            /* 播放器/海报墙是操作界面，默认禁止拖选文字；输入框和错误详情单独放开 */
+            user-select: none; -webkit-user-select: none;
         }
+        input, textarea, select, [contenteditable="true"],
+        .app-error-details, #diagnosticsBody {
+            user-select: text; -webkit-user-select: text;
+        }
+        img { -webkit-user-drag: none; }
 
         /* ── top bar: hidden until a video is loaded ───────── */
         .top-bar {
@@ -597,6 +604,12 @@
             -webkit-text-fill-color: transparent; color: transparent;
         }
         .hero-sub   { font-size: 13.5px; color: var(--muted); margin-bottom: 26px; }
+        .hero-version {
+            margin: -18px 0 24px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px; letter-spacing: .08em;
+            color: var(--muted); opacity: .75;
+        }
         .hero-url   { width: 100%; margin: 0; }
         .hero-divider {
             display: flex; align-items: center; gap: 12px;
@@ -1882,6 +1895,14 @@
         .pw-page.managing .poster-card.pw-selected .pw-card-check {
             background: var(--yellow); border-color: var(--yellow);
         }
+        /* 管理模式拖动多选框 */
+        .pw-marquee {
+            position: fixed; z-index: 9999; pointer-events: none;
+            border: 1px solid rgba(47, 107, 255, .9);
+            background: rgba(47, 107, 255, .16);
+            border-radius: 4px;
+            box-shadow: 0 0 0 1px rgba(47, 107, 255, .2);
+        }
         /* 横版图上下黑边完整显示（不裁剪） */
         .poster-img.is-landscape { object-fit: contain; background: #000; }
         .poster-preview.is-landscape { object-fit: contain; background: #000; }
@@ -2084,7 +2105,7 @@
             top: calc(14px + env(safe-area-inset-top));
             left: 50%; right: auto;
             transform: translateX(-50%);
-            width: min(1560px, calc(100vw - 32px));
+            width: min(1400px, calc(100vw - 192px));
             height: auto; min-height: 44px;
             padding: 6px 14px;
             background: rgba(14, 18, 28, 0.86);
@@ -2181,6 +2202,7 @@
                 <div class="hero-icon"><i class="fa-solid fa-vr-cardboard"></i></div>
                 <h2 class="hero-title">AetherVR Player</h2>
                 <p class="hero-sub">本地文件与在线直链即点即播 · 支持 360° 全景与 SBS 分屏</p>
+                <p class="hero-version" id="heroVersion">v__APP_VERSION__</p>
                 <div class="url-input-wrapper hero-url" id="onlineUrlSection">
                     <input type="url" id="videoUrl" placeholder="粘贴视频链接，回车播放…" spellcheck="false" autocomplete="off">
                     <button id="openUrlBtn" class="url-play-btn" title="播放链接"><i class="fa-solid fa-link"></i>&nbsp; 播放链接</button>
@@ -2307,11 +2329,11 @@
                             <button class="control-btn" id="stepBackBtn" title="后退 30 秒"><i class="fa-solid fa-rotate-left"></i></button>
                             <button class="control-btn is-primary" id="playPauseBtn" title="播放 / 暂停"><i class="fa-solid fa-play"></i></button>
                             <button class="control-btn" id="stepForwardBtn" title="快进 30 秒"><i class="fa-solid fa-rotate-right"></i></button>
-                            <button class="control-btn is-stop" id="stopBtn" title="停止播放并返回"><i class="fa-solid fa-stop"></i></button>
                             <button class="control-btn playlist-ctl" id="nextBtn" title="下一个" style="display:none"><i class="fa-solid fa-forward-step"></i></button>
                         </div>
 
                         <div class="controls-side right">
+                            <button class="control-btn is-stop" id="stopBtn" title="停止播放并返回"><i class="fa-solid fa-stop"></i></button>
                             <button class="control-btn playlist-ctl" id="playlistBtn" title="播放列表" style="display:none"><i class="fa-solid fa-list-ul"></i></button>
                             <button class="control-btn" id="diagnosticsBtn" title="播放诊断"><i class="fa-solid fa-chart-line"></i></button>
                             <button class="control-btn" id="fullscreenBtn" title="全屏"><i class="fa-solid fa-expand"></i></button>
@@ -2591,7 +2613,7 @@
                     <div class="webdav-nav" id="posterWallNav">
                         <span class="webdav-path-text" id="posterWallPathText"></span>
                         <button class="pl-modal-btn" id="posterWallScanHereBtn" title="选择要扫描的文件夹（结果并入当前来源）">
-                            <i class="fa-solid fa-radar"></i>&nbsp; 选择目录
+                            <i class="fa-solid fa-folder-tree"></i>&nbsp; 选择目录
                         </button>
                         <button class="pl-modal-btn" id="posterWallFilesBtn" title="管理已扫描的文件夹">
                             <i class="fa-solid fa-folder"></i>&nbsp; 文件夹
@@ -2920,7 +2942,7 @@
             if (!posCurrentKey) return;
             const t = effectiveCurrentTime();
             if (!isFinite(t)) return;
-            const d = videoPlayer.duration;
+            const d = effectiveDuration();
             const dur = isFinite(d) ? d : 0;
             if (dur > 0 && (t > dur - 30 || t / dur > 0.95)) {
                 delete posStore[posCurrentKey];   // 看完/快看完 → 清除记录
@@ -3009,6 +3031,11 @@
             backendAvailable = Boolean(capabilities && capabilities.backend === true);
             probeAvailable = Boolean(backendAvailable && capabilities.probe === true);
             transcodeAvailable = Boolean(backendAvailable && capabilities.transcode === true);
+            // 首页版本号：优先用后端 package.json 的实际版本，静态托管保留内置版本
+            const versionEl = document.getElementById('heroVersion');
+            if (versionEl && capabilities && capabilities.version) {
+                versionEl.textContent = 'v' + capabilities.version;
+            }
             document.getElementById('onlineUrlSection').style.display = backendAvailable ? '' : 'none';
             document.getElementById('heroDivider').style.display = backendAvailable ? '' : 'none';
             document.getElementById('pagesNotice').style.display = backendAvailable ? 'none' : 'block';
@@ -5281,7 +5308,10 @@
         function findMatchingWebdavAuth(rawUrl) {
             if (!rawUrl) return null;
             if (activeUpstreamAuth && (activeUpstreamAuth.username || activeUpstreamAuth.password)) {
-                return activeUpstreamAuth;
+                try {
+                    const target = new URL(rawUrl, location.href);
+                    if (target.origin === activeUpstreamAuthHost) return activeUpstreamAuth;
+                } catch { /* 无法解析时继续按服务器列表匹配 */ }
             }
             try {
                 const u = new URL(rawUrl, location.href);
@@ -5447,6 +5477,7 @@
         let iosReadWatchdog = null;
         /// 当前 WebDAV 连接凭据（供编码探测/转码使用）
         let activeUpstreamAuth = null;
+        let activeUpstreamAuthHost = '';   // 凭据绑定的 origin，防止跨站复用
 
         async function probeRemoteMedia(url, signal, allowRetry = true, auth = null) {
             if (!probeAvailable) return null;
@@ -5549,7 +5580,7 @@
                 const controller = new AbortController();
                 activeProbeController = controller;
                 showHeroLoading('正在检测视频编码信息…');
-                const effectiveAuth = findMatchingWebdavAuth(rawUrl) || activeUpstreamAuth;
+                const effectiveAuth = findMatchingWebdavAuth(rawUrl);
                 const probe = await probeRemoteMedia(rawUrl, controller.signal, true, effectiveAuth);
                 if (requestId !== urlLoadRequestId) return;
                 if (activeProbeController === controller) activeProbeController = null;
@@ -5998,6 +6029,10 @@
             playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
             bigPlayBtn.classList.add('show');
             if (stopBtn) stopBtn.disabled = true;
+            // A-B 循环是当前影片的状态，停止/换片必须清掉，避免串到下一部
+            loopPointA = null;
+            loopPointB = null;
+            try { updateLoopAbUI(); } catch { /* 初始化早期 */ }
             document.body.classList.remove('has-video');
             document.querySelector('.container')?.classList.remove('has-video');
             videoContainer.classList.remove('active');
@@ -6355,7 +6390,13 @@
         progressTouchArea.addEventListener('touchend', (e) => {
             if (!scrubbing) return;
             scrubbing = false;
-            seekFromClientX(e.changedTouches[0].clientX);
+            const touch = e.changedTouches && e.changedTouches[0];
+            if (touch) seekFromClientX(touch.clientX);
+        });
+        // 系统手势/来电等会触发 touchcancel：必须复位，否则进度条永久冻结
+        progressTouchArea.addEventListener('touchcancel', () => {
+            scrubbing = false;
+            progressFill.style.width = (effectiveDuration() ? effectiveCurrentTime() / effectiveDuration() * 100 : 0) + '%';
         });
 
         // Volume control
@@ -8038,6 +8079,7 @@
                 webdavLastBase = u;
                 rememberWebdavServer({ name, url: baseUrl, user, pass });
                 activeUpstreamAuth = (user || pass) ? { username: user, password: pass } : null;
+                activeUpstreamAuthHost = u.origin;
                 renderWebdavItems(items, u);
             } catch (err) {
                 console.error('WebDAV fetch error:', err);
@@ -8385,12 +8427,14 @@
             pwNfoObserver.observe(card);
         }
         function pwQueueNfo(movie, card) {
+            if (!card || !card.isConnected) return;
             pwNfoQueue.push({ movie, card });
             pwPumpNfo();
         }
         function pwPumpNfo() {
             while (pwNfoActive < 2 && pwNfoQueue.length) {
                 const { movie, card } = pwNfoQueue.shift();
+                if (!card || !card.isConnected) continue;   // 卡片已因重渲染销毁
                 pwNfoActive++;
                 loadNfoMeta(movie.nfoUrl, movie).then((meta) => {
                     if (meta && meta.title) {
@@ -8410,9 +8454,11 @@
             const card = document.createElement('div');
             card.className = 'poster-card';
             card.dataset.key = movie.key || '';
+            const safeTitle = escapeHtml(movie.title);
+            const safePoster = escapeHtml(movie.posterUrl || '');
             // 横版图（fanart/只有横图时）：上下黑边完整显示，不裁剪
             const posterHtml = movie.posterUrl
-                ? `<img class="poster-img" src="${movie.posterUrl}" alt="" loading="lazy"`
+                ? `<img class="poster-img" src="${safePoster}" alt="" loading="lazy"`
                     + ` onload="if(this.naturalWidth>this.naturalHeight)this.classList.add('is-landscape')"`
                     + ` onerror="this.style.display='none';this.parentElement.classList.add('no-poster')">`
                 : '';
@@ -8432,7 +8478,7 @@
                     <button class="pw-card-del" title="从海报墙移除"><i class="fa-solid fa-xmark"></i></button>
                 </div>
                 <div class="poster-meta">
-                    <div class="poster-title" title="${movie.title}">${movie.title}</div>
+                    <div class="poster-title" title="${safeTitle}">${safeTitle}</div>
                     <div class="poster-sub">
                         ${movie.videos.length > 1 ? `${movie.videos.length} 碟 · ` : ''}${formatFileSize(movie.size)}
                     </div>
@@ -8458,6 +8504,8 @@
                 thumb.appendChild(previewImg);
             }
             card.addEventListener('click', () => {
+                // 拖动框选刚结束时，不吃这一次 click
+                if (pwSuppressClick) return;
                 // 管理模式：点击卡片 = 勾选/取消
                 if (pwManaging) {
                     if (pwSelected.has(movie.key)) {
@@ -8518,6 +8566,9 @@
             // 每次渲染前清空容器：增量扫描会多次调用本函数，
             // 只 append 不清空会让卡片成倍堆叠重复
             container.innerHTML = '';
+            // 整墙重渲染：旧的卡片引用必须释放，否则 nfo 队列/Observer 会持有 detached 节点
+            if (pwNfoObserver) { pwNfoObserver.disconnect(); pwNfoObserver = null; }
+            pwNfoQueue.length = 0;
 
             if (!movies.length && !folders.length) {
                 container.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);">'
@@ -8535,7 +8586,7 @@
                 card.innerHTML = `
                     <div class="poster-thumb poster-thumb-folder"><i class="fa-solid fa-folder-open"></i></div>
                     <div class="poster-meta">
-                        <div class="poster-title" title="${f.name}">${f.name}</div>
+                        <div class="poster-title" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</div>
                         <div class="poster-sub">文件夹</div>
                     </div>
                 `;
@@ -8592,14 +8643,14 @@
             const discs = movie.videos.map((v, i) => `
                 <button class="disc-pick-btn" data-idx="${i}">
                     <i class="fa-solid fa-compact-disc"></i>
-                    <span>${stripExt(v.name)}</span>
+                    <span>${escapeHtml(stripExt(v.name))}</span>
                     <small>${formatFileSize(v.size)}</small>
                 </button>
             `).join('');
             mask.innerHTML = `
                 <div class="pl-modal" style="max-width:560px;">
                     <div class="modal-head">
-                        <h3><i class="fa-solid fa-layer-group"></i>&nbsp; ${movie.title}</h3>
+                        <h3><i class="fa-solid fa-layer-group"></i>&nbsp; ${escapeHtml(movie.title)}</h3>
                         <button class="modal-close-icon" data-close><i class="fa-solid fa-xmark"></i></button>
                     </div>
                     <p class="pl-modal-desc">该影片包含 ${movie.videos.length} 个碟片文件，选择起始播放：</p>
@@ -8740,7 +8791,11 @@
             const merged = [];
             const seenKeys = new Set();
 
+            // 本次明确扫到 → 清掉 missingSince 标记
+            const removed = new Set(snap.removed || []);
             movies.forEach((m) => {
+                // 管理页删除过的影片：重扫时不再加回，直到「恢复已删」
+                if (removed.has(m.key)) return;
                 const snapMovie = pwSnapshotMovie(m, rootPath);
                 const old = prevByKey.get(m.key);
                 // 保留了首次发现时间，方便判断新增
@@ -8890,7 +8945,7 @@
                 + `<i class="fa-solid ${src.kind === 'smb' ? 'fa-network-wired' : 'fa-globe'}"></i>`
                 + `${src.kind === 'smb' ? 'SMB' : 'WebDAV'}</span>`;
             posterWallStatusBar.innerHTML = kindChip
-                + `<span><b>${src.name}</b></span>`
+                + `<span><b>${escapeHtml(src.name)}</b></span>`
                 + `<span>·</span><span>${movieCount} 部影片</span>`
                 + `<span>·</span><span>${rootCount} 个文件夹</span>`;
         }
@@ -9297,6 +9352,7 @@
                 if (src.user || src.pass) {
                     // 海报墙直接起播时补齐代理转码所需的上游凭据
                     activeUpstreamAuth = { username: src.user || '', password: src.pass || '' };
+                    try { activeUpstreamAuthHost = new URL(src.url || location.origin).origin; } catch { activeUpstreamAuthHost = ''; }
                 }
                 const full = /^https?:\/\//i.test(href) ? href : (() => {
                     try {
@@ -9675,7 +9731,7 @@
                     <div class="pw-root-row">
                         <i class="fa-solid fa-folder"></i>
                         <div class="pw-root-main">
-                            <div class="pw-root-name" title="${r}">${name}</div>
+                            <div class="pw-root-name" title="${escapeHtml(r)}">${escapeHtml(name)}</div>
                             <div class="pw-root-sub">
                                 ${count} 部 · 上次 ${fmtTime(meta.lastScanAt)}
                                 ${meta.complete === false ? ' · <span style="color:#f59e0b;">未完成</span>' : ''}
@@ -9703,7 +9759,7 @@
                         为避免网络抖动导致误删，它们**仍显示在海报墙上**，确认后再清理。
                     </p>
                     <div class="pw-missing-list">
-                        ${missing.slice(0, 8).map((m) => `<div class="pw-missing-item" title="${m.title}">${m.title}</div>`).join('')}
+                        ${missing.slice(0, 8).map((m) => `<div class="pw-missing-item" title="${escapeHtml(m.title)}">${escapeHtml(m.title)}</div>`).join('')}
                         ${missing.length > 8 ? `<div class="pw-missing-more">…等 ${missing.length} 部</div>` : ''}
                     </div>
                     <button class="pl-modal-btn danger" data-purge style="margin-top:8px;width:100%;justify-content:center;">
@@ -9981,11 +10037,26 @@
 
         // ── 海报墙管理模式：单个/批量删除 ──────────────────────
         let pwManaging = false;
+        let pwSuppressClick = false;      // 拖动框选结束后的 click 不当作卡片点选
+        let pwMarqueeCleanup = null;
         const pwSelected = new Set();   // 选中的影片 key
         const pwManageBar = document.getElementById('pwManageBar');
         const pwManageCount = document.getElementById('pwManageCount');
 
+        function pwSyncCardSelection() {
+            posterWallBody.querySelectorAll('.poster-card').forEach((card) => {
+                card.classList.toggle('pw-selected', pwSelected.has(card.dataset.key));
+            });
+            pwUpdateManageBar();
+        }
+        function pwEndMarquee() {
+            if (!pwMarqueeCleanup) return;
+            const cleanup = pwMarqueeCleanup;
+            pwMarqueeCleanup = null;
+            cleanup();
+        }
         function pwSetManaging(on) {
+            pwEndMarquee();
             pwManaging = !!on;
             pwSelected.clear();
             posterWallMask.classList.toggle('managing', pwManaging);
@@ -9997,6 +10068,72 @@
             const delBtn = document.getElementById('pwManageDelete');
             if (delBtn) delBtn.disabled = !pwSelected.size;
         }
+
+        // 管理模式：按住空白/卡片拖动出矩形，划过或框住的卡片即选中。
+        // 支持 Shift/Ctrl 累加；位移小于 5px 视为普通点击。
+        posterWallBody.addEventListener('pointerdown', (event) => {
+            if (!pwManaging || event.button !== 0) return;
+            if (event.target.closest('button, input, textarea, .pw-card-del, .pw-card-check')) return;
+            pwEndMarquee();
+            const startX = event.clientX;
+            const startY = event.clientY;
+            const additive = event.shiftKey || event.ctrlKey || event.metaKey;
+            const initial = additive ? new Set(pwSelected) : new Set();
+            let started = false;
+            let boxEl = null;
+
+            const onMove = (e) => {
+                const dist = Math.abs(e.clientX - startX) + Math.abs(e.clientY - startY);
+                if (!started) {
+                    if (dist < 5) return;
+                    started = true;
+                    pwSuppressClick = true;
+                    if (!additive) {
+                        pwSelected.clear();
+                        posterWallBody.querySelectorAll('.poster-card').forEach((card) => card.classList.remove('pw-selected'));
+                    }
+                    boxEl = document.createElement('div');
+                    boxEl.className = 'pw-marquee';
+                    document.body.appendChild(boxEl);
+                }
+                const left = Math.min(startX, e.clientX);
+                const top = Math.min(startY, e.clientY);
+                const right = Math.max(startX, e.clientX);
+                const bottom = Math.max(startY, e.clientY);
+                boxEl.style.left = left + 'px';
+                boxEl.style.top = top + 'px';
+                boxEl.style.width = (right - left) + 'px';
+                boxEl.style.height = (bottom - top) + 'px';
+                posterWallBody.querySelectorAll('.poster-card').forEach((card) => {
+                    const r = card.getBoundingClientRect();
+                    const hit = r.right >= left && r.left <= right && r.bottom >= top && r.top <= bottom;
+                    const key = card.dataset.key;
+                    if (hit) {
+                        pwSelected.add(key);
+                        card.classList.add('pw-selected');
+                    } else if (!initial.has(key)) {
+                        pwSelected.delete(key);
+                        card.classList.remove('pw-selected');
+                    }
+                });
+                pwUpdateManageBar();
+            };
+            const onUp = () => {
+                document.removeEventListener('pointermove', onMove);
+                document.removeEventListener('pointerup', onUp);
+                document.removeEventListener('pointercancel', onUp);
+                if (boxEl) boxEl.remove();
+                pwMarqueeCleanup = null;
+                if (started) {
+                    // click 事件在 pointerup 之后同步触发，下一轮再恢复
+                    setTimeout(() => { pwSuppressClick = false; }, 0);
+                }
+            };
+            document.addEventListener('pointermove', onMove);
+            document.addEventListener('pointerup', onUp);
+            document.addEventListener('pointercancel', onUp);
+            pwMarqueeCleanup = onUp;
+        });
 
         /// 从当前来源删除指定影片（记录到 removed，重扫也不会回来）
         function pwDeleteMovies(keys, { silent } = {}) {
@@ -10063,6 +10200,7 @@
         if (posterWallBtn) {
             posterWallBtn.addEventListener('click', () => {
                 posterWallMask.classList.add('active');
+                pwSetPathLabel('/');   // 海报墙展示整个来源，根目录不显示路径
                 pwRenderSourceSelect();
                 const snap = pwLoadSource(posterWallSourceId);
                 pwRenderStatusBar(snap);

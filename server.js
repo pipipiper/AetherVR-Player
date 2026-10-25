@@ -10,6 +10,9 @@ const net = require("net");
 const crypto = require("crypto");
 
 const args = process.argv.slice(2);
+// 与 package.json 保持一致的版本号，供首页/能力接口读取
+let APP_VERSION = "0.0.0";
+try { APP_VERSION = require("./package.json").version || APP_VERSION; } catch { /* 单文件部署时无 package.json */ }
 function arg(name, fallback) {
   const i = args.findIndex((a) => a === `--${name}` || a === name);
   // 值以 '-' 开头说明是下一个开关（如 `--port --local-fs`），不能当作参数值
@@ -45,8 +48,14 @@ function writeImageCache(cacheFile, buf) {
       // 绝不能把错误页当封面永久缓存下来
       if (!isProbablyImage(buf)) return;
       await fs.promises.mkdir(LOCAL_IMG_CACHE_DIR, { recursive: true });
-      // 按用户要求全量持久化：不再限制缓存图片数量
-      await fs.promises.writeFile(cacheFile, buf);
+      // 按用户要求全量持久化：不再限制缓存图片数量；原子写入避免并发读到半个文件
+      const temp = `${cacheFile}.${process.pid}.${Date.now()}.tmp`;
+      try {
+        await fs.promises.writeFile(temp, buf);
+        await fs.promises.rename(temp, cacheFile);
+      } catch {
+        try { await fs.promises.unlink(temp); } catch { /* 已清理 */ }
+      }
     } catch { /* 缓存失败不影响播放 */ }
   })();
 }
@@ -58,8 +67,8 @@ function isProbablyImage(buf) {
   if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return true; // PNG
   if (buf.toString('ascii', 0, 3) === 'GIF') return true;                 // GIF
   if (buf.toString('ascii', 0, 2) === 'BM') return true;                  // BMP
-  if (buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 4) === 'WEBP') return true;
-  if (buf.toString('ascii', 4, 4) === 'ftyp') return true;               // AVIF/HEIF
+  if (buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') return true;
+  if (buf.toString('ascii', 4, 8) === 'ftyp') return true;               // AVIF/HEIF
   return false;
 }
 
@@ -147,6 +156,7 @@ const REAL_VENDOR_ROOT = path.join(REAL_PUBLIC_ROOT, "vendor");
 
 function publicFilePath(urlPath) {
   const webPath = urlPath.replace(/\\/g, "/");
+  if (webPath.includes("\0")) return null;
   if (!PUBLIC_EXACT_PATHS.has(webPath) && !webPath.startsWith("/vendor/")) return null;
   const candidate = path.resolve(__dirname, `.${webPath}`);
   if (webPath.startsWith("/vendor/")
@@ -773,18 +783,48 @@ async function proxyVideo(target, req, res, redirects = 0, cred = null, cacheKey
       ct = VIDEO_MIME[ext] || MIME[ext] || "video/mp4";
     }
     h["Content-Type"] = ct;
+    // 代理绝不能把上游 HTML 当同源页面回传（否则可读取本机 token / IPC）
+    if (/^\s*(text\/html|application\/xhtml\+xml)/i.test(ct)) {
+      pres.resume();
+      res.writeHead(502, {
+        "Content-Type": "text/plain; charset=utf-8",
+        "X-Content-Type-Options": "nosniff",
+      }).end("Upstream returned HTML");
+      return;
+    }
+    h["X-Content-Type-Options"] = "nosniff";
     // 图片：缓冲整张小图 → 写入本地缓存 → 返回（之后命中缓存不再访问线上）
     if (cacheableImage && pres.statusCode === 200) {
       const chunks = [];
-      pres.on("data", (c) => chunks.push(c));
+      let total = 0;
+      let tooLarge = false;
+      const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+      pres.on("data", (c) => {
+        if (tooLarge) return;
+        total += c.length;
+        if (total > MAX_IMAGE_BYTES) {
+          tooLarge = true;
+          chunks.length = 0;
+          pres.destroy();
+          if (!res.headersSent) {
+            res.writeHead(502, {
+              "Content-Type": "text/plain; charset=utf-8",
+              "X-Content-Type-Options": "nosniff",
+            }).end("Image too large");
+          }
+          return;
+        }
+        chunks.push(c);
+      });
       pres.on("end", () => {
+        if (tooLarge) return;
         const buf = Buffer.concat(chunks);
         writeImageCache(imageCacheFile(cacheKey, targetExt), buf);
         h["Content-Length"] = buf.length;
         res.writeHead(200, h);
         res.end(buf);
       });
-      pres.on("error", () => { if (!res.headersSent) res.writeHead(502); res.end(); });
+      pres.on("error", () => { if (!tooLarge && !res.headersSent) res.writeHead(502); if (!tooLarge) res.end(); });
       return;
     }
     res.writeHead(pres.statusCode, h);
@@ -813,15 +853,30 @@ function clientIp(req) {
 function readJson(req, limit = 8192) {
   return new Promise((resolve, reject) => {
     let body = "";
+    let settled = false;
+    const fail = (err) => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+      // 超限后必须断开连接，否则客户端可以继续喂数据直到内存耗尽
+      req.destroy();
+    };
     req.setEncoding("utf8");
     req.on("data", (chunk) => {
+      if (settled) return;
       body += chunk;
-      if (body.length > limit) reject(new Error("Request body too large"));
+      if (body.length > limit) fail(new Error("Request body too large"));
     });
     req.on("end", () => {
+      if (settled) return;
+      settled = true;
       try { resolve(JSON.parse(body || "{}")); } catch { reject(new Error("Invalid JSON")); }
     });
-    req.on("error", reject);
+    req.on("error", (err) => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    });
   });
 }
 
@@ -832,6 +887,19 @@ const requestHandler = async (req, res) => {
     } catch {
       res.writeHead(400).end("Bad URL encoding");
       return;
+    }
+    // NUL 字节会让 fs.realpath 同步抛错，必须在外层直接拒绝
+    if (urlPath.includes("\0")) {
+      res.writeHead(400).end("Bad URL");
+      return;
+    }
+    // 桌面端只接受本机 Host，防止 DNS rebinding 伪装成同源页面
+    if (LOCAL_FS) {
+      const hostName = String(req.headers.host || "").replace(/:\d+$/, "").replace(/^\[|\]$/g, "").toLowerCase();
+      if (hostName !== "127.0.0.1" && hostName !== "localhost" && hostName !== "::1") {
+        res.writeHead(403).end("Forbidden host");
+        return;
+      }
     }
     if (urlPath === "/transcode/stop") {
       if (req.method !== "POST") {
@@ -923,6 +991,7 @@ const requestHandler = async (req, res) => {
       res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       res.end(JSON.stringify({
         app: "aethervr",
+        version: APP_VERSION,
         backend: true,
         proxy: true,
         probe: FFPROBE_AVAILABLE,
@@ -1226,11 +1295,6 @@ const requestHandler = async (req, res) => {
         res.writeHead(405, { "Allow": "POST" }).end("Method not allowed");
         return;
       }
-      if (!FFPROBE_AVAILABLE) {
-        res.writeHead(503, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "ffprobe is not available" }));
-        return;
-      }
       const origin = req.headers.origin;
       try {
         if (!origin || new URL(origin).host !== req.headers.host) {
@@ -1239,13 +1303,6 @@ const requestHandler = async (req, res) => {
         }
       } catch {
         res.writeHead(403).end(JSON.stringify({ error: "Invalid Origin" }));
-        return;
-      }
-      const ip = clientIp(req);
-      const lastProbe = probeStarts.get(ip) || 0;
-      if (Date.now() - lastProbe < PROBE_COOLDOWN_MS) {
-        res.writeHead(429, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "操作过于频繁" }));
         return;
       }
       let target;
@@ -1263,6 +1320,18 @@ const requestHandler = async (req, res) => {
       } catch (err) {
         res.writeHead(400, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: err.message }));
+        return;
+      }
+      if (!FFPROBE_AVAILABLE) {
+        res.writeHead(503, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "ffprobe is not available" }));
+        return;
+      }
+      const ip = clientIp(req);
+      const lastProbe = probeStarts.get(ip) || 0;
+      if (Date.now() - lastProbe < PROBE_COOLDOWN_MS) {
+        res.writeHead(429, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "操作过于频繁" }));
         return;
       }
       sweepStaleEntries(probeStarts);
@@ -1480,6 +1549,10 @@ const requestHandler = async (req, res) => {
         if (LOCAL_FS && urlPath === "/index.html") {
           data = Buffer.from(data.toString("utf8").split('"__LOCAL_TOKEN__"').join(JSON.stringify(LOCAL_TOKEN)));
         }
+        // 首页版本号单一来源：package.json；静态部署由 Pages 工作流做同样替换
+        if (urlPath === "/index.html") {
+          data = Buffer.from(data.toString("utf8").split("__APP_VERSION__").join(APP_VERSION));
+        }
         res.writeHead(200, {
           "Content-Type": MIME[path.extname(realFile).toLowerCase()] || "application/octet-stream",
           "Cache-Control": "no-cache",
@@ -1548,7 +1621,7 @@ function startServer({ host = "127.0.0.1", port = 7100, localFs = false, localTo
   });
 }
 
-module.exports = { startServer };
+module.exports = { startServer, FFPROBE_AVAILABLE };
 
 if (require.main === module) {
   const cliHost = arg("host", "127.0.0.1");

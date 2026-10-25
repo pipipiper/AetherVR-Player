@@ -44,6 +44,12 @@ test("server exposes only public assets and generic capabilities", async (t) => 
   const parsed = JSON.parse(capabilities.body);
   assert.equal(parsed.app, "aethervr");
   assert.equal(parsed.backend, true);
+  assert.equal(parsed.version, require("../package.json").version);
+
+  const home = await request(running.port, "/");
+  assert.equal(home.status, 200);
+  assert.ok(home.body.includes(`v${require("../package.json").version}`));
+  assert.ok(!home.body.includes("__APP_VERSION__"));
 
   const status = await request(running.port, "/transcode/status");
   assert.equal(status.status, 200);
@@ -88,4 +94,10 @@ test("server exposes only public assets and generic capabilities", async (t) => 
   });
   assert.equal(blockedPort.status, 400);
   assert.match(blockedPort.body, /source host and port are not allowed/i);
+
+  // NUL 字节路径不能杀死服务进程
+  const nulPath = await request(running.port, "/vendor/%00");
+  assert.equal(nulPath.status, 400);
+  const alive = await request(running.port, "/favicon.svg");
+  assert.equal(alive.status, 200);
 });
