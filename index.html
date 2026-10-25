@@ -7234,6 +7234,8 @@
                 })),
                 servers: servers,
                 playlists: lists,
+                // 视频重点标记：key -> [秒...]，随完整备份/云端备份一起保存
+                bookmarks: bookmarkStore,
                 settings: {
                     defaultProjection: { string: "vr360" },
                     defaultHardwareDecode: { bool: true },
@@ -7266,7 +7268,7 @@
         function restoreFromBackupJSON(rawText) {
             try {
                 const data = JSON.parse(rawText);
-                if (!data || (!data.history && !data.playlists && !data.servers)) {
+                if (!data || (!data.history && !data.playlists && !data.servers && !data.bookmarks)) {
                     throw new Error('不合法的 AetherVR 备份文件');
                 }
                 // 1. 恢复播放记录（iOS 记录用 Apple 秒时间戳，统一归一化）
@@ -7333,6 +7335,20 @@
                             openPlaylistTab(pl.name, null, newEntries.map(e => entryToItem(e)), newEntries, false);
                         }
                     });
+                }
+                // 4. 恢复视频重点标记（按 key 合并，保留本机已有标记）
+                if (data.bookmarks && typeof data.bookmarks === 'object' && !Array.isArray(data.bookmarks)) {
+                    Object.entries(data.bookmarks).forEach(([key, list]) => {
+                        if (typeof key !== 'string' || !key || !Array.isArray(list)) return;
+                        const merged = new Set(Array.isArray(bookmarkStore[key]) ? bookmarkStore[key] : []);
+                        list.forEach((t) => {
+                            const n = Number(t);
+                            if (Number.isFinite(n) && n >= 0) merged.add(n);
+                        });
+                        bookmarkStore[key] = [...merged].sort((a, b) => a - b);
+                    });
+                    try { localStorage.setItem(BOOKMARK_STORE_KEY, JSON.stringify(bookmarkStore)); } catch { /* 忽略配额 */ }
+                    renderBookmarks();
                 }
                 showSpatialToast('🎉 备份数据已恢复成功！');
                 if (backupModalMask) backupModalMask.classList.remove('active');
