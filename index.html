@@ -2150,6 +2150,11 @@
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08);
             z-index: 40;
         }
+        /* VR 提示条位于悬浮顶栏下方，避免互相遮挡 */
+        .container.has-video .vr-info {
+            top: calc(74px + env(safe-area-inset-top));
+            z-index: 35;
+        }
         /* 左侧文件信息占满剩余空间，右侧按钮只占内容宽度：文件名能显示更长 */
         .container.has-video .top-bar .left { flex: 1 1 auto; min-width: 0; }
         .container.has-video .top-bar .right { flex: 0 0 auto; min-width: 0; }
@@ -6109,6 +6114,10 @@
                 e.stopPropagation();
                 const origin = playOrigin;
                 unloadCurrentVideo();
+                // 左上角返回同样结束本次播放：清空临时列表，避免下次起播残留
+                const t = playlists.find((p) => p.id === TEMP_TAB_ID);
+                if (t) { t.items = []; t.entries = null; }
+                if (activePlId === TEMP_TAB_ID) clearPlaylist();
                 if (origin === 'poster' && typeof posterWallMask !== 'undefined' && posterWallMask) {
                     posterWallMask.classList.add('active');
                 } else if (origin === 'cloud') {
