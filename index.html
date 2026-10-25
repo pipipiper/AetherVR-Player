@@ -2795,6 +2795,7 @@
             <p class="app-error-detail-label">技术详情</p>
             <pre class="app-error-details" id="appErrorDetails"></pre>
             <div class="app-error-actions">
+                <button class="app-error-btn" id="appErrorRetry" type="button" style="display:none"><i class="fa-solid fa-rotate-right"></i>&nbsp; 重试播放</button>
                 <button class="app-error-btn" id="appErrorCopy" type="button">复制详情</button>
                 <button class="app-error-btn primary" id="appErrorClose" type="button">知道了</button>
             </div>
@@ -2828,6 +2829,7 @@
         const appErrorSummary = document.getElementById('appErrorSummary');
         const appErrorDetails = document.getElementById('appErrorDetails');
         const appErrorCopy = document.getElementById('appErrorCopy');
+        const appErrorRetry = document.getElementById('appErrorRetry');
         const appErrorClose = document.getElementById('appErrorClose');
         const playPauseBtn = document.getElementById('playPauseBtn');
         const progressBar = document.getElementById('progressBar');
@@ -5255,7 +5257,7 @@
         }
 
         /// 播放中的错误：停止播放并显示统一错误面板
-        function showPlaybackError(message) {
+        function showPlaybackError(message, retryUrl) {
             const info = describeError(message);
             // 真正停止播放（不再继续缓冲/出声），错误面板覆盖在播放器上
             try { videoPlayer.pause(); } catch { /* 已停止 */ }
@@ -5266,9 +5268,13 @@
             appErrorTitle.textContent = info.title;
             appErrorSummary.textContent = info.summary;
             appErrorDetails.textContent = info.raw;
+            if (appErrorRetry) {
+                appErrorRetry.dataset.url = retryUrl || '';
+                appErrorRetry.style.display = retryUrl ? '' : 'none';
+            }
             appErrorMask.classList.add('active');
             appErrorMask.setAttribute('aria-hidden', 'false');
-            requestAnimationFrame(() => appErrorClose.focus());
+            requestAnimationFrame(() => (retryUrl && appErrorRetry ? appErrorRetry : appErrorClose).focus());
         }
 
         function showError(message) {
@@ -5285,6 +5291,10 @@
             appErrorTitle.textContent = info.title;
             appErrorSummary.textContent = info.summary;
             appErrorDetails.textContent = info.raw;
+            if (appErrorRetry) {
+                appErrorRetry.style.display = 'none';
+                appErrorRetry.dataset.url = '';
+            }
             // 带首页内容的错误弹窗只在首页出现
             appErrorMask.classList.add('active');
             appErrorMask.setAttribute('aria-hidden', 'false');
@@ -5303,6 +5313,15 @@
         appErrorMask.addEventListener('click', (event) => {
             if (event.target === appErrorMask) closeErrorDialog();
         });
+        if (appErrorRetry) {
+            appErrorRetry.addEventListener('click', () => {
+                const url = appErrorRetry.dataset.url || '';
+                if (!url) return;
+                closeErrorDialog();
+                hideError();
+                loadVideoURL(url);
+            });
+        }
         appErrorCopy.addEventListener('click', async () => {
             try {
                 await copyDiagnosticsText(`${appErrorTitle.textContent}\n${appErrorDetails.textContent}`);
@@ -5359,8 +5378,11 @@
             if (isIOSDevice && videoPlayer.currentSrc.startsWith('blob:')) {
                 hint += '\n' + IOS_SMB_HINT;
             }
-            // 播放中报错：停止播放并显示统一错误面板
-            showPlaybackError(hint);
+            // 播放中报错：暂停并显示统一错误面板；网络错误提供重试
+            const retryUrl = err && err.code === 2
+                ? (videoPlayer.dataset.remoteUrl || videoPlayer.currentSrc || '')
+                : '';
+            showPlaybackError(hint, retryUrl);
             if (!videoPlayer.paused) videoPlayer.pause();
             // 编码不支持 + 源是远程链接 → 提供服务器实时转码播放入口
             const transcodeBtn = document.getElementById('transcodeBtn');
@@ -7899,6 +7921,7 @@
             if (kind === 'webdav') {
                 const found = getWebdavServers().find((x) => (x.id || x.url) === idOrUrl);
                 if (found) {
+                    clearCloudDirCache();
                     currentCloudSource = { kind: 'webdav', ...found };
                     currentWebdavPath = '/';
                     fetchWebdavDirectory('/');
@@ -7906,6 +7929,7 @@
             } else if (kind === 'smb') {
                 const found = getSmbServers().find((x) => (x.id || x.host) === idOrUrl);
                 if (found) {
+                    clearCloudDirCache();
                     currentCloudSource = { kind: 'smb', ...found };
                     currentSmbPath = '/';
                     fetchSmbDirectory('/');
@@ -8104,7 +8128,8 @@
             cloudBrowserRefreshBtn.addEventListener('click', () => {
                 if (cloudPickMode) { pwRenderPickerPanel(posterWallPickPath || '/'); return; }
                 if (!currentCloudSource) return;
-                loadCurrentCloudDirectory(currentCloudSource.kind === 'webdav' ? currentWebdavPath : currentSmbPath);
+                // 刷新按钮强制绕过目录缓存
+                loadCurrentCloudDirectory(currentCloudSource.kind === 'webdav' ? currentWebdavPath : currentSmbPath, true);
             });
         }
         if (cloudBrowserAddBtn) {
@@ -8114,12 +8139,12 @@
         }
 
         // 加载当前云端/网络目录
-        function loadCurrentCloudDirectory(path) {
+        function loadCurrentCloudDirectory(path, force) {
             if (!currentCloudSource) return;
             if (currentCloudSource.kind === 'webdav') {
-                fetchWebdavDirectory(path || '/');
+                fetchWebdavDirectory(path || '/', { force: !!force });
             } else {
-                fetchSmbDirectory(path || '/');
+                fetchSmbDirectory(path || '/', { force: !!force });
             }
         }
 
@@ -8153,8 +8178,20 @@
             // 新设计：连接信息已移入独立的连接弹窗，右侧面板只展示纯净文件列表
         }
 
+        // 云端目录会话缓存：返回父目录/来回切换时直接复用，避免重复请求
+        const cloudDirCache = new Map();
+        function cloudDirCacheKey(kind, path) {
+            const src = currentCloudSource || {};
+            const id = kind === 'webdav'
+                ? (src.id || src.url || '')
+                : `${src.host || ''}/${src.share || ''}`;
+            return `${kind}|${id}|${path || '/'}`;
+        }
+        function clearCloudDirCache() { cloudDirCache.clear(); }
+
         // ── WebDAV 目录读取 ──
-        async function fetchWebdavDirectory(targetPath) {
+        async function fetchWebdavDirectory(targetPath, options) {
+            const force = !!(options && options.force);
             const server = currentCloudSource && currentCloudSource.kind === 'webdav' ? currentCloudSource : null;
             const baseUrl = (server ? server.url : (webdavUrlInput ? webdavUrlInput.value : '')).trim();
             if (!baseUrl) {
@@ -8174,6 +8211,17 @@
 
             currentWebdavPath = targetPath;
             if (cloudBrowserPathText) cloudBrowserPathText.textContent = fullPath;
+            const cacheKey = cloudDirCacheKey('webdav', targetPath);
+            if (!force) {
+                const cached = cloudDirCache.get(cacheKey);
+                if (cached) {
+                    webdavLastBase = cached.base;
+                    activeUpstreamAuth = (user || pass) ? { username: user, password: pass } : null;
+                    activeUpstreamAuthHost = u.origin;
+                    renderWebdavItems(cached.items, cached.base);
+                    return;
+                }
+            }
             cloudBrowserFileList.innerHTML = '<div class="cb-empty"><i class="fa-solid fa-spinner fa-spin"></i><span>正在读取 WebDAV 目录…</span></div>';
 
             try {
@@ -8192,6 +8240,7 @@
                 rememberWebdavServer({ name, url: baseUrl, user, pass });
                 activeUpstreamAuth = (user || pass) ? { username: user, password: pass } : null;
                 activeUpstreamAuthHost = u.origin;
+                cloudDirCache.set(cacheKey, { items, base: u });
                 renderWebdavItems(items, u);
             } catch (err) {
                 console.error('WebDAV fetch error:', err);
@@ -8289,7 +8338,8 @@
         }
 
         // ── SMB 目录读取与播放 ──
-        async function fetchSmbDirectory(subPath) {
+        async function fetchSmbDirectory(subPath, options) {
+            const force = !!(options && options.force);
             const server = currentCloudSource && currentCloudSource.kind === 'smb' ? currentCloudSource : null;
             if (!server) return;
             if (!window.vrDesktop || typeof window.vrDesktop.smbConnectShare !== 'function') {
@@ -8297,6 +8347,16 @@
                 return;
             }
 
+            const cacheKey = cloudDirCacheKey('smb', subPath || '/');
+            if (!force) {
+                const cached = cloudDirCache.get(cacheKey);
+                if (cached) {
+                    currentSmbPath = subPath || '/';
+                    currentSmbMountRoot = cached.mountRoot;
+                    renderSmbItems(cached.entries, cached.diskPath);
+                    return;
+                }
+            }
             cloudBrowserFileList.innerHTML = '<div class="cb-empty"><i class="fa-solid fa-spinner fa-spin"></i><span>正在读取 SMB 共享…</span></div>';
             currentSmbPath = subPath || '/';
 
@@ -8324,6 +8384,7 @@
             try {
                 const r = await window.vrDesktop.smbListDir(targetDiskPath);
                 if (!r || !r.ok) throw new Error(r?.error || '读取目录失败');
+                cloudDirCache.set(cacheKey, { entries: r.entries || [], diskPath: targetDiskPath, mountRoot: currentSmbMountRoot });
                 renderSmbItems(r.entries || [], targetDiskPath);
             } catch (err) {
                 cloudBrowserFileList.innerHTML = `<div class="cb-empty" style="color:#f87171;"><i class="fa-solid fa-circle-exclamation"></i><span>读取失败：${escapeHtml(err.message)}</span></div>`;
