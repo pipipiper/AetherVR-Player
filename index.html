@@ -2150,28 +2150,28 @@
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08);
             z-index: 40;
         }
-        /* VR 提示条：左侧、返回按钮下方，深色毛玻璃 */
-        .container.has-video .vr-info {
-            top: calc(74px + env(safe-area-inset-top));
-            left: 22px;
-            transform: none;
-            z-index: 35;
-            padding: 7px 12px;
-            background: rgba(14, 18, 28, 0.84);
-            backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+        /* VR 提示：并入顶部栏，位于返回按钮右侧的小胶囊 */
+        .container.has-video .top-bar .vr-info {
+            position: static;
+            top: auto; left: auto; transform: none;
+            z-index: auto;
+            flex: none;
+            padding: 4px 9px;
+            background: rgba(255, 255, 255, 0.08);
             border: 1px solid rgba(255, 255, 255, 0.14);
-            border-radius: 12px;
+            border-radius: 999px;
             color: #cbd5e1;
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 600;
             letter-spacing: 0;
             text-transform: none;
             white-space: nowrap;
-            max-width: calc(100vw - 32px);
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+            max-width: none;
+            box-shadow: none;
         }
-        .container.has-video .vr-info i { color: #94a3b8; }
-        .container.has-video .vr-info .hint-text { color: #94a3b8; font-weight: 500; }
+        .container.has-video .top-bar .vr-info i { color: #94a3b8; }
+        .container.has-video .top-bar .vr-info .hint-text { color: #94a3b8; font-weight: 500; }
+        .container.has-video .top-bar .vr-info.compact { padding: 4px 6px; }
         /* 左侧文件信息占满剩余空间，右侧按钮只占内容宽度：文件名能显示更长 */
         .container.has-video .top-bar .left { flex: 1 1 auto; min-width: 0; }
         .container.has-video .top-bar .right { flex: 0 0 auto; min-width: 0; }
@@ -2238,6 +2238,10 @@
         <div class="top-bar">
             <div class="left">
                 <button class="player-back-btn" id="playerBackBtn" title="返回（从哪来回哪去）"><i class="fa-solid fa-arrow-left"></i></button>
+                <div class="vr-info" id="vrInfo">
+                    <i class="fa-solid fa-mouse"></i>
+                    <span class="hint-text">&nbsp;拖动旋转视角 · 滚轮缩放</span>
+                </div>
                 <div class="file-info" id="fileInfo">
                     <p class="fi-name"><strong>文件:</strong> <span id="fileName"></span></p>
                     <p class="fi-size"><strong>大小:</strong> <span id="fileSize"></span></p>
@@ -2408,10 +2412,6 @@
                     <div class="diagnostics-note">浏览器不会公开是否正在使用客户端硬件解码；服务器转码的硬件状态可准确显示。</div>
                     <div class="diagnostics-body" id="diagnosticsBody"></div>
                 </section>
-                <div class="vr-info" id="vrInfo">
-                    <i class="fa-solid fa-mouse"></i>
-                    <span class="hint-text">&nbsp;拖动旋转视角 · 滚轮缩放</span>
-                </div>
                 <video id="videoPlayer" playsinline webkit-playsinline></video>
                 <canvas id="vrCanvas"></canvas>
                 <button class="big-play-btn" id="bigPlayBtn" title="播放"><i class="fa-solid fa-play"></i></button>
@@ -2872,8 +2872,14 @@
         const bigPlayBtn = document.getElementById('bigPlayBtn');
 
         // 自动播放尝试；被浏览器拦截（iOS 手势过期）时显示中央大播放按钮
+        function isBenignPlayInterruption(err) {
+            const message = String((err && err.message) || err || '');
+            return (err && err.name === 'AbortError')
+                || /interrupted by a new load request|play\(\) request was interrupted/i.test(message);
+        }
         function tryAutoplay() {
-            videoPlayer.play().catch(() => {
+            videoPlayer.play().catch((err) => {
+                if (isBenignPlayInterruption(err)) return;  // 新加载打断旧 play()，不是真错误
                 bigPlayBtn.classList.add('active');
             });
         }
@@ -2882,6 +2888,7 @@
                 await videoPlayer.play();
                 bigPlayBtn.classList.remove('active');
             } catch (error) {
+                if (isBenignPlayInterruption(error)) return;
                 bigPlayBtn.classList.add('active');
                 showError('播放启动失败：' + (error.message || error));
             }
@@ -5309,6 +5316,7 @@
         window.addEventListener('unhandledrejection', (event) => {
             const reason = event.reason;
             if (reason && reason.name === 'AbortError') return;
+            if (isBenignPlayInterruption(reason)) return;
             showError('异步操作失败：' + (reason?.message || reason || '未知原因'));
         });
 
@@ -6235,6 +6243,7 @@
             e.stopPropagation(); // Prevent event bubbling
             if (videoPlayer.paused) {
                 videoPlayer.play().catch(err => {
+                    if (isBenignPlayInterruption(err)) return;  // 切源/重新加载打断旧 play()
                     console.error('Error playing video:', err);
                     showError('播放启动失败：' + (err.message || err));
                 });
