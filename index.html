@@ -1670,7 +1670,7 @@
             cursor: pointer; font-size: 15px; padding: 2px 6px;
         }
         .playlist-close:hover { color: #fff; }
-        .playlist-items { list-style: none; margin: 0; padding: 6px; overflow-y: auto; }
+        .playlist-items { list-style: none; margin: 0; padding: 6px; overflow-y: auto; scrollbar-gutter: stable; }
         .playlist-item {
             display: flex; align-items: center; gap: 8px;
             padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 12.5px;
@@ -1958,6 +1958,7 @@
         .cb-path-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .cb-items {
             list-style: none; margin: 0; padding: 6px; overflow-y: auto; flex: 1;
+            scrollbar-gutter: stable;
         }
         .cb-item {
             display: flex; align-items: center; gap: 8px;
@@ -1978,6 +1979,8 @@
         .cb-item:hover .cb-item-actions { display: flex; }
         .cb-empty {
             padding: 40px 16px; text-align: center; color: #94a3b8; font-size: 13px;
+            min-height: 180px; box-sizing: border-box;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
         }
         .cb-empty i { font-size: 32px; opacity: 0.35; margin-bottom: 10px; display: block; }
 
@@ -6147,8 +6150,10 @@
                 if (origin === 'poster' && typeof posterWallMask !== 'undefined' && posterWallMask) {
                     posterWallMask.classList.add('active');
                 } else if (origin === 'cloud') {
-                    playlistPanel.classList.add('active');
-                    if (typeof setCloudMode === 'function') setCloudMode(true);
+                    // 从云端浏览起播后返回：回首页，而不是留下空的右侧面板
+                    playlistPanel.classList.remove('active');
+                    if (typeof setCloudMode === 'function') setCloudMode(false);
+                    dropZone.classList.add('active');
                 } else if (origin === 'fav') {
                     playlistPanel.classList.add('active');
                     switchTab('favs');
@@ -9641,6 +9646,8 @@
         async function pwScan(rootPath, mode) {
             const src = posterWallCurrentSource();
             if (!src) return;
+            // 主动重新扫描时重置图片失败记录，允许之前缺图的影片重新尝试
+            pwResetImageFailures();
 
             if (posterScanAbort) posterScanAbort.aborted = true;
             const token = { aborted: false };
@@ -10101,6 +10108,7 @@
                         body: JSON.stringify({ token: window.__LOCAL_TOKEN__ || '' }),
                     });
                     if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                    pwResetImageFailures();   // 清缓存后允许重新尝试之前失败的图片
                     showSpatialToast('🗑️ 图片缓存已清除');
                 } catch (err) {
                     showSpatialToast('清除失败：' + err.message);
@@ -10536,6 +10544,56 @@
         }
         // ── 启动后台图片预加载：不进入海报墙也逐张落缓存 ─────────────
         let posterImageJob = null;
+        const PW_IMG_FAIL_KEY = 'aethervr-img-fail-v1';
+
+        function pwImageFailKey(url) {
+            let hash = 2166136261;
+            const text = String(url || '');
+            for (let i = 0; i < text.length; i++) {
+                hash ^= text.charCodeAt(i);
+                hash = Math.imul(hash, 16777619);
+            }
+            return (hash >>> 0).toString(36) + '-' + text.length.toString(36);
+        }
+        function pwLoadImageFails() {
+            try { return JSON.parse(localStorage.getItem(PW_IMG_FAIL_KEY)) || {}; }
+            catch { return {}; }
+        }
+        function pwSaveImageFails(map) {
+            try { localStorage.setItem(PW_IMG_FAIL_KEY, JSON.stringify(map)); } catch { /* 忽略 */ }
+        }
+        function pwShouldSkipImageFail(rec) {
+            if (!rec) return false;
+            return rec.gone === true || (Number(rec.n) || 0) >= 2;
+        }
+        function pwMarkImageFailure(url, status) {
+            const map = pwLoadImageFails();
+            const key = pwImageFailKey(url);
+            const rec = map[key] || { n: 0 };
+            rec.n = (Number(rec.n) || 0) + 1;
+            rec.last = Date.now();
+            rec.status = status || 0;
+            rec.gone = status === 403 || status === 404 || status === 410;
+            map[key] = rec;
+            // 失败记录也做上限，避免长期运行无限膨胀
+            const keys = Object.keys(map);
+            if (keys.length > 20000) {
+                keys.sort((a, b) => (map[a].last || 0) - (map[b].last || 0))
+                    .slice(0, keys.length - 20000)
+                    .forEach((k) => delete map[k]);
+            }
+            pwSaveImageFails(map);
+        }
+        function pwClearImageFailure(url) {
+            const map = pwLoadImageFails();
+            const key = pwImageFailKey(url);
+            if (!map[key]) return;
+            delete map[key];
+            pwSaveImageFails(map);
+        }
+        function pwResetImageFailures() {
+            try { localStorage.removeItem(PW_IMG_FAIL_KEY); } catch { /* 忽略 */ }
+        }
 
         function pwRenderImageStatus() {
             const el = document.getElementById('posterImageStatus');
@@ -10593,6 +10651,13 @@
             });
             if (!tasks.length) return;
 
+            // 之前确认不存在/连续失败的图片不再每次启动重试
+            const failMap = pwLoadImageFails();
+            for (let i = tasks.length - 1; i >= 0; i--) {
+                if (pwShouldSkipImageFail(failMap[pwImageFailKey(tasks[i])])) tasks.splice(i, 1);
+            }
+            if (!tasks.length) return;
+
             // 先向服务端确认哪些图片已经落盘缓存：只补缺失的。
             // 分批查询，避免几千条 URL 一次 POST 超过服务端请求体上限后
             // 回退成“全部重新加载”。
@@ -10636,15 +10701,22 @@
             const worker = async () => {
                 while (idx < tasks.length && !job.aborted) {
                     const url = tasks[idx++];
+                    let status = 0;
                     try {
                         const resp = await fetch(url, { cache: 'default' });
+                        status = resp.status;
                         if (!resp.ok) {
                             job.failed++;
+                            pwMarkImageFailure(url, status);
                         } else {
                             // 必须读完数据，/proxy 才会把图片写入本地缓存
                             await resp.arrayBuffer();
+                            pwClearImageFailure(url);
                         }
-                    } catch { job.failed++; }
+                    } catch {
+                        job.failed++;
+                        pwMarkImageFailure(url, 0);
+                    }
                     job.done++;
                     pwRenderImageStatus();
                 }
