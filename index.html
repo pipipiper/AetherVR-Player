@@ -810,7 +810,8 @@
             position: absolute; left: 0; top: 0; bottom: 0;
             border-radius: 999px;
             /* 已播放部分固定为蓝色，和未播放的灰色轨道区分开 */
-            background: linear-gradient(90deg, #2f6bff, #38bdf8);
+            background-color: #2f6bff;
+            background-image: linear-gradient(90deg, #2f6bff, #38bdf8);
             width: 0%;
             pointer-events: none;
             box-shadow: 0 0 10px rgba(47, 107, 255, 0.55);
@@ -1535,7 +1536,8 @@
         }
         .progress-bar:hover { border: none; }
         .progress-fill {
-            background: linear-gradient(90deg, #2f6bff, #38bdf8);
+            background-color: #2f6bff;
+            background-image: linear-gradient(90deg, #2f6bff, #38bdf8);
             border-radius: 999px;
             position: relative;
         }
@@ -5244,48 +5246,67 @@
         }
         function hideLoadSpin() {
             seekLoading.classList.remove('active');
+            stopMediaSpeedTracker();
         }
 
-        // 加载时实测下载速度：只读前 64KB 就取消，不额外下载整片
+        // 真实媒体流测速：持续读取当前视频的下载流，按最近窗口计算当前速度，
+        // 同时显示全程平均速度。不是固定 64KB 的一次性探针。
+        let mediaSpeedTracker = null;
+        function stopMediaSpeedTracker() {
+            if (!mediaSpeedTracker) return;
+            mediaSpeedTracker.stop();
+            mediaSpeedTracker = null;
+        }
         function formatNetworkSpeed(bytesPerSecond) {
             if (!isFinite(bytesPerSecond) || bytesPerSecond <= 0) return '';
             const kbps = bytesPerSecond / 1024;
             return kbps >= 1024 ? `${(kbps / 1024).toFixed(2)} MB/s` : `${kbps.toFixed(0)} KB/s`;
         }
-        async function measureDownloadSpeed(url) {
+        function startMediaSpeedTracker(url, requestId) {
+            stopMediaSpeedTracker();
             const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), 10000);
-            let reader = null;
-            try {
+            const state = { stopped: false };
+            const tracker = { stop() { state.stopped = true; controller.abort(); } };
+            mediaSpeedTracker = tracker;
+            (async () => {
+                let reader = null;
+                let totalBytes = 0;
                 const started = performance.now();
-                const resp = await fetch(url, {
-                    headers: { Range: 'bytes=0-65535' },
-                    cache: 'no-store', signal: controller.signal,
-                });
-                if (!resp.ok || !resp.body) return null;
-                reader = resp.body.getReader();
-                let loaded = 0;
-                while (loaded < 65536) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    loaded += value ? value.byteLength : 0;
+                let windowStart = started, windowBytes = 0;
+                try {
+                    const resp = await fetch(url, { cache: 'no-store', signal: controller.signal });
+                    if (!resp.ok || !resp.body) return;
+                    reader = resp.body.getReader();
+                    while (!state.stopped) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        const now = performance.now();
+                        totalBytes += value ? value.byteLength : 0;
+                        const windowSeconds = (now - windowStart) / 1000;
+                        // 每 750ms 更新一次：最近窗口速度 + 全程平均速度
+                        if (windowSeconds >= 0.75) {
+                            const current = (totalBytes - windowBytes) / windowSeconds;
+                            const average = totalBytes / ((now - started) / 1000);
+                            if (requestId === urlLoadRequestId && seekLoading.classList.contains('active')) {
+                                showLoadSpin(`视频加载中… · 当前网速 ${formatNetworkSpeed(current)}`
+                                    + ` · 平均 ${formatNetworkSpeed(average)}`);
+                            }
+                            windowStart = now;
+                            windowBytes = totalBytes;
+                        }
+                        // 仅为加载阶段测速，限制额外流量和时间，播放就绪由 hideLoadSpin 停止
+                        if (totalBytes >= 16 * 1024 * 1024 || now - started > 20000) break;
+                    }
+                    const average = totalBytes / Math.max((performance.now() - started) / 1000, 0.001);
+                    if (totalBytes > 0 && requestId === urlLoadRequestId && seekLoading.classList.contains('active')) {
+                        showLoadSpin(`视频加载中… · 当前网速 ${formatNetworkSpeed(average)}`);
+                    }
+                } catch { /* 取消、切源或网络失败均静默 */ }
+                finally {
+                    if (reader) { try { await reader.cancel(); } catch { /* 已结束 */ } }
+                    if (mediaSpeedTracker === tracker) mediaSpeedTracker = null;
                 }
-                const seconds = Math.max((performance.now() - started) / 1000, 0.001);
-                return loaded > 0 ? loaded / seconds : null;
-            } catch {
-                return null;
-            } finally {
-                clearTimeout(timer);
-                if (reader) { try { await reader.cancel(); } catch { /* 已结束 */ } }
-            }
-        }
-        async function showLoadingSpeed(url, requestId) {
-            const speed = await measureDownloadSpeed(url);
-            // 加载已结束/已切换视频时不重新弹出提示
-            if (requestId !== urlLoadRequestId || !seekLoading.classList.contains('active')) return;
-            showLoadSpin(speed
-                ? `视频加载中… · 当前网速 ${formatNetworkSpeed(speed)}`
-                : '视频加载中…');
+            })();
         }
         // 首帧就绪或出错时收起「加载中」提示
         ['loadeddata', 'canplay', 'error'].forEach((evt) => {
@@ -5493,9 +5514,9 @@
             // VR/360 is the default view once metadata is ready
             pendingVrMode = true;
             videoPlayer.load();
-            showLoadSpin('视频加载中… · 测速中…');
-            // 前 64KB 实测下载速度，加载期间显示在提示条里
-            showLoadingSpeed(playable, requestId);
+            showLoadSpin('视频加载中… · 正在测速…');
+            // 直接媒体流按滚动窗口实测下载速度；HLS 播放列表不做无意义测速
+            if (!isTranscodePlaylistUrl(rawUrl)) startMediaSpeedTracker(playable, requestId);
         }
 
         const videoUrlInput = document.getElementById('videoUrl');

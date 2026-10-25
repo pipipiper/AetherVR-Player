@@ -1,9 +1,9 @@
 {
   "name": "aethervr-player",
-  "version": "1.12.4",
+  "version": "1.12.5",
   "private": true,
   "author": "pipipiper <80835169+pipipiper@users.noreply.github.com>",
-  "description": "AetherVR Player：不用 VR 眼镜也能看 VR 视频。本地文件与在线直链即点即播，支持 360 全景与 SBS 分屏",
+  "description": "AetherVR Player锛氫笉鐢?VR 鐪奸暅涔熻兘鐪?VR 瑙嗛銆傛湰鍦版枃浠朵笌鍦ㄧ嚎鐩撮摼鍗崇偣鍗虫挱锛屾敮鎸?360 鍏ㄦ櫙涓?SBS 鍒嗗睆",
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "node server.js",
@@ -67,3 +67,4 @@
     }
   }
 }
+
