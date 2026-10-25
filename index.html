@@ -119,7 +119,6 @@
             margin: 0; padding: 0;
         }
         .container.fullscreen .drop-zone,
-        .container.fullscreen .file-info,
         .container.fullscreen .sbs-options,
         .container.fullscreen .error-message { display: none; }
         .container.fullscreen .view-toggle { position: static; transform: none; }
@@ -830,6 +829,20 @@
             pointer-events: none;
             box-shadow: 0 0 10px rgba(47, 107, 255, 0.55);
             transition: width 0.06s linear;
+        }
+        /* 重点标记：进度条上的橙色小菱形 */
+        .bookmark-track { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
+        .bookmark-mark {
+            position: absolute; top: 50%; width: 9px; height: 9px;
+            margin-left: -4.5px; transform: translateY(-50%) rotate(45deg);
+            background: #f59e0b; border-radius: 2px; cursor: pointer;
+            pointer-events: auto;
+            box-shadow: 0 0 0 2px rgba(10, 15, 25, 0.45), 0 0 8px rgba(245, 158, 11, 0.7);
+            transition: transform .12s ease, background .12s ease;
+        }
+        .bookmark-mark:hover {
+            background: #fbbf24;
+            transform: translateY(-50%) rotate(45deg) scale(1.35);
         }
         /* 滑块拖拽球 */
         .progress-bar::after {
@@ -2355,6 +2368,7 @@
                         <div class="progress-container">
                             <div class="progress-bar" id="progressBar">
                                 <div class="progress-fill" id="progressFill"></div>
+                                <div class="bookmark-track" id="bookmarkTrack"></div>
                                 <div class="loop-ab-track" id="loopAbTrack" style="display:none">
                                     <div class="loop-ab-marker" id="loopMarkerA"></div>
                                     <div class="loop-ab-range" id="loopRangeFill"></div>
@@ -2386,6 +2400,7 @@
                             </div>
                             <button class="control-btn" id="favBtn" title="收藏当前视频" style="display:none"><i class="fa-solid fa-star"></i></button>
                             <button class="control-btn" id="addToListBtn" title="把当前视频加入播放列表" style="display:none"><i class="fa-solid fa-square-plus"></i></button>
+                            <button class="control-btn" id="bookmarkBtn" title="标记当前时间为重点（再次点击可取消）" style="display:none"><i class="fa-solid fa-bookmark"></i></button>
                         </div>
 
                         <div class="controls-center">
@@ -6537,6 +6552,88 @@
         });
         videoPlayer.addEventListener('volumechange', updateVolumeIcon);
         updateVolumeIcon();
+
+        // ── 视频重点标记（书签）────────────────────────────────
+        const BOOKMARK_STORE_KEY = 'aethervr-bookmarks-v1';
+        let bookmarkStore = {};
+        try { bookmarkStore = JSON.parse(localStorage.getItem(BOOKMARK_STORE_KEY)) || {}; } catch { bookmarkStore = {}; }
+        const bookmarkBtn = document.getElementById('bookmarkBtn');
+        const bookmarkTrack = document.getElementById('bookmarkTrack');
+
+        function bookmarkCurrentKey() {
+            if (posCurrentKey) return posCurrentKey;
+            const raw = videoPlayer.dataset.remoteUrl || videoPlayer.currentSrc || '';
+            return raw ? posKeyFromUrl(raw) : '';
+        }
+        function currentBookmarks() {
+            const key = bookmarkCurrentKey();
+            const list = key && Array.isArray(bookmarkStore[key]) ? bookmarkStore[key] : [];
+            return list.filter((t) => Number.isFinite(t)).sort((a, b) => a - b);
+        }
+        function saveBookmarks(list) {
+            const key = bookmarkCurrentKey();
+            if (!key) return;
+            if (list.length) bookmarkStore[key] = list;
+            else delete bookmarkStore[key];
+            try { localStorage.setItem(BOOKMARK_STORE_KEY, JSON.stringify(bookmarkStore)); } catch { /* 忽略 */ }
+        }
+        function removeBookmarkAt(time) {
+            const next = currentBookmarks().filter((t) => Math.abs(t - time) > 0.5);
+            saveBookmarks(next);
+            renderBookmarks();
+            showSpatialToast(`已删除标记 ${formatTime(time)}`);
+        }
+        function renderBookmarks() {
+            if (!bookmarkTrack) return;
+            bookmarkTrack.innerHTML = '';
+            const dur = effectiveDuration();
+            if (!dur || !isFinite(dur) || dur <= 0) return;
+            currentBookmarks().forEach((t) => {
+                if (t < 0 || t > dur) return;
+                const mark = document.createElement('div');
+                mark.className = 'bookmark-mark';
+                mark.style.left = `${Math.min(100, (t / dur) * 100)}%`;
+                mark.title = `重点 ${formatTime(t)}（右键删除）`;
+                mark.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    seekToGlobal(t);
+                });
+                mark.addEventListener('contextmenu', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    removeBookmarkAt(t);
+                });
+                bookmarkTrack.appendChild(mark);
+            });
+        }
+        function toggleBookmarkAtCurrent() {
+            const t = Math.floor(effectiveCurrentTime());
+            if (!isFinite(t) || t < 0) {
+                showSpatialToast('当前没有可标记的播放位置');
+                return;
+            }
+            const list = currentBookmarks();
+            const near = list.find((v) => Math.abs(v - t) <= 2);
+            if (near != null) {
+                removeBookmarkAt(near);
+                return;
+            }
+            list.push(t);
+            list.sort((a, b) => a - b);
+            saveBookmarks(list);
+            renderBookmarks();
+            showSpatialToast(`已标记重点 ${formatTime(t)}`);
+        }
+        if (bookmarkBtn) bookmarkBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleBookmarkAtCurrent(); });
+        videoPlayer.addEventListener('loadedmetadata', () => {
+            if (bookmarkBtn) bookmarkBtn.style.display = '';
+            renderBookmarks();
+        });
+        videoPlayer.addEventListener('durationchange', renderBookmarks);
+        videoPlayer.addEventListener('emptied', () => {
+            if (bookmarkBtn) bookmarkBtn.style.display = 'none';
+            if (bookmarkTrack) bookmarkTrack.innerHTML = '';
+        });
 
         // Speed control
         speedSelect.addEventListener('change', (e) => {
