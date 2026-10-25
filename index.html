@@ -877,7 +877,12 @@
 
         /* 按钮与音量倍速控件 */
         .volume-control { display: flex; align-items: center; gap: 8px; color: #94a3b8; }
-        .volume-control i { font-size: 13px; }
+        .volume-control i {
+            font-size: 13px; cursor: pointer; padding: 4px; border-radius: 6px;
+            transition: color .15s ease, background .15s ease;
+        }
+        .volume-control i:hover { color: #fff; background: rgba(255,255,255,.1); }
+        .volume-control i:focus-visible { outline: 2px solid #38bdf8; outline-offset: 1px; }
         .volume-slider {
             width: 70px; height: 4px; accent-color: #38bdf8; cursor: pointer;
             border-radius: 999px; background: rgba(255,255,255,0.2);
@@ -2337,7 +2342,7 @@
                     <div class="controls-main-row">
                         <div class="controls-side">
                             <div class="volume-control">
-                                <i class="fa-solid fa-volume-high"></i>
+                                <i class="fa-solid fa-volume-high" id="volumeIcon" role="button" tabindex="0" title="静音" aria-label="静音"></i>
                                 <input type="range" class="volume-slider" id="volumeSlider" min="0" max="100" value="100">
                             </div>
                             <div class="speed-control">
@@ -2805,6 +2810,7 @@
         const currentTimeDisplay = document.getElementById('currentTime');
         const durationDisplay = document.getElementById('duration');
         const volumeSlider = document.getElementById('volumeSlider');
+        const volumeIcon = document.getElementById('volumeIcon');
         const speedSelect = document.getElementById('speedSelect');
         const fullscreenBtn = document.getElementById('fullscreenBtn');
         const normalViewBtn = document.getElementById('normalViewBtn');
@@ -6430,9 +6436,44 @@
         });
 
         // Volume control
+        let lastAudibleVolume = 1;
+        function updateVolumeIcon() {
+            if (!volumeIcon) return;
+            const v = videoPlayer.volume;
+            volumeIcon.className = 'fa-solid '
+                + (v <= 0 ? 'fa-volume-xmark' : v < 0.5 ? 'fa-volume-low' : 'fa-volume-high');
+            const label = v <= 0 ? '取消静音' : '静音';
+            volumeIcon.title = label;
+            volumeIcon.setAttribute('aria-label', label);
+        }
+        function setMuted(muted) {
+            if (muted) {
+                if (videoPlayer.volume > 0) lastAudibleVolume = videoPlayer.volume;
+                videoPlayer.volume = 0;
+                volumeSlider.value = '0';
+            } else {
+                const v = lastAudibleVolume > 0 ? lastAudibleVolume : 1;
+                videoPlayer.volume = Math.min(1, v);
+                volumeSlider.value = String(Math.round(videoPlayer.volume * 100));
+            }
+            updateVolumeIcon();
+        }
+        if (volumeIcon) {
+            volumeIcon.addEventListener('click', () => setMuted(videoPlayer.volume > 0));
+            volumeIcon.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setMuted(videoPlayer.volume > 0);
+                }
+            });
+        }
         volumeSlider.addEventListener('input', (e) => {
             videoPlayer.volume = e.target.value / 100;
+            if (videoPlayer.volume > 0) lastAudibleVolume = videoPlayer.volume;
+            updateVolumeIcon();
         });
+        videoPlayer.addEventListener('volumechange', updateVolumeIcon);
+        updateVolumeIcon();
 
         // Speed control
         speedSelect.addEventListener('change', (e) => {
