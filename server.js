@@ -82,6 +82,46 @@ const VIDEO_MIME = {
   ".3gp": "video/3gpp",
 };
 
+// 真实视频流发送量统计：前端播放/缓冲时轮询它算当前网速，
+// 不需要另外下载第二条流，避免和播放抢上游带宽导致网络错误。
+const mediaThroughput = {
+  bytes: 0,
+  active: 0,
+  lastAt: Date.now(),
+};
+/// 跟踪一个视频响应流的实际发送字节数（图片代理不统计）
+/// 注意：必须统计 res.write 的字节，不能给源流额外挂 data 监听——
+/// 那会提前把流切到 flowing 模式，pipe 之前丢失开头的媒体数据，
+/// 直接导致“无法解码视频/网络错误”。
+function trackMediaStream(stream, res) {
+  mediaThroughput.active++;
+  mediaThroughput.lastAt = Date.now();
+  let finished = false;
+  const originalWrite = res.write;
+  res.write = function (chunk, encoding, callback) {
+    try {
+      if (chunk && chunk.length) {
+        const len = typeof chunk === "string"
+          ? Buffer.byteLength(chunk, typeof encoding === "string" ? encoding : "utf8")
+          : chunk.length;
+        mediaThroughput.bytes += len;
+        mediaThroughput.lastAt = Date.now();
+      }
+    } catch { /* 统计失败不影响响应 */ }
+    if (typeof encoding === "function") return originalWrite.call(this, chunk, encoding);
+    return originalWrite.call(this, chunk, encoding, callback);
+  };
+  const done = () => {
+    if (finished) return;
+    finished = true;
+    res.write = originalWrite;
+    mediaThroughput.active = Math.max(0, mediaThroughput.active - 1);
+    mediaThroughput.lastAt = Date.now();
+  };
+  res.once("finish", done);
+  res.once("close", done);
+}
+
 const MIME = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -650,8 +690,7 @@ function preflightRemote(target, redirects = 0, cred = null) {
   });
 }
 
-async function proxyVideo(target, req, res, redirects = 0, cred = null, cacheKey = null) {  let u;
-  try {
+async function proxyVideo(target, req, res, redirects = 0, cred = null, cacheKey = null) {  let u;  try {
     u = new URL(target);
   } catch {
     res.writeHead(400).end("Bad proxy URL");
@@ -749,6 +788,7 @@ async function proxyVideo(target, req, res, redirects = 0, cred = null, cacheKey
       return;
     }
     res.writeHead(pres.statusCode, h);
+    if (!cacheableImage) trackMediaStream(pres, res);
     pres.pipe(res);
   });
   preq.on("error", (e) => {
@@ -888,6 +928,16 @@ const requestHandler = async (req, res) => {
         probe: FFPROBE_AVAILABLE,
         transcode: VIDEO_ENCODER_AVAILABLE,
         webdav: true,
+      }));
+      return;
+    }
+    // 当前真实视频流发送量：前端据此显示实时网速，不再额外下载测速流
+    if (urlPath === "/api/netstat") {
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end(JSON.stringify({
+        bytes: mediaThroughput.bytes,
+        active: mediaThroughput.active,
+        at: Date.now(),
       }));
       return;
     }
@@ -1358,11 +1408,15 @@ const requestHandler = async (req, res) => {
           "Content-Length": end - start + 1,
         });
         if (req.method === "HEAD") return res.end();
-        fs.createReadStream(target, { start, end }).on("error", () => res.destroy()).pipe(res);
+        const stream = fs.createReadStream(target, { start, end });
+        if (VIDEO_MIME[ext]) trackMediaStream(stream, res);
+        stream.on("error", () => res.destroy()).pipe(res);
       } else {
         res.writeHead(200, { ...base, "Content-Length": stat.size });
         if (req.method === "HEAD") return res.end();
-        fs.createReadStream(target).on("error", () => res.destroy()).pipe(res);
+        const stream = fs.createReadStream(target);
+        if (VIDEO_MIME[ext]) trackMediaStream(stream, res);
+        stream.on("error", () => res.destroy()).pipe(res);
       }
       return;
     }

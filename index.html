@@ -4944,8 +4944,10 @@
         // Load video file
         async function loadVideoFile(file) {
             if (!file) return;
+            // 新起播先清掉上一次的错误弹窗/内联报错，避免错误状态卡住换片
+            closeErrorDialog();
+            hideError();
             stopMediaSpeedTracker();
-            mediaContentLength = 0;
             playedFromPosterWall = false;   // 本地文件起播，停止后回首页
             playOrigin = 'home';
             // 播放本地文件时清除云端列表的播放高亮
@@ -5078,9 +5080,15 @@
             appErrorTitle.textContent = info.title;
             appErrorSummary.textContent = info.summary;
             appErrorDetails.textContent = info.raw;
-            appErrorMask.classList.add('active');
-            appErrorMask.setAttribute('aria-hidden', 'false');
-            requestAnimationFrame(() => appErrorClose.focus());
+            // 这个带首页内容的错误弹窗只在首页出现；播放中的错误走首页内联报错，
+            // 否则弹窗会一直压在画面上，导致换片后也无法继续播放。
+            if (dropZone.classList.contains('active')) {
+                appErrorMask.classList.add('active');
+                appErrorMask.setAttribute('aria-hidden', 'false');
+                requestAnimationFrame(() => appErrorClose.focus());
+            } else {
+                closeErrorDialog();
+            }
         }
 
         function closeErrorDialog() {
@@ -5252,88 +5260,59 @@
             stopMediaSpeedTracker();
         }
 
-        // 真实媒体流测速：持续读取当前视频的下载流，按最近窗口计算当前速度，
-        // 同时显示全程平均速度。不是固定 64KB 的一次性探针。
-        let mediaSpeedTracker = null;
-        let mediaContentLength = 0;
-        let mediaSpeedLastStart = 0;
+        // 真实网速：轮询本地服务端统计的实际视频流发送字节数。
+        // 不再另开一条下载流，避免与播放抢带宽导致网络错误。
+        let mediaSpeedTimer = null;
+        let mediaSpeedLabel = '视频加载中…';
+        let mediaSpeedSamples = [];
         function stopMediaSpeedTracker() {
-            if (!mediaSpeedTracker) return;
-            mediaSpeedTracker.stop();
-            mediaSpeedTracker = null;
+            if (mediaSpeedTimer) {
+                clearInterval(mediaSpeedTimer);
+                mediaSpeedTimer = null;
+            }
+            mediaSpeedSamples = [];
         }
         function formatNetworkSpeed(bytesPerSecond) {
             if (!isFinite(bytesPerSecond) || bytesPerSecond <= 0) return '';
             const kbps = bytesPerSecond / 1024;
             return kbps >= 1024 ? `${(kbps / 1024).toFixed(2)} MB/s` : `${kbps.toFixed(0)} KB/s`;
         }
-        function startMediaSpeedTracker(url, requestId, offset = 0, label = '视频加载中…') {
-            stopMediaSpeedTracker();
-            const controller = new AbortController();
-            const state = { stopped: false };
-            const tracker = { stop() { state.stopped = true; controller.abort(); } };
-            mediaSpeedTracker = tracker;
-            (async () => {
-                let reader = null;
-                let totalBytes = 0;
-                const started = performance.now();
-                let windowStart = started, windowBytes = 0;
-                try {
-                    const headers = offset > 0 ? { Range: `bytes=${offset}-` } : {};
-                    const resp = await fetch(url, { headers, cache: 'no-store', signal: controller.signal });
-                    if (!resp.ok || !resp.body) return;
-                    reader = resp.body.getReader();
-                    while (!state.stopped) {
-                        const { done, value } = await reader.read();
-                        if (done) break;
-                        const now = performance.now();
-                        totalBytes += value ? value.byteLength : 0;
-                        const windowSeconds = (now - windowStart) / 1000;
-                        // 每 750ms 更新一次：最近窗口速度 + 全程平均速度
-                        if (windowSeconds >= 0.75) {
-                            const current = (totalBytes - windowBytes) / windowSeconds;
-                            if (requestId === urlLoadRequestId && seekLoading.classList.contains('active')) {
-                                showLoadSpin(`${label} · 当前网速 ${formatNetworkSpeed(current)}`);
-                            }
-                            windowStart = now;
-                            windowBytes = totalBytes;
-                        }
-                        // 仅为加载阶段测速，限制额外流量和时间，播放就绪由 hideLoadSpin 停止
-                        if (totalBytes >= 16 * 1024 * 1024 || now - started > 20000) break;
-                    }
-                    const current = totalBytes / Math.max((performance.now() - started) / 1000, 0.001);
-                    if (totalBytes > 0 && requestId === urlLoadRequestId && seekLoading.classList.contains('active')) {
-                        showLoadSpin(`${label} · 当前网速 ${formatNetworkSpeed(current)}`);
-                    }
-                } catch { /* 取消、切源或网络失败均静默 */ }
-                finally {
-                    if (reader) { try { await reader.cancel(); } catch { /* 已结束 */ } }
-                    if (mediaSpeedTracker === tracker) mediaSpeedTracker = null;
-                }
-            })();
-        }
-        // 缓冲/拖动/卡住时也显示当前网速；从当前播放位置附近测速
-        async function showBufferingWithSpeed(text) {
-            showLoadSpin(text);
-            const url = videoPlayer.currentSrc;
-            if (!url || isTranscodePlaylistUrl(url)) return;
+        async function sampleMediaSpeed(requestId) {
+            if (requestId !== urlLoadRequestId || !seekLoading.classList.contains('active')) {
+                stopMediaSpeedTracker();
+                return;
+            }
+            let data;
+            try {
+                const resp = await fetch(backendUrl('api/netstat'), { cache: 'no-store' });
+                if (!resp.ok) return;
+                data = await resp.json();
+            } catch { return; }
             const now = performance.now();
-            if (now - mediaSpeedLastStart < 2000) return;  // 避免频繁重启测速
-            mediaSpeedLastStart = now;
-            if (!mediaContentLength) {
-                // 后台补充文件大小用于后续定位测速，绝不让 HEAD 阻塞当前提示
-                fetch(url, { method: 'HEAD' }).then((r) => {
-                    const len = Number(r.headers.get('Content-Length'));
-                    if (Number.isFinite(len) && len > 0) mediaContentLength = len;
-                }).catch(() => { /* 不支持 HEAD 时从头测速 */ });
+            mediaSpeedSamples.push({ at: now, bytes: data.bytes });
+            // 只保留最近 2.5 秒的采样，速度更稳定不跳
+            while (mediaSpeedSamples.length > 5) mediaSpeedSamples.shift();
+            if (mediaSpeedSamples.length < 2) return;
+            const first = mediaSpeedSamples[0];
+            const seconds = (now - first.at) / 1000;
+            if (seconds <= 0) return;
+            const speed = (data.bytes - first.bytes) / seconds;
+            if (speed > 0) {
+                showLoadSpin(`${mediaSpeedLabel} · 当前网速 ${formatNetworkSpeed(speed)}`);
             }
-            const dur = effectiveDuration();
-            const cur = effectiveCurrentTime();
-            let offset = 0;
-            if (mediaContentLength && dur > 0 && cur > 0) {
-                offset = Math.min(Math.floor((cur / dur) * mediaContentLength), mediaContentLength - 1);
-            }
-            startMediaSpeedTracker(url, urlLoadRequestId, offset, text);
+        }
+        function startMediaSpeedMonitor(label, requestId) {
+            mediaSpeedLabel = label;
+            if (mediaSpeedTimer) return;   // 已在校速，只更新提示语
+            mediaSpeedSamples = [];
+            const tick = () => sampleMediaSpeed(requestId);
+            tick();
+            mediaSpeedTimer = setInterval(tick, 750);
+        }
+        // 缓冲/拖动/卡住时也显示当前网速（数据来自实际播放流）
+        function showBufferingWithSpeed(text) {
+            showLoadSpin(text);
+            startMediaSpeedMonitor(text, urlLoadRequestId);
         }
         // 首帧就绪或出错时收起「加载中」提示
         ['loadeddata', 'canplay', 'error'].forEach((evt) => {
@@ -5415,9 +5394,11 @@
         }
 
         async function loadVideoURL(url) {
+            // 新起播先清掉上一次的错误弹窗/内联报错，避免错误状态卡住换片
+            closeErrorDialog();
+            hideError();
             try { posSaveNow(); } catch { /* 切走前记录旧视频进度 */ }
             stopMediaSpeedTracker();
-            mediaContentLength = 0;
             const requestId = ++urlLoadRequestId;
             if (activeProbeController) activeProbeController.abort();
             activeProbeController = null;
@@ -5528,7 +5509,6 @@
                 fetch(rawUrl, { method: 'HEAD' }).then((r) => {
                     if (requestId !== urlLoadRequestId) return;
                     const len = Number(r.headers.get('Content-Length'));
-                    if (Number.isFinite(len) && len > 0) mediaContentLength = len;
                     fileSize.textContent = Number.isFinite(len) && len > 0 ? formatFileSize(len) : '本地';
                 }).catch(() => {
                     if (requestId === urlLoadRequestId) fileSize.textContent = '本地';
@@ -5548,8 +5528,7 @@
             pendingVrMode = true;
             videoPlayer.load();
             showLoadSpin('视频加载中…');
-            // 直接媒体流按滚动窗口实测当前网速；HLS 播放列表不做无意义测速
-            if (!isTranscodePlaylistUrl(rawUrl)) startMediaSpeedTracker(playable, requestId);
+            startMediaSpeedMonitor('视频加载中…', requestId);
         }
 
         const videoUrlInput = document.getElementById('videoUrl');
