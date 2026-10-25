@@ -1368,6 +1368,8 @@
             max-height: none; flex: 1; min-height: 0;
             overflow-y: auto; display: block;
         }
+        /* 目录操作按钮组靠右，路径文本仍在左侧 */
+        #posterWallScanHereBtn { margin-left: auto; }
         /* 整屏时海报卡片更大一号 */
         .pw-page .poster-wall {
             grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
@@ -1895,6 +1897,34 @@
         .pw-page.managing .poster-card.pw-selected .pw-card-check {
             background: var(--yellow); border-color: var(--yellow);
         }
+        /* 回收站 */
+        .pw-trash-list {
+            max-height: 52vh; overflow-y: auto;
+            display: flex; flex-direction: column; gap: 6px;
+            margin: 12px 0;
+        }
+        .pw-trash-row {
+            display: flex; align-items: center; gap: 10px;
+            padding: 7px 9px; border: 1px solid var(--border); border-radius: 9px;
+            background: var(--surface);
+        }
+        .pw-trash-thumb {
+            width: 42px; height: 56px; flex: none; border-radius: 5px;
+            object-fit: cover; background: #0b1220;
+        }
+        .pw-trash-icon {
+            width: 42px; height: 56px; flex: none; border-radius: 5px;
+            display: grid; place-items: center; background: #0b1220; color: var(--muted);
+        }
+        .pw-trash-info { flex: 1; min-width: 0; }
+        .pw-trash-title {
+            font-size: 12.5px; color: var(--text);
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .pw-trash-sub { font-size: 11px; color: var(--muted); margin-top: 3px; }
+        .pw-trash-row .pl-modal-btn { padding: 5px 10px; font-size: 11.5px; flex: none; }
+        .pw-trash-head { display: flex; align-items: center; gap: 8px; }
+        .pw-trash-head .pl-modal-desc { margin: 0; flex: 1; }
         /* 管理模式拖动多选框 */
         .pw-marquee {
             position: fixed; z-index: 9999; pointer-events: none;
@@ -2629,7 +2659,7 @@
                     <div class="pw-manage-bar" id="pwManageBar" style="display:none">
                         <span class="pw-manage-count" id="pwManageCount">已选 0 项</span>
                         <button class="pl-modal-btn" id="pwManageSelectAll">全选</button>
-                        <button class="pl-modal-btn" id="pwManageRestore" title="清除删除记录，重新扫描后恢复">恢复已删</button>
+                        <button class="pl-modal-btn" id="pwManageRestore" title="打开回收站，逐个或多选恢复已删除影片">回收站</button>
                         <button class="pl-modal-btn danger" id="pwManageDelete">删除所选</button>
                         <button class="pl-modal-btn primary" id="pwManageDone">完成</button>
                     </div>
@@ -10059,6 +10089,10 @@
             pwEndMarquee();
             pwManaging = !!on;
             pwSelected.clear();
+            if (posterWallBody) {
+                posterWallBody.querySelectorAll('.poster-card.pw-selected')
+                    .forEach((card) => card.classList.remove('pw-selected'));
+            }
             posterWallMask.classList.toggle('managing', pwManaging);
             if (pwManageBar) pwManageBar.style.display = pwManaging ? 'flex' : 'none';
             pwUpdateManageBar();
@@ -10135,11 +10169,16 @@
             pwMarqueeCleanup = onUp;
         });
 
-        /// 从当前来源删除指定影片（记录到 removed，重扫也不会回来）
+        /// 从当前来源删除指定影片（记录到回收站；重扫也不会回来）
         function pwDeleteMovies(keys, { silent } = {}) {
             if (!keys || !keys.size) return;
             const snap = pwLoadSource(posterWallSourceId);
             if (!snap) return;
+            const deleted = (snap.movies || []).filter((m) => keys.has(m.key));
+            const trash = Array.isArray(snap.trash) ? snap.trash : [];
+            const byKey = new Map(trash.map((m) => [m.key, m]));
+            deleted.forEach((m) => byKey.set(m.key, { ...m, deletedAt: Date.now() }));
+            snap.trash = [...byKey.values()];
             snap.movies = (snap.movies || []).filter((m) => !keys.has(m.key));
             // 记录删除的 key：重扫时不再重新添加
             snap.removed = [...new Set([...(snap.removed || []), ...keys])];
@@ -10150,7 +10189,140 @@
             keys.forEach((k) => pwSelected.delete(k));
             pwApplyView();
             pwUpdateManageBar();
-            if (!silent) showSpatialToast(`已移除 ${keys.size} 部`);
+            if (!silent) showSpatialToast(`已移入回收站 ${keys.size} 部`);
+        }
+
+        /// 回收站列表：新版记录带完整影片信息；旧版只剩下 key
+        function pwTrashEntries(snap) {
+            const trash = Array.isArray(snap && snap.trash) ? snap.trash : [];
+            const known = new Set(trash.map((m) => m.key));
+            const legacy = ((snap && snap.removed) || [])
+                .filter((key) => !known.has(key))
+                .map((key) => ({ key, title: '旧版删除记录', legacy: true, videos: [], size: 0 }));
+            return [...trash, ...legacy];
+        }
+
+        function pwRestoreTrash(keys) {
+            if (!keys || !keys.size) return;
+            const snap = pwLoadSource(posterWallSourceId);
+            if (!snap) return;
+            const trash = Array.isArray(snap.trash) ? snap.trash : [];
+            const restored = trash.filter((m) => keys.has(m.key));
+            snap.trash = trash.filter((m) => !keys.has(m.key));
+            const oldRemoved = (snap.removed || []).filter((key) => !keys.has(key));
+            const legacyCount = [...keys].filter((key) => !restored.some((m) => m.key === key)).length;
+            snap.removed = oldRemoved;
+            const existing = new Set((snap.movies || []).map((m) => m.key));
+            const addBack = restored
+                .filter((m) => !existing.has(m.key))
+                .map((m) => {
+                    const { deletedAt, ...rest } = m;
+                    return rest;
+                });
+            snap.movies = [...(snap.movies || []), ...addBack];
+            snap.updatedAt = Date.now();
+            pwSaveSource(snap);
+            pwRenderStatusBar(snap);
+            pwAllMovies = pwRestoreMovies(snap);
+            pwApplyView();
+            pwUpdateManageBar();
+            showSpatialToast(`已恢复 ${restored.length} 部`
+                + (legacyCount ? `；${legacyCount} 条旧记录需重新扫描显示` : ''));
+        }
+
+        function pwShowTrash() {
+            const sourceId = posterWallSourceId;
+            const selected = new Set();
+            const mask = document.createElement('div');
+            mask.className = 'pl-modal-mask active';
+            mask.style.zIndex = '10060';
+
+            const render = () => {
+                const snap = pwLoadSource(sourceId);
+                const list = pwTrashEntries(snap);
+                if (!list.length) {
+                    mask.remove();
+                    showSpatialToast('回收站是空的');
+                    return;
+                }
+                mask.innerHTML = `
+                    <div class="pl-modal" style="max-width:640px;width:min(640px,94vw);">
+                        <div class="modal-head">
+                            <h3><i class="fa-solid fa-trash-can"></i>&nbsp; 回收站（${list.length}）</h3>
+                            <button class="modal-close-icon" data-close><i class="fa-solid fa-xmark"></i></button>
+                        </div>
+                        <div class="pw-trash-head">
+                            <p class="pl-modal-desc">删除的影片会保留在这里；可单个恢复，也可勾选后批量恢复。</p>
+                            <button class="pl-modal-btn" data-all>全选</button>
+                        </div>
+                        <div class="pw-trash-list">
+                            ${list.map((m) => {
+                                const thumb = m.posterUrl
+                                    ? `<img class="pw-trash-thumb" src="${escapeHtml(m.posterUrl)}" alt="">`
+                                    : `<div class="pw-trash-icon"><i class="fa-solid fa-film"></i></div>`;
+                                const sub = m.legacy
+                                    ? '旧版删除记录 · 恢复后需重新扫描'
+                                    : `${(m.videos || []).length > 1 ? `${m.videos.length} 碟 · ` : ''}${formatFileSize(m.size || 0)}`;
+                                return `<div class="pw-trash-row">
+                                    <input type="checkbox" data-key="${encodeURIComponent(m.key)}" ${selected.has(m.key) ? 'checked' : ''}>
+                                    ${thumb}
+                                    <div class="pw-trash-info">
+                                        <div class="pw-trash-title" title="${escapeHtml(m.title)}">${escapeHtml(m.title)}</div>
+                                        <div class="pw-trash-sub">${escapeHtml(sub)}</div>
+                                    </div>
+                                    <button class="pl-modal-btn" data-restore-one="${encodeURIComponent(m.key)}">恢复</button>
+                                </div>`;
+                            }).join('')}
+                        </div>
+                        <div style="display:flex;justify-content:flex-end;gap:8px;">
+                            <button class="pl-modal-btn" data-close>关闭</button>
+                            <button class="pl-modal-btn" data-restore-all>全部恢复</button>
+                            <button class="pl-modal-btn primary" data-restore-selected>恢复所选</button>
+                        </div>
+                    </div>`;
+            };
+
+            mask.addEventListener('change', (e) => {
+                const cb = e.target.closest('input[data-key]');
+                if (!cb) return;
+                const key = decodeURIComponent(cb.dataset.key);
+                if (cb.checked) selected.add(key); else selected.delete(key);
+            });
+            mask.addEventListener('click', (e) => {
+                if (e.target === mask || e.target.closest('[data-close]')) {
+                    mask.remove();
+                    return;
+                }
+                const one = e.target.closest('[data-restore-one]');
+                if (one) {
+                    pwRestoreTrash(new Set([decodeURIComponent(one.dataset.restoreOne)]));
+                    selected.clear();
+                    render();
+                    return;
+                }
+                if (e.target.closest('[data-all]')) {
+                    const snap = pwLoadSource(sourceId);
+                    pwTrashEntries(snap).forEach((m) => selected.add(m.key));
+                    render();
+                    return;
+                }
+                if (e.target.closest('[data-restore-selected]')) {
+                    if (!selected.size) { showSpatialToast('请先勾选要恢复的影片'); return; }
+                    const keys = new Set(selected);
+                    selected.clear();
+                    pwRestoreTrash(keys);
+                    render();
+                }
+                if (e.target.closest('[data-restore-all]')) {
+                    const snap = pwLoadSource(sourceId);
+                    const keys = new Set(pwTrashEntries(snap).map((m) => m.key));
+                    selected.clear();
+                    pwRestoreTrash(keys);
+                    render();
+                }
+            });
+            document.body.appendChild(mask);
+            render();
         }
 
         const pwManageBtn = document.getElementById('posterWallManageBtn');
@@ -10176,22 +10348,13 @@
         if (pwManageDelete) {
             pwManageDelete.addEventListener('click', () => {
                 if (!pwSelected.size) return;
-                if (!confirm(`确定从海报墙移除选中的 ${pwSelected.size} 部影片？（不会删除源文件；重扫也不会再加回，可在「恢复已删」还原）`)) return;
+                if (!confirm(`确定把选中的 ${pwSelected.size} 部影片移入回收站？（不会删除源文件，可在「回收站」恢复）`)) return;
                 pwDeleteMovies(new Set(pwSelected));
             });
         }
         const pwManageRestore = document.getElementById('pwManageRestore');
         if (pwManageRestore) {
-            pwManageRestore.addEventListener('click', () => {
-                const snap = pwLoadSource(posterWallSourceId);
-                if (!snap || !(snap.removed || []).length) {
-                    showSpatialToast('没有已删除的记录');
-                    return;
-                }
-                snap.removed = [];
-                pwSaveSource(snap);
-                showSpatialToast('已清除删除记录，重新扫描后恢复显示');
-            });
+            pwManageRestore.addEventListener('click', pwShowTrash);
         }
         const pwManageDone = document.getElementById('pwManageDone');
         if (pwManageDone) pwManageDone.addEventListener('click', () => pwSetManaging(false));
@@ -10200,6 +10363,7 @@
         if (posterWallBtn) {
             posterWallBtn.addEventListener('click', () => {
                 posterWallMask.classList.add('active');
+                pwSetManaging(false);   // 重新进入不保留上次勾选/管理模式
                 pwSetPathLabel('/');   // 海报墙展示整个来源，根目录不显示路径
                 pwRenderSourceSelect();
                 const snap = pwLoadSource(posterWallSourceId);
