@@ -8836,16 +8836,30 @@
                 seenKeys.add(m.key);
             });
 
-            // 本次没扫到的旧条目：**保留**，但标记 missingSince
-            // 仅在本次是"完整扫描"时才标记（中断的半成品不标记，避免误报失效）
+            // 本次没扫到的旧条目：
+            // - 半成品进度落库：原样保留，绝不标记失效
+            // - 完整扫描但目录有读取失败：标记 missingSince，等待下次确认
+            // - 完整扫描且零失败：视为源文件已丢失，自动移入回收站（可恢复）
+            const autoTrash = [];
             previous.forEach((old) => {
                 if (seenKeys.has(old.key)) return;
-                if (complete) {
-                    merged.push({ ...old, missingSince: old.missingSince || Date.now() });
-                } else {
+                if (!complete) {
                     merged.push(old);
+                } else if ((opts.failedDirs || 0) === 0 && opts.autoCleanMissing !== false) {
+                    autoTrash.push({ ...old, missingSince: old.missingSince || Date.now(), deletedAt: Date.now() });
+                } else {
+                    merged.push({ ...old, missingSince: old.missingSince || Date.now() });
                 }
             });
+
+            if (autoTrash.length) {
+                const trash = Array.isArray(snap.trash) ? snap.trash : [];
+                const byKey = new Map(trash.map((m) => [m.key, m]));
+                autoTrash.forEach((m) => byKey.set(m.key, m));
+                snap.trash = [...byKey.values()];
+                snap.removed = [...new Set([...(snap.removed || []), ...autoTrash.map((m) => m.key)])];
+            }
+            snap.autoRemovedCount = autoTrash.length;
 
             snap.movies = [...others, ...merged];
             snap.updatedAt = Date.now();
@@ -9521,7 +9535,7 @@
                 pwPersistPending = null;
                 if (!job) return;
                 try {
-                    pwMergeScan(posterWallSourceId, job.src, job.rootPath, job.movies);
+                    pwMergeScan(posterWallSourceId, job.src, job.rootPath, job.movies, { complete: false });
                 } catch (e) {
                     console.warn('扫描进度落库失败', e);
                 }
@@ -9538,7 +9552,7 @@
             pwPersistPending = null;
             if (!job) return;
             try {
-                pwMergeScan(posterWallSourceId, job.src, job.rootPath, job.movies);
+                pwMergeScan(posterWallSourceId, job.src, job.rootPath, job.movies, { complete: false });
             } catch (e) {
                 console.warn('冲刷扫描进度失败', e);
             }
@@ -9665,7 +9679,11 @@
             };
 
             while (queue.length) {
-                if (token.aborted) { pwFlushPersist(); return; }
+                if (token.aborted) {
+                    pwFlushPersist();
+                    if (posterScanAbort === token) posterScanAbort = null;
+                    return;
+                }
                 if (visited > MAX_DIRS) break;
                 const batch = queue.splice(0, CONCURRENCY);
                 const results = await Promise.all(batch.map(async (job) => {
@@ -9707,7 +9725,11 @@
                 emitIfChanged(false);
             }
 
-            if (token.aborted) { pwFlushPersist(); return; }
+            if (token.aborted) {
+                pwFlushPersist();
+                if (posterScanAbort === token) posterScanAbort = null;
+                return;
+            }
 
             emitIfChanged(true);
             const { movies: finalMovies } = buildPosterWall(allEntries, posterWallToUrl);
@@ -9715,7 +9737,8 @@
 
             // 智能合并：新增插入 / 已有更新 / 漏读标记失效（不直接删）
             const snap = pwMergeScan(posterWallSourceId, src, rootPath, finalMovies,
-                                     { complete: completed });
+                                     { complete: completed, failedDirs });
+            if (posterScanAbort === token) posterScanAbort = null;
             pwRenderStatusBar(snap);
             pwApplyView(pwRestoreMovies(snap));   // 完成后全量重排（排序/筛选生效）
 
@@ -9723,11 +9746,12 @@
             if (st) {
                 const total = snap.movies.length;
                 const missing = (snap.movies || []).filter((m) => m.missingSince).length;
-                const added = Math.max(0, finalMovies.length - (mode === 'incremental' ? 0 : 0));
+                const autoRemoved = snap.autoRemovedCount || 0;
                 let msg = `<i class="fa-solid fa-circle-check"></i> 本次扫到 ${finalMovies.length} 部`;
                 msg += ` · 该来源共 ${total} 部`;
+                if (autoRemoved) msg += ` · <span style="color:#f59e0b;">${autoRemoved} 部源文件已丢失，已移入回收站</span>`;
                 if (missing) msg += ` · <span style="color:#f59e0b;">${missing} 部疑似失效</span>`;
-                if (failedDirs) msg += ` · <span style="color:#f59e0b;">${failedDirs} 个目录读取失败（可重新扫描）</span>`;
+                if (failedDirs) msg += ` · <span style="color:#f59e0b;">${failedDirs} 个目录读取失败（已保留旧内容）</span>`;
                 st.innerHTML = msg;
                 setTimeout(() => { const e = statusEl(); if (e) e.remove(); }, 6000);
             }
@@ -10493,28 +10517,36 @@
             if (!tasks.length) return;
 
             // 先向服务端确认哪些图片已经落盘缓存：只补缺失的。
-            // 这样已缓存图片不会每次启动都重新传一遍、进度条也不会每次从 0 开始。
-            try {
-                const resp = await fetch(backendUrl('api/imgcache/status'), {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ urls: tasks.slice(0, 5000) }),
-                });
-                if (resp.ok) {
+            // 分批查询，避免几千条 URL 一次 POST 超过服务端请求体上限后
+            // 回退成“全部重新加载”。
+            const missing = [];
+            const CHECK_BATCH = 400;
+            for (let i = 0; i < tasks.length; i += CHECK_BATCH) {
+                const batch = tasks.slice(i, i + CHECK_BATCH);
+                try {
+                    const resp = await fetch(backendUrl('api/imgcache/status'), {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ urls: batch }),
+                    });
+                    if (!resp.ok) { missing.push(...batch); continue; }
                     const data = await resp.json();
-                    if (Array.isArray(data.cached)) {
-                        const missing = tasks.filter((_, i) => !data.cached[i]);
-                        if (!missing.length) {
-                            // 全部命中本机缓存：无需后台任务，也不显示进度
-                            posterImageJob = null;
-                            pwRenderImageStatus();
-                            return;
-                        }
-                        tasks.length = 0;
-                        tasks.push(...missing);
-                    }
+                    const cached = Array.isArray(data.cached) ? data.cached : [];
+                    batch.forEach((url, idx) => {
+                        if (!cached[idx]) missing.push(url);
+                    });
+                } catch {
+                    missing.push(...batch);
                 }
-            } catch { /* 查询失败则按原计划全量补齐 */ }
+            }
+            if (!missing.length) {
+                // 全部命中本机缓存：无需后台任务，也不显示进度
+                posterImageJob = null;
+                pwRenderImageStatus();
+                return;
+            }
+            tasks.length = 0;
+            tasks.push(...missing);
 
             const job = {
                 running: true, aborted: false, finished: false,

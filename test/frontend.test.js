@@ -123,10 +123,12 @@ test("poster wall supports incremental rescan without losing existing entries", 
   // 重扫同一文件夹时，新片插入、已有更新、漏读的标记失效而不是直接删
   assert.match(html, /function pwMergeScan\(sourceId, meta, rootPath, movies, options\)/);
   assert.match(html, /snapMovie\.missingSince = null/, "rescanned entries must clear missing flag");
-  assert.match(html, /merged\.push\(\{ \.\.\.old, missingSince: old\.missingSince \|\| Date\.now\(\) \}\)/,
-    "unseen entries must be marked, not deleted");
-  // 中断的半成品扫描不应标记失效
-  assert.match(html, /if \(complete\) \{/);
+  // 可靠完整扫描：源文件确实消失的条目自动移入回收站，可恢复
+  assert.match(html, /autoTrash\.push\(\{ \.\.\.old, missingSince/);
+  assert.match(html, /snap\.trash = \[\.\.\.byKey\.values\(\)\]/);
+  // 中断的半成品扫描保留旧条目，不标记失效、不自动清理
+  assert.match(html, /if \(!complete\) \{/);
+  assert.match(html, /complete: false/, "progress flush must not be treated as complete");
   // 有增量扫描入口
   assert.match(html, /'incremental'/, "scan must accept incremental mode");
   assert.match(html, /data-incremental/);
