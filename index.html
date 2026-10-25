@@ -2084,7 +2084,7 @@
             top: calc(14px + env(safe-area-inset-top));
             left: 50%; right: auto;
             transform: translateX(-50%);
-            width: min(960px, calc(100vw - 32px));
+            width: min(1560px, calc(100vw - 32px));
             height: auto; min-height: 44px;
             padding: 6px 14px;
             background: rgba(14, 18, 28, 0.86);
@@ -2094,6 +2094,11 @@
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08);
             z-index: 40;
         }
+        /* 左侧文件信息占满剩余空间，右侧按钮只占内容宽度：文件名能显示更长 */
+        .container.has-video .top-bar .left { flex: 1 1 auto; min-width: 0; }
+        .container.has-video .top-bar .right { flex: 0 0 auto; min-width: 0; }
+        .container.has-video .top-bar .file-info { width: 100%; min-width: 0; }
+        .container.has-video .top-bar .file-info p.fi-name { flex: 1 1 auto; min-width: 0; max-width: none; }
         /* 视频画面顶到窗口最上方，顶部栏浮在画面上而不是占一行 */
         body.has-video .page-content { padding-top: 0 !important; }
         .container.has-video .top-bar .file-info,
@@ -2106,17 +2111,35 @@
             color: #e8ecf3;
         }
         .container.has-video .top-bar .ghost-btn:hover { background: rgba(255, 255, 255, 0.16); }
-        .container.has-video .top-bar .view-btn {
+        /* 普通/VR 切换：做成一个整体的胶囊分段控件，和“返回首页”同风格 */
+        .container.has-video .top-bar .view-toggle {
+            display: inline-flex; align-items: center; gap: 2px;
+            padding: 3px;
             background: rgba(255, 255, 255, 0.06);
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            border-radius: 999px;
+            flex: none;
+        }
+        .container.has-video .top-bar .view-btn {
+            display: inline-flex; align-items: center; gap: 5px;
+            background: transparent;
+            border: none;
+            border-radius: 999px;
             color: #cbd5e1;
-            padding: 6px 12px;
+            padding: 6px 13px;
+            font-size: 12px;
+            font-weight: 600;
+            white-space: nowrap;
+            box-shadow: none;
+        }
+        .container.has-video .top-bar .view-btn:hover {
+            background: rgba(255, 255, 255, 0.08);
+            color: #fff;
         }
         .container.has-video .top-bar .view-btn.active {
-            background: var(--yellow);
-            border-color: var(--yellow);
+            background: rgba(255, 255, 255, 0.16);
             color: #fff;
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
         }
         @media (max-width: 640px) {
             .container.has-video .top-bar {
@@ -2125,6 +2148,8 @@
                 min-height: 40px;
                 padding: 5px 10px;
             }
+            .container.has-video .top-bar .view-toggle { padding: 2px; }
+            .container.has-video .top-bar .view-btn { padding: 5px 8px; font-size: 11px; }
         }
     </style>
 </head>
@@ -2142,13 +2167,11 @@
                 </div>
                 <div class="file-info-pop" id="fileInfoPop"></div>
             </div>
-            <div class="center">
+            <div class="right">
                 <div class="view-toggle">
                     <button class="view-btn" id="normalViewBtn"><i class="fa-solid fa-tv"></i>&nbsp; 普通模式</button>
                     <button class="view-btn active" id="vrViewBtn"><i class="fa-solid fa-vr-cardboard"></i>&nbsp; VR / 360</button>
                 </div>
-            </div>
-            <div class="right">
                 <button id="newVideoBtn" class="ghost-btn"><i class="fa-solid fa-house"></i><span class="btn-text">&nbsp; 返回首页</span></button>
             </div>
         </div>
