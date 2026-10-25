@@ -773,11 +773,12 @@
             z-index: 30;
             transition: opacity .35s ease;
         }
-        /* ── 沉浸模式：播放中 5 秒无操作自动隐藏 操作栏/播放列表/顶栏 ── */
+        /* ── 沉浸模式：播放中 5 秒无操作自动隐藏 操作栏/播放列表/顶栏/悬浮按钮 ── */
         body.immersive-idle { cursor: none; }
         body.immersive-idle .controls,
         body.immersive-idle .playlist-panel,
-        body.immersive-idle .top-bar {
+        body.immersive-idle .top-bar,
+        body.immersive-idle .spatial-side {
             opacity: 0; pointer-events: none;
         }
         .playlist-panel { transition: opacity .35s ease; }
@@ -1018,6 +1019,20 @@
             font-size: 12px; color: var(--muted); word-break: break-all; flex: 1;
             font-family: 'JetBrains Mono', monospace;
         }
+        /* 统一滚动条：细、深色圆角、无上下箭头，避免文件夹列表出现白色系统滚动条 */
+        * { scrollbar-width: thin; scrollbar-color: rgba(148, 163, 184, 0.45) transparent; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(148, 163, 184, 0.35);
+            border-radius: 999px;
+            border: 2px solid transparent;
+            background-clip: padding-box;
+        }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.6); background-clip: padding-box; }
+        ::-webkit-scrollbar-button { width: 0; height: 0; display: none; }
+        ::-webkit-scrollbar-corner { background: transparent; }
+
         .webdav-file-list {
             max-height: 360px; overflow-y: auto;
             border-radius: 10px; padding: 4px;
@@ -2502,7 +2517,7 @@
                         <div class="pw-az" id="pwAzBar"></div>
                     </div>
                     <div class="webdav-nav" id="posterWallNav">
-                        <span class="webdav-path-text" id="posterWallPathText">/</span>
+                        <span class="webdav-path-text" id="posterWallPathText">全部影片</span>
                         <button class="pl-modal-btn" id="posterWallScanHereBtn" title="选择要扫描的文件夹（结果并入当前来源）">
                             <i class="fa-solid fa-radar"></i>&nbsp; 选择目录
                         </button>
@@ -5931,6 +5946,8 @@
         ['mousemove', 'pointerdown', 'wheel', 'keydown', 'touchstart'].forEach((evt) => {
             document.addEventListener(evt, immersiveWake, { passive: true });
         });
+        // 起播后即使没有任何鼠标操作，也要在 5 秒后进入沉浸
+        ['playing', 'play'].forEach((evt) => videoPlayer.addEventListener(evt, immersiveWake));
         videoPlayer.addEventListener('pause', () => document.body.classList.remove('immersive-idle'));
         videoPlayer.addEventListener('ended', () => document.body.classList.remove('immersive-idle'));
 
@@ -8545,6 +8562,12 @@
         const posterWallBody = document.getElementById('posterWallBody');
         const posterWallImportInput = document.getElementById('posterWallImportInput');
 
+        /// 路径标签：根目录显示为“全部影片”，避免只有一个无意义的 /
+        function pwPathLabel(path) {
+            const p = String(path || '/');
+            return p === '/' ? '全部影片' : p;
+        }
+
         /// 当前选中的来源 id（"webdav|uuid" 或 "smb|uuid"）
         let posterWallSourceId = '';
         /// 目录选择器当前路径
@@ -9254,7 +9277,7 @@
             const src = posterWallCurrentSource();
             if (!src) return;
             posterWallPickPath = path;
-            posterWallPathText.textContent = path;
+            posterWallPathText.textContent = pwPathLabel(path);
             if (cloudBrowserPathText) cloudBrowserPathText.textContent = path;
             cloudBrowserFileList.innerHTML = '<div class="cb-empty">'
                 + '<i class="fa-solid fa-spinner fa-spin"></i><span>读取目录…</span></div>';
@@ -9370,7 +9393,7 @@
             posterScanAbort = token;
 
             posterWallNav.style.display = 'flex';
-            posterWallPathText.textContent = rootPath;
+            posterWallPathText.textContent = pwPathLabel(rootPath);
 
             // 已有结果先显示（增量：不丢旧内容）
             const existingSnap = pwLoadSource(posterWallSourceId);
