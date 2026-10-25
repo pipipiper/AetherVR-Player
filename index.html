@@ -10241,8 +10241,20 @@
                 const snap = pwLoadSource(sourceId);
                 const list = pwTrashEntries(snap);
                 if (!list.length) {
-                    mask.remove();
-                    showSpatialToast('回收站是空的');
+                    mask.innerHTML = `
+                        <div class="pl-modal" style="max-width:480px;width:min(480px,94vw);">
+                            <div class="modal-head">
+                                <h3><i class="fa-solid fa-trash-can"></i>&nbsp; 回收站</h3>
+                                <button class="modal-close-icon" data-close><i class="fa-solid fa-xmark"></i></button>
+                            </div>
+                            <p class="pl-modal-desc" style="text-align:center;margin:20px 0 8px;">
+                                <i class="fa-solid fa-box-open" style="display:block;font-size:28px;margin-bottom:10px;color:var(--muted);"></i>
+                                回收站是空的<br><small>删除的影片会保留在这里，可随时恢复</small>
+                            </p>
+                            <div style="display:flex;justify-content:flex-end;margin-top:14px;">
+                                <button class="pl-modal-btn" data-close>关闭</button>
+                            </div>
+                        </div>`;
                     return;
                 }
                 mask.innerHTML = `
