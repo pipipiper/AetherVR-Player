@@ -1539,7 +1539,8 @@
             background-color: #2f6bff;
             background-image: linear-gradient(90deg, #2f6bff, #38bdf8);
             border-radius: 999px;
-            position: relative;
+            /* 必须绝对定位：否则没有内容高度，已播放部分永远显示为灰色轨道 */
+            position: absolute;
         }
         /* 进度条头部的蓝色圆点已按用户要求移除（与白色拖拽球重复） */
         .time-display { color: rgba(255,255,255,.65); font-size: 12px; }
@@ -5286,10 +5287,8 @@
                         // 每 750ms 更新一次：最近窗口速度 + 全程平均速度
                         if (windowSeconds >= 0.75) {
                             const current = (totalBytes - windowBytes) / windowSeconds;
-                            const average = totalBytes / ((now - started) / 1000);
                             if (requestId === urlLoadRequestId && seekLoading.classList.contains('active')) {
-                                showLoadSpin(`视频加载中… · 当前网速 ${formatNetworkSpeed(current)}`
-                                    + ` · 平均 ${formatNetworkSpeed(average)}`);
+                                showLoadSpin(`视频加载中… · 当前网速 ${formatNetworkSpeed(current)}`);
                             }
                             windowStart = now;
                             windowBytes = totalBytes;
@@ -5297,9 +5296,9 @@
                         // 仅为加载阶段测速，限制额外流量和时间，播放就绪由 hideLoadSpin 停止
                         if (totalBytes >= 16 * 1024 * 1024 || now - started > 20000) break;
                     }
-                    const average = totalBytes / Math.max((performance.now() - started) / 1000, 0.001);
+                    const current = totalBytes / Math.max((performance.now() - started) / 1000, 0.001);
                     if (totalBytes > 0 && requestId === urlLoadRequestId && seekLoading.classList.contains('active')) {
-                        showLoadSpin(`视频加载中… · 当前网速 ${formatNetworkSpeed(average)}`);
+                        showLoadSpin(`视频加载中… · 当前网速 ${formatNetworkSpeed(current)}`);
                     }
                 } catch { /* 取消、切源或网络失败均静默 */ }
                 finally {
@@ -5514,8 +5513,8 @@
             // VR/360 is the default view once metadata is ready
             pendingVrMode = true;
             videoPlayer.load();
-            showLoadSpin('视频加载中… · 正在测速…');
-            // 直接媒体流按滚动窗口实测下载速度；HLS 播放列表不做无意义测速
+            showLoadSpin('视频加载中…');
+            // 直接媒体流按滚动窗口实测当前网速；HLS 播放列表不做无意义测速
             if (!isTranscodePlaylistUrl(rawUrl)) startMediaSpeedTracker(playable, requestId);
         }
 
