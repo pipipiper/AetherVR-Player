@@ -2150,11 +2150,28 @@
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08);
             z-index: 40;
         }
-        /* VR 提示条位于悬浮顶栏下方，避免互相遮挡 */
+        /* VR 提示条：左侧、返回按钮下方，深色毛玻璃 */
         .container.has-video .vr-info {
             top: calc(74px + env(safe-area-inset-top));
+            left: 22px;
+            transform: none;
             z-index: 35;
+            padding: 7px 12px;
+            background: rgba(14, 18, 28, 0.84);
+            backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            border-radius: 12px;
+            color: #cbd5e1;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0;
+            text-transform: none;
+            white-space: nowrap;
+            max-width: calc(100vw - 32px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.08);
         }
+        .container.has-video .vr-info i { color: #94a3b8; }
+        .container.has-video .vr-info .hint-text { color: #94a3b8; font-weight: 500; }
         /* 左侧文件信息占满剩余空间，右侧按钮只占内容宽度：文件名能显示更长 */
         .container.has-video .top-bar .left { flex: 1 1 auto; min-width: 0; }
         .container.has-video .top-bar .right { flex: 0 0 auto; min-width: 0; }
@@ -5311,7 +5328,8 @@
             const err = videoPlayer.error;
             let hint = '无法播放此视频：浏览器报告了媒体错误。';
             if (err && err.code === 4) {
-                hint = '无法解码该视频（常见于 MKV 封装、HEVC/H.265、10-bit H.264 或 AC3/DTS 音频）。';
+                hint = '无法解码该视频（常见于 MKV 封装、HEVC/H.265、10-bit H.264 或 AC3/DTS 音频）。'
+                    + '如果这是 MP4 文件，也可能是文件未下载/复制完整（缺少 moov 索引），请重新传输该文件后再试。';
                 if (isPhoneDevice || isTabletDevice) {
                     hint += '移动端硬解上限一般为 4K：8K HEVC 超出'
                         + (isTabletDevice ? '平板' : '手机')
