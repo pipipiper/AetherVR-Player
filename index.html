@@ -10052,6 +10052,30 @@
             });
             if (!tasks.length) return;
 
+            // 先向服务端确认哪些图片已经落盘缓存：只补缺失的。
+            // 这样已缓存图片不会每次启动都重新传一遍、进度条也不会每次从 0 开始。
+            try {
+                const resp = await fetch(backendUrl('api/imgcache/status'), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ urls: tasks.slice(0, 5000) }),
+                });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (Array.isArray(data.cached)) {
+                        const missing = tasks.filter((_, i) => !data.cached[i]);
+                        if (!missing.length) {
+                            // 全部命中本机缓存：无需后台任务，也不显示进度
+                            posterImageJob = null;
+                            pwRenderImageStatus();
+                            return;
+                        }
+                        tasks.length = 0;
+                        tasks.push(...missing);
+                    }
+                }
+            } catch { /* 查询失败则按原计划全量补齐 */ }
+
             const job = {
                 running: true, aborted: false, finished: false,
                 total: tasks.length, done: 0, failed: 0,
@@ -10083,8 +10107,8 @@
             pwRenderImageStatus();
             setTimeout(() => {
                 if (posterImageJob === job) {
-                    const el = document.getElementById('posterImageStatus');
-                    if (el) el.style.display = 'none';
+                    posterImageJob = null;
+                    pwRenderImageStatus();
                 }
             }, 6000);
         }

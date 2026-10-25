@@ -941,6 +941,42 @@ const requestHandler = async (req, res) => {
       }));
       return;
     }
+    // 批量查询图片是否已在本机缓存：启动预加载只补缺失的，
+    // 已缓存的图片不再传给前端，避免每次进海报墙都“重新加载”一遍。
+    if (urlPath === "/api/imgcache/status" && req.method === "POST") {
+      let body;
+      try {
+        body = await readJson(req, 4 * 1024 * 1024);
+      } catch (err) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: err.message }));
+        return;
+      }
+      const list = Array.isArray(body.urls) ? body.urls.slice(0, 5000) : [];
+      const cached = list.map((raw) => {
+        try {
+          const u = new URL(String(raw), "http://local");
+          let key = "";
+          let ext = "";
+          if (u.pathname === "/local") {
+            const p = u.searchParams.get("path") || "";
+            key = "local:" + p;
+            ext = path.extname(p).toLowerCase();
+          } else if (u.pathname === "/proxy") {
+            const t = u.searchParams.get("url") || "";
+            key = "proxy:" + t;
+            ext = path.extname(new URL(t).pathname).toLowerCase();
+          } else {
+            return false;
+          }
+          if (!IMAGE_CACHE_EXTS.has(ext)) return false;
+          return fs.existsSync(imageCacheFile(key, ext));
+        } catch { return false; }
+      });
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end(JSON.stringify({ cached }));
+      return;
+    }
     // ── WebDAV 代理：目录浏览、文件上传(备份/同步)、重命名与删除 ─────────────
     if (urlPath === "/api/webdav/list") {
       if (req.method !== "POST") {
