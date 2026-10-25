@@ -4944,9 +4944,10 @@
         // Load video file
         async function loadVideoFile(file) {
             if (!file) return;
-            // 新起播先清掉上一次的错误弹窗/内联报错，避免错误状态卡住换片
+            // 新起播先清掉上一次的错误弹窗/内联报错/轻提示，避免错误状态卡住换片
             closeErrorDialog();
             hideError();
+            hideSpatialToast();
             stopMediaSpeedTracker();
             playedFromPosterWall = false;   // 本地文件起播，停止后回首页
             playOrigin = 'home';
@@ -5071,7 +5072,29 @@
             if (bigPlay) bigPlay.style.display = visible ? '' : 'none';
         }
 
+        /// 播放中的错误：停止播放并显示统一错误面板
+        function showPlaybackError(message) {
+            const info = describeError(message);
+            // 真正停止播放（不再继续缓冲/出声），错误面板覆盖在播放器上
+            try { videoPlayer.pause(); } catch { /* 已停止 */ }
+            stopMediaSpeedTracker();
+            hideLoadSpin();
+            errorMessage.textContent = info.raw;
+            errorMessage.classList.add('active');
+            appErrorTitle.textContent = info.title;
+            appErrorSummary.textContent = info.summary;
+            appErrorDetails.textContent = info.raw;
+            appErrorMask.classList.add('active');
+            appErrorMask.setAttribute('aria-hidden', 'false');
+            requestAnimationFrame(() => appErrorClose.focus());
+        }
+
         function showError(message) {
+            // 播放中出现的错误：停止播放 + 统一错误面板（不切回首页）
+            if (!dropZone.classList.contains('active') && document.body.classList.contains('has-video')) {
+                showPlaybackError(message);
+                return;
+            }
             const info = describeError(message);
             errorMessage.textContent = info.raw;
             errorMessage.classList.add('active');
@@ -5080,20 +5103,18 @@
             appErrorTitle.textContent = info.title;
             appErrorSummary.textContent = info.summary;
             appErrorDetails.textContent = info.raw;
-            // 这个带首页内容的错误弹窗只在首页出现；播放中的错误走首页内联报错，
-            // 否则弹窗会一直压在画面上，导致换片后也无法继续播放。
-            if (dropZone.classList.contains('active')) {
-                appErrorMask.classList.add('active');
-                appErrorMask.setAttribute('aria-hidden', 'false');
-                requestAnimationFrame(() => appErrorClose.focus());
-            } else {
-                closeErrorDialog();
-            }
+            // 带首页内容的错误弹窗只在首页出现
+            appErrorMask.classList.add('active');
+            appErrorMask.setAttribute('aria-hidden', 'false');
+            requestAnimationFrame(() => appErrorClose.focus());
         }
 
         function closeErrorDialog() {
             appErrorMask.classList.remove('active');
             appErrorMask.setAttribute('aria-hidden', 'true');
+            // 关闭错误面板时恢复画面，避免错误状态一直卡住后续播放
+            errorMessage.classList.remove('active');
+            setVideoSurfaceVisible(true);
         }
 
         appErrorClose.addEventListener('click', closeErrorDialog);
@@ -5154,10 +5175,9 @@
             if (isIOSDevice && videoPlayer.currentSrc.startsWith('blob:')) {
                 hint += '\n' + IOS_SMB_HINT;
             }
-            showError(hint);
-            // 报错文案在中央面板里，而视频加载后面板是隐藏的——重新弹出面板让用户看到报错
+            // 播放中报错：停止播放并显示统一错误面板
+            showPlaybackError(hint);
             if (!videoPlayer.paused) videoPlayer.pause();
-            dropZone.classList.add('active');
             // 编码不支持 + 源是远程链接 → 提供服务器实时转码播放入口
             const transcodeBtn = document.getElementById('transcodeBtn');
             if (transcodeBtn) {
@@ -5394,9 +5414,10 @@
         }
 
         async function loadVideoURL(url) {
-            // 新起播先清掉上一次的错误弹窗/内联报错，避免错误状态卡住换片
+            // 新起播先清掉上一次的错误弹窗/内联报错/轻提示，避免错误状态卡住换片
             closeErrorDialog();
             hideError();
+            hideSpatialToast();
             try { posSaveNow(); } catch { /* 切走前记录旧视频进度 */ }
             stopMediaSpeedTracker();
             const requestId = ++urlLoadRequestId;
@@ -6427,14 +6448,19 @@
         // ══════════════════════════════════════════════════════════════
         const spatialToast = document.getElementById('spatialToast');
         let toastTimer = null;
-        function showSpatialToast(msg) {
+        function showSpatialToast(msg, duration = 2000) {
             if (!spatialToast) return;
             spatialToast.textContent = msg;
             spatialToast.classList.add('active');
             if (toastTimer) clearTimeout(toastTimer);
             toastTimer = setTimeout(() => {
                 spatialToast.classList.remove('active');
-            }, 2000);
+            }, duration);
+        }
+        function hideSpatialToast() {
+            if (!spatialToast) return;
+            spatialToast.classList.remove('active');
+            if (toastTimer) clearTimeout(toastTimer);
         }
 
         // ── A-B 区间循环 ──
