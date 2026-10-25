@@ -2077,6 +2077,55 @@
             .volume-control { display: none; }
             .speed-select { height: 36px; }
         }
+
+        /* ── 播放时顶部信息栏：悬浮深色毛玻璃，和底部控制栏同风格 ── */
+        .container.has-video .top-bar {
+            position: fixed;
+            top: calc(14px + env(safe-area-inset-top));
+            left: 50%; right: auto;
+            transform: translateX(-50%);
+            width: min(960px, calc(100vw - 32px));
+            height: auto; min-height: 44px;
+            padding: 6px 14px;
+            background: rgba(14, 18, 28, 0.86);
+            backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+            z-index: 40;
+        }
+        /* 视频画面顶到窗口最上方，顶部栏浮在画面上而不是占一行 */
+        body.has-video .page-content { padding-top: 0 !important; }
+        .container.has-video .top-bar .file-info,
+        .container.has-video .top-bar .file-info p,
+        .container.has-video .top-bar .file-info strong { color: #e8ecf3; }
+        .container.has-video .top-bar .file-info strong { color: #a8b3c4; }
+        .container.has-video .top-bar .ghost-btn {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            color: #e8ecf3;
+        }
+        .container.has-video .top-bar .ghost-btn:hover { background: rgba(255, 255, 255, 0.16); }
+        .container.has-video .top-bar .view-btn {
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 10px;
+            color: #cbd5e1;
+            padding: 6px 12px;
+        }
+        .container.has-video .top-bar .view-btn.active {
+            background: var(--yellow);
+            border-color: var(--yellow);
+            color: #fff;
+        }
+        @media (max-width: 640px) {
+            .container.has-video .top-bar {
+                top: calc(8px + env(safe-area-inset-top));
+                width: calc(100vw - 16px);
+                min-height: 40px;
+                padding: 5px 10px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -2517,7 +2566,7 @@
                         <div class="pw-az" id="pwAzBar"></div>
                     </div>
                     <div class="webdav-nav" id="posterWallNav">
-                        <span class="webdav-path-text" id="posterWallPathText">全部影片</span>
+                        <span class="webdav-path-text" id="posterWallPathText"></span>
                         <button class="pl-modal-btn" id="posterWallScanHereBtn" title="选择要扫描的文件夹（结果并入当前来源）">
                             <i class="fa-solid fa-radar"></i>&nbsp; 选择目录
                         </button>
@@ -8562,10 +8611,15 @@
         const posterWallBody = document.getElementById('posterWallBody');
         const posterWallImportInput = document.getElementById('posterWallImportInput');
 
-        /// 路径标签：根目录显示为“全部影片”，避免只有一个无意义的 /
+        /// 路径标签：根目录什么都不显示，只有子目录才显示路径
         function pwPathLabel(path) {
             const p = String(path || '/');
-            return p === '/' ? '全部影片' : p;
+            return p === '/' ? '' : p;
+        }
+        function pwSetPathLabel(path) {
+            const label = pwPathLabel(path);
+            posterWallPathText.textContent = label;
+            posterWallPathText.style.display = label ? '' : 'none';
         }
 
         /// 当前选中的来源 id（"webdav|uuid" 或 "smb|uuid"）
@@ -9277,7 +9331,7 @@
             const src = posterWallCurrentSource();
             if (!src) return;
             posterWallPickPath = path;
-            posterWallPathText.textContent = pwPathLabel(path);
+            pwSetPathLabel(path);
             if (cloudBrowserPathText) cloudBrowserPathText.textContent = path;
             cloudBrowserFileList.innerHTML = '<div class="cb-empty">'
                 + '<i class="fa-solid fa-spinner fa-spin"></i><span>读取目录…</span></div>';
@@ -9393,7 +9447,7 @@
             posterScanAbort = token;
 
             posterWallNav.style.display = 'flex';
-            posterWallPathText.textContent = pwPathLabel(rootPath);
+            pwSetPathLabel(rootPath);
 
             // 已有结果先显示（增量：不丢旧内容）
             const existingSnap = pwLoadSource(posterWallSourceId);
