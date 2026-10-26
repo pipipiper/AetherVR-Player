@@ -240,3 +240,19 @@ test("WebDAV playback automatically resolves credentials to prevent 401 decode e
   assert.match(html, /cred = btoa\(unescape\(encodeURIComponent\(rawCred\)\)\)/);
   assert.match(html, /&cred=/);
 });
+
+test("static mode greys out backend-dependent entries instead of failing on click", () => {
+  // 静态托管（GitHub Pages）没有 /api/*，浏览 / 海报墙 / 备份云端都会失败。
+  // 要求：置灰 + 「需完整版」角标 + 点击拦截，而不是让用户点进去踩坑。
+  assert.match(html, /function markBackendRequired\(id, available, badgeText\)/);
+  assert.match(html, /requires-backend/);
+  assert.match(html, /\.file-input-label\.requires-backend[\s\S]{0,400}cursor:\s*not-allowed/);
+  assert.match(html, /\.hero-btn-badge/);
+  // 三个依赖后端的入口都要被标记
+  assert.match(html, /markBackendRequired\('webdavBtn', backendAvailable/);
+  assert.match(html, /markBackendRequired\('posterWallBtn', backendAvailable/);
+  assert.match(html, /markBackendRequired\('backupBtn', backendAvailable/);
+  // 点击时给提示而不是走业务逻辑
+  assert.match(html, /此功能需要自托管完整版或桌面版/);
+  assert.match(html, /\}, true\);\s*\/\/ capture：先于业务逻辑执行/);
+});

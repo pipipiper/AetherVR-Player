@@ -664,6 +664,26 @@
             font-family: inherit; cursor: pointer;
             transition: border-color .18s, box-shadow .18s, transform .18s, background .18s;
         }
+        /* 静态托管模式下不可用的入口：置灰 + 「需完整版」角标，而不是让用户点了才失败 */
+        .file-input-label.requires-backend {
+            opacity: .55;
+            cursor: not-allowed;
+            filter: grayscale(.55);
+            background: rgba(255,255,255,.45);
+            position: relative;
+        }
+        .file-input-label.requires-backend:hover {
+            border-color: var(--border);
+            box-shadow: 0 1px 3px rgba(29,39,53,.04);
+            transform: none;
+        }
+        .file-input-label.requires-backend .hero-btn-badge {
+            position: absolute; top: 8px; right: 10px;
+            font-size: 9.5px; font-weight: 700; line-height: 1;
+            padding: 3px 6px; border-radius: 999px;
+            background: rgba(148,163,184,.22); color: #64748b;
+            letter-spacing: .02em; white-space: nowrap;
+        }
         .hero-btn-icon {
             flex: 0 0 38px; height: 38px; display: grid; place-items: center;
             border-radius: 11px; font-size: 15px; color: var(--yellow);
@@ -3112,6 +3132,40 @@
 
         const heroSub = document.querySelector('.hero-sub');
         const fullHeroSubText = heroSub.textContent;
+        /// 给依赖后端接口的首页卡片打「不可用」状态。
+        /// 静态托管（GitHub Pages）没有 /api/*，这些入口点了必然会失败，
+        /// 所以直接置灰 + 角标，而不是让用户踩坑。
+        function markBackendRequired(id, available, badgeText) {
+            const btn = document.getElementById(id);
+            if (!btn) return;
+            btn.classList.toggle('requires-backend', !available);
+            const old = btn.querySelector('.hero-btn-badge');
+            if (available) {
+                if (old) old.remove();
+                btn.removeAttribute('aria-disabled');
+                return;
+            }
+            btn.setAttribute('aria-disabled', 'true');
+            // 点击时给出明确提示，而不是弹一个连接卡片让用户白填
+            if (!btn.dataset.backendGuard) {
+                btn.dataset.backendGuard = '1';
+                btn.addEventListener('click', (e) => {
+                    if (!btn.classList.contains('requires-backend')) return;
+                    e.preventDefault();
+                    e.stopImmediatePropagation();
+                    showSpatialToast('此功能需要自托管完整版或桌面版（静态托管无后端）');
+                }, true);   // capture：先于业务逻辑执行
+            }
+            if (!old) {
+                const badge = document.createElement('span');
+                badge.className = 'hero-btn-badge';
+                badge.textContent = badgeText || '需完整版';
+                btn.appendChild(badge);
+            } else {
+                old.textContent = badgeText || '需完整版';
+            }
+        }
+
         function applyBackendAvailability(capabilities) {
             backendAvailable = Boolean(capabilities && capabilities.backend === true);
             probeAvailable = Boolean(backendAvailable && capabilities.probe === true);
@@ -3124,6 +3178,11 @@
             document.getElementById('onlineUrlSection').style.display = backendAvailable ? '' : 'none';
             document.getElementById('heroDivider').style.display = backendAvailable ? '' : 'none';
             document.getElementById('pagesNotice').style.display = backendAvailable ? 'none' : 'block';
+            // 静态托管下这三个入口依赖后端接口，置灰并标注「需完整版」，
+            // 不要等用户点进去才失败
+            markBackendRequired('webdavBtn', backendAvailable, '需完整版');
+            markBackendRequired('posterWallBtn', backendAvailable, '需完整版');
+            markBackendRequired('backupBtn', backendAvailable, '云端需完整版');
             heroSub.textContent = backendAvailable
                 ? fullHeroSubText
                 : '本地视频无需上传 · 支持 360° 全景、SBS 分屏与 DPL 播放列表';
