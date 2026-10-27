@@ -256,3 +256,58 @@ test("static mode greys out backend-dependent entries instead of failing on clic
   assert.match(html, /此功能需要自托管完整版或桌面版/);
   assert.match(html, /\}, true\);\s*\/\/ capture：先于业务逻辑执行/);
 });
+
+test("server management: edit / add / delete are distinguished and consistent", () => {
+  // WebDAV 连接成功后必须写入记录（之前完全没调 rememberWebdavServer，
+  // 导致连过的服务器不进列表）
+  assert.match(html, /async function connectWebdavSource\(/);
+  assert.match(html, /async function connectSmbSource\(/);
+  assert.match(html, /rememberWebdavServer\(\{ name, url, user, pass, editId \}\)/);
+  assert.match(html, /rememberSmbServer\(\{ name, host, share: cleanShare, user, pass, editId \}\)/);
+
+  // 编辑态：按 id 定位，而不是按 url 去重（否则改地址会变成新增）
+  assert.match(html, /if \(editId\) \{/);
+  assert.match(html, /let editingWebdavId = null;/);
+  assert.match(html, /let editingSmbId = null;/);
+  assert.match(html, /is-editing/);
+
+  // 提交按钮随新增/编辑切换文案
+  assert.match(html, /function syncConnSubmitLabel\(\)/);
+  assert.match(html, /保存并连接/);
+  assert.match(html, /连接并读取/);
+
+  // 删除需二次确认，且删除后同步清理选中来源与文件列表
+  assert.match(html, /function showConfirmDialog\(/);
+  assert.match(html, /删除这个服务器？/);
+  assert.match(html, /currentCloudSource = null;/);
+  assert.match(html, /setCloudMode\(false\)/);
+
+  // 打开/关闭弹窗要重置编辑态，避免残留
+  assert.match(html, /if \(!keepEditing\) \{\s*\n\s*editingWebdavId = null;/);
+});
+
+test("source dropdown exposes one manage entry instead of per-row buttons", () => {
+  // 普通模式下每行只有一个可点区域，不挂按钮
+  assert.match(html, /\.cb-source-manage/);
+  assert.match(html, /管理文件源/);
+  assert.match(html, /完成管理/);
+  assert.match(html, /let cbSourceManageMode = false;/);
+  // 管理模式下才出现编辑/删除
+  assert.match(html, /cb-source-mgact/);
+  assert.match(html, /cbEditSource/);
+  assert.match(html, /cbDeleteSource/);
+  // 收起下拉时退出管理模式
+  assert.match(html, /cbSourceManageMode = false;\s*\n\s*\}/);
+});
+
+test("editing state survives opening the modal and resets afterwards", () => {
+  // openConnectSourceModal 支持 keepEditing，否则点「编辑」会被当成「新增」
+  assert.match(html, /function openConnectSourceModal\(keepEditing = false\)/);
+  assert.match(html, /if \(!keepEditing\)/);
+  assert.match(html, /openConnectSourceModal\(true\)/);
+  // 编辑态变量必须声明在使用它的函数之前，否则 TDZ 报错
+  const declPos = html.indexOf("let editingWebdavId = null;");
+  const usePos = html.indexOf("function cbEditSource(");
+  assert.ok(declPos > 0 && declPos < usePos,
+    "editingWebdavId must be declared before cbEditSource to avoid TDZ");
+});
