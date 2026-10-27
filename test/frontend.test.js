@@ -278,7 +278,7 @@ test("server management: edit / add / delete are distinguished and consistent", 
 
   // 删除需二次确认，且删除后同步清理选中来源与文件列表
   assert.match(html, /function showConfirmDialog\(/);
-  assert.match(html, /删除这个服务器？/);
+  assert.match(html, /删除这个文件源？/);
   assert.match(html, /currentCloudSource = null;/);
   assert.match(html, /setCloudMode\(false\)/);
 
@@ -286,18 +286,22 @@ test("server management: edit / add / delete are distinguished and consistent", 
   assert.match(html, /if \(!keepEditing\) \{\s*\n\s*editingWebdavId = null;/);
 });
 
-test("source dropdown exposes one manage entry instead of per-row buttons", () => {
-  // 普通模式下每行只有一个可点区域，不挂按钮
-  assert.match(html, /\.cb-source-manage/);
+test("source management lives only in the connect modal; dropdown just switches", () => {
+  // 下拉：每个来源行只有一个切换按钮，不挂编辑/删除
+  assert.match(html, /const addItem = \(id, chip, isSmb, name, addr\) =>/);
+  assert.match(html, /item\.addEventListener\('click', \(\) => cbChooseSource\(id\)\)/);
+  // 下拉底部只有一个跳转入口，指向弹窗
+  assert.match(html, /cb-source-manage/);
   assert.match(html, /管理文件源/);
-  assert.match(html, /完成管理/);
-  assert.match(html, /let cbSourceManageMode = false;/);
-  // 管理模式下才出现编辑/删除
-  assert.match(html, /cb-source-mgact/);
+  assert.match(html, /openConnectSourceModal\(\)/);
+  // 编辑/删除只存在于弹窗列表里
+  assert.match(html, /webdav-recent-edit/);
+  assert.match(html, /webdav-recent-del/);
   assert.match(html, /cbEditSource/);
   assert.match(html, /cbDeleteSource/);
-  // 收起下拉时退出管理模式
-  assert.match(html, /cbSourceManageMode = false;\s*\n\s*\}/);
+  // 「完成管理」这类独立管理模式已合并掉，不应再有
+  assert.ok(!/完成管理/.test(html), "独立管理模式应已合并（不应出现「完成管理」）");
+  assert.ok(!/cb-source-mgact/.test(html), "下拉内不应再有逐行管理按钮");
 });
 
 test("editing state survives opening the modal and resets afterwards", () => {

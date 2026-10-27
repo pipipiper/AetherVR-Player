@@ -1878,22 +1878,7 @@
         }
         .cb-source-manage:hover { background: rgba(255,255,255,.06); color: #e2e8f0; }
         .cb-source-manage.active { color: #9cc4ff; }
-        .cb-source-mgrow {
-            display: flex; align-items: center; gap: 6px;
-            padding: 6px 9px; border-radius: 7px;
-        }
-        .cb-source-mgrow:hover { background: rgba(255,255,255,.05); }
-        .cb-source-mgname { flex: 1; min-width: 0; font-size: 12px; color: #e2e8f0;
-            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .cb-source-mgact {
-            flex: none; width: 26px; height: 26px; padding: 0;
-            display: grid; place-items: center;
-            border: 0; background: rgba(255,255,255,.07); border-radius: 7px;
-            color: #cbd5e1; font-size: 10.5px; cursor: pointer;
-            transition: background .14s, color .14s;
-        }
-        .cb-source-mgact:hover { background: rgba(59,108,255,.28); color: #9cc4ff; }
-        .cb-source-mgact.is-danger:hover { background: rgba(239,68,68,.28); color: #fca5a5; }
+
         .cb-source-item.active { background: rgba(47,107,255,.30); }
         .cb-source-chip {
             flex: none; font-size: 10px; padding: 1px 6px; border-radius: 5px;
@@ -2730,8 +2715,12 @@
                         </div>
                     </div>
 
-                    <!-- 最近连接记录 -->
-                    <div class="webdav-recents" id="webdavRecents" style="margin-top:10px; max-height:120px; overflow-y:auto;"></div>
+                    <!-- 已保存的文件源：这里是唯一的管理入口（编辑 / 删除），
+                         右侧面板的来源下拉只负责切换，不再重复提供管理功能 -->
+                    <div class="webdav-recents-head" id="webdavRecentsHead" style="display:none;">
+                        <span>已保存的文件源</span>
+                    </div>
+                    <div class="webdav-recents" id="webdavRecents" style="margin-top:6px; max-height:168px; overflow-y:auto;"></div>
 
                     <div class="pl-modal-btns" style="margin-top: 14px;">
                         <button class="pl-modal-btn" id="connCancelBtn">取消</button>
@@ -8231,31 +8220,36 @@
         }
 
 
-        /// 渲染「已保存的服务器」列表（WebDAV + SMB 合并展示）。
+        /// 渲染弹窗里的「已保存的文件源」列表。
         ///
-        /// 交互约定：
-        ///   · 点条目           → 载入表单并进入编辑态（再次点击取消编辑）
-        ///   · 点条目上的「连接」 → 直接连这台，跳过表单
-        ///   · 点「删除」        → 二次确认后删除，并同步清理选中状态与文件列表
+        /// **这里是文件源唯一的集中管理入口**（右侧面板的来源下拉只负责切换，
+        /// 不再重复提供编辑 / 删除，避免两个地方各管一套）。
+        ///
+        /// 每行：点主体 = 载入表单进入编辑；右侧 ✏ 编辑、🗑 删除、插头 直接连接。
         function renderWebdavRecents() {
             if (!webdavRecentsEl) return;
-            const webdav = getWebdavServers().map((s) => ({ ...s, _kind: 'webdav' }));
-            const smb = getSmbServers().map((s) => ({ ...s, _kind: 'smb' }));
+            const headEl = document.getElementById('webdavRecentsHead');
+            const webdav = getWebdavServers().map((x) => ({ ...x, _kind: 'webdav' }));
+            const smb = getSmbServers().map((x) => ({ ...x, _kind: 'smb' }));
             const list = [...webdav, ...smb].sort((a, b) => (b.lastUsedAt || 0) - (a.lastUsedAt || 0));
 
             webdavRecentsEl.innerHTML = '';
+            if (headEl) headEl.style.display = list.length ? '' : 'none';
             if (!list.length) {
                 const empty = document.createElement('div');
                 empty.className = 'webdav-recent-empty';
-                empty.textContent = '还没有保存的服务器';
+                empty.textContent = '还没有保存的文件源';
                 webdavRecentsEl.appendChild(empty);
                 return;
             }
 
-            list.forEach((s) => {
-                const isSmb = s._kind === 'smb';
-                const id = s.id || (isSmb ? s.host + '/' + (s.share || '') : s.url);
+            list.forEach((sv) => {
+                const isSmb = sv._kind === 'smb';
+                const id = isSmb
+                    ? (sv.id || (sv.host + '/' + (sv.share || '')))
+                    : (sv.id || sv.url);
                 const editing = isSmb ? (editingSmbId === id) : (editingWebdavId === id);
+
                 const el = document.createElement('div');
                 el.className = 'webdav-recent-item' + (editing ? ' is-editing' : '');
                 el.innerHTML = `
@@ -8265,37 +8259,44 @@
                         <div class="webdav-recent-url"></div>
                     </div>
                     <button class="webdav-recent-go" title="直接连接"><i class="fa-solid fa-plug"></i></button>
+                    <button class="webdav-recent-edit" title="编辑"><i class="fa-solid fa-pen"></i></button>
                     <button class="webdav-recent-del" title="删除"><i class="fa-solid fa-trash-can"></i></button>
                 `;
-                const title = s.name || (isSmb ? s.host : hostnameOfUrl(s.url));
+                const title = sv.name || (isSmb ? sv.host : hostnameOfUrl(sv.url));
                 const sub = isSmb
-                    ? ('smb://' + s.host + '/' + (s.share || '') + (s.user ? ' (' + s.user + ')' : ''))
-                    : (s.url + (s.user ? ' (' + s.user + ')' : ''));
+                    ? ('smb://' + sv.host + '/' + (sv.share || '') + (sv.user ? ' (' + sv.user + ')' : ''))
+                    : (sv.url + (sv.user ? ' (' + sv.user + ')' : ''));
                 el.querySelector('.webdav-recent-name').textContent = (editing ? '正在编辑：' : '') + title;
                 el.querySelector('.webdav-recent-url').textContent = sub;
 
-                // 点条目 → 载入表单进入编辑态
+                // 点主体：载入表单进入 / 退出编辑
                 el.addEventListener('click', () => {
                     if (isSmb) {
                         editingSmbId = editing ? null : id;
                         editingWebdavId = null;
                         switchConnType('smb');
-                        if (smbNameInput) smbNameInput.value = s.name || '';
-                        if (smbHostInput) smbHostInput.value = s.host || '';
-                        if (smbShareInput) smbShareInput.value = s.share || '';
-                        if (smbUserInput) smbUserInput.value = s.user || '';
+                        if (smbNameInput) smbNameInput.value = sv.name || '';
+                        if (smbHostInput) smbHostInput.value = sv.host || '';
+                        if (smbShareInput) smbShareInput.value = sv.share || '';
+                        if (smbUserInput) smbUserInput.value = sv.user || '';
                         if (smbPassInput) smbPassInput.value = '';
                     } else {
                         editingWebdavId = editing ? null : id;
                         editingSmbId = null;
                         switchConnType('webdav');
-                        if (webdavNameInput) webdavNameInput.value = s.name || '';
-                        if (webdavUrlInput) webdavUrlInput.value = s.url || '';
-                        if (webdavUserInput) webdavUserInput.value = s.user || '';
+                        if (webdavNameInput) webdavNameInput.value = sv.name || '';
+                        if (webdavUrlInput) webdavUrlInput.value = sv.url || '';
+                        if (webdavUserInput) webdavUserInput.value = sv.user || '';
                         if (webdavPassInput) webdavPassInput.value = '';
                     }
                     syncConnSubmitLabel();
                     renderWebdavRecents();
+                });
+
+                // 编辑按钮：与点主体等价（更易发现）
+                el.querySelector('.webdav-recent-edit').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    el.click();
                 });
 
                 // 直接连接
@@ -8303,12 +8304,12 @@
                     e.stopPropagation();
                     if (isSmb) {
                         await connectSmbSource({
-                            name: s.name, host: s.host, share: s.share,
-                            user: s.user, pass: s.pass || '',
+                            name: sv.name, host: sv.host, share: sv.share,
+                            user: sv.user, pass: sv.pass || '',
                         });
                     } else {
                         await connectWebdavSource({
-                            name: s.name, url: s.url, user: s.user, pass: s.pass || '',
+                            name: sv.name, url: sv.url, user: sv.user, pass: sv.pass || '',
                         });
                     }
                 });
@@ -8316,40 +8317,9 @@
                 // 删除（二次确认）
                 el.querySelector('.webdav-recent-del').addEventListener('click', (e) => {
                     e.stopPropagation();
-                    const label = title;
-                    showConfirmDialog(
-                        '删除这个服务器？',
-                        '「' + label + '」的连接记录会被移除，已保存的密码也会一并删除。',
-                        '删除',
-                        () => {
-                            if (isSmb) {
-                                saveSmbServers(getSmbServers().filter((x) => (x.id || (x.host + '/' + (x.share || ''))) !== id));
-                                if (editingSmbId === id) editingSmbId = null;
-                            } else {
-                                saveWebdavServers(getWebdavServers().filter((x) => (x.id || x.url) !== id));
-                                if (editingWebdavId === id) editingWebdavId = null;
-                            }
-                            // 删掉的正是当前正在浏览的来源 → 清空选中，避免面板停在幽灵来源
-                            if (currentCloudSource) {
-                                const curId = currentCloudSource.id
-                                    || (isSmb ? (s.host + '/' + (s.share || '')) : currentCloudSource.url);
-                                if (curId === id) {
-                                    currentCloudSource = null;
-                                    currentSmbMountRoot = '';
-                                    currentWebdavPath = '/';
-                                    currentSmbPath = '/';
-                                    cloudDirCache.clear();
-                                    setCloudMode(false);
-                                    closePlaylistPanel();
-                                }
-                            }
-                            renderWebdavRecents();
-                            renderCloudSourceSelect();
-                            syncConnSubmitLabel();
-                            showSpatialToast('已删除服务器：' + label);
-                        }
-                    );
+                    cbDeleteSource(sv, isSmb, title, id);
                 });
+
                 webdavRecentsEl.appendChild(el);
             });
         }
@@ -8415,6 +8385,8 @@
         }
 
         /// 从右侧面板的来源下拉进入「编辑」：打开连接表单并预填该服务器
+        /// 载入某个服务器到表单并进入编辑态。
+        /// 目前由「连接文件源」弹窗的列表调用（下拉不再直接调）。
         function cbEditSource(server, isSmb) {
             if (!server) return;
             if (isSmb) {
@@ -8440,11 +8412,11 @@
         }
 
         /// 从右侧面板的来源下拉「删除」：二次确认 → 删记录 → 清理当前选中与列表
-        function cbDeleteSource(server, isSmb, label) {
+        function cbDeleteSource(server, isSmb, label, idOverride) {
             if (!server) return;
-            const id = isSmb
+            const id = idOverride || (isSmb
                 ? (server.id || (server.host + '/' + (server.share || '')))
-                : (server.id || server.url);
+                : (server.id || server.url));
             showConfirmDialog(
                 '删除这个文件源？',
                 '「' + (label || id) + '」的连接记录会被移除，已保存的密码也会一并删除。',
@@ -8493,82 +8465,43 @@
             /// 单个来源行：只负责切换来源。
             /// 管理（编辑 / 删除）集中在下拉底部的「管理文件源」里，
             /// 避免每行都挂两个按钮把列表搞得很拥挤。
-            /// 普通模式：整行就是「切换来源」。
-            /// 管理模式：整行变成管理条目，右侧出现编辑 / 删除。
-            const addItem = (id, chip, isSmb, name, addr, server) => {
-                if (!cbSourceManageMode) {
-                    const item = document.createElement('button');
-                    item.type = 'button';
-                    item.className = 'cb-source-item' + (id === curId ? ' active' : '');
-                    item.innerHTML = `<span class="cb-source-chip ${isSmb ? 'is-smb' : ''}">${chip}</span>`
-                        + `<span class="cb-source-item-name">${escapeHtml(name)}</span>`
-                        + (addr ? `<span class="cb-source-item-addr">${escapeHtml(addr)}</span>` : '');
-                    item.addEventListener('click', () => cbChooseSource(id));
-                    cbSourcePop.appendChild(item);
-                    return;
-                }
-
-                const row = document.createElement('div');
-                row.className = 'cb-source-mgrow';
-                const label = document.createElement('span');
-                label.className = 'cb-source-mgname';
-                label.textContent = name;
-                label.title = name;
-
-                const editBtn = document.createElement('button');
-                editBtn.type = 'button';
-                editBtn.className = 'cb-source-mgact';
-                editBtn.title = '编辑';
-                editBtn.innerHTML = '<i class="fa-solid fa-pen"></i>';
-                editBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    cbCloseSourcePop();
-                    cbEditSource(server, isSmb);
-                });
-
-                const delBtn = document.createElement('button');
-                delBtn.type = 'button';
-                delBtn.className = 'cb-source-mgact is-danger';
-                delBtn.title = '删除';
-                delBtn.innerHTML = '<i class="fa-solid fa-trash-can"></i>';
-                delBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    cbDeleteSource(server, isSmb, name);
-                });
-
-                row.appendChild(label);
-                row.appendChild(editBtn);
-                row.appendChild(delBtn);
-                cbSourcePop.appendChild(row);
+            /// 来源下拉只负责「切换来源」，不再挂编辑 / 删除按钮。
+            /// 文件源的增删改统一在「连接文件源」弹窗里完成（唯一入口）。
+            const addItem = (id, chip, isSmb, name, addr) => {
+                const item = document.createElement('button');
+                item.type = 'button';
+                item.className = 'cb-source-item' + (id === curId ? ' active' : '');
+                item.innerHTML = `<span class="cb-source-chip ${isSmb ? 'is-smb' : ''}">${chip}</span>`
+                    + `<span class="cb-source-item-name">${escapeHtml(name)}</span>`
+                    + (addr ? `<span class="cb-source-item-addr">${escapeHtml(addr)}</span>` : '');
+                item.addEventListener('click', () => cbChooseSource(id));
+                cbSourcePop.appendChild(item);
             };
             wList.forEach((s) => {
                 addItem('webdav|' + (s.id || s.url), 'WebDAV', false,
                     s.name || hostnameOfUrl(s.url),
-                    (s.url || '').replace(/^https?:\/\//i, '').replace(/\/$/, ''), s);
+                    (s.url || '').replace(/^https?:\/\//i, '').replace(/\/$/, ''));
             });
             sList.forEach((s) => {
                 addItem('smb|' + (s.id || s.host), 'SMB', true,
-                    s.name || s.host + (s.share ? '/' + s.share : ''), s.host || '', s);
+                    s.name || s.host + (s.share ? '/' + s.share : ''), s.host || '');
             });
             if (!wList.length && !sList.length) {
                 cbSourceBtnText.textContent = '暂无已连接文件源';
                 return;
             }
 
-            // 底部固定一个「管理文件源」：默认收起，点开后每行才出现编辑 / 删除，
-            // 这样下拉平时保持干净，不会满屏按钮。
+            // 底部入口：跳到「连接文件源」弹窗统一管理（新增 / 编辑 / 删除）
             const manageBtn = document.createElement('button');
             manageBtn.type = 'button';
-            manageBtn.className = 'cb-source-manage' + (cbSourceManageMode ? ' active' : '');
+            manageBtn.className = 'cb-source-manage';
             manageBtn.innerHTML = '<i class="fa-solid fa-sliders"></i>'
-                + '<span style="flex:1;text-align:left;">'
-                + (cbSourceManageMode ? '完成管理' : '管理文件源') + '</span>';
+                + '<span style="flex:1;text-align:left;">管理文件源</span>'
+                + '<i class="fa-solid fa-arrow-up-right-from-square" style="opacity:.6;font-size:9px;"></i>';
             manageBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                cbSourceManageMode = !cbSourceManageMode;
-                renderCloudSourceSelect();
-                // 重渲染会把下拉隐藏，这里重新展开
-                if (cbSourcePop) cbSourcePop.style.display = '';
+                cbCloseSourcePop();
+                openConnectSourceModal();
             });
             cbSourcePop.appendChild(manageBtn);
             const cur = [...wList.map((s) => ({ kind: 'webdav', ...s })),
