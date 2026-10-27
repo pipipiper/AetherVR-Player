@@ -1136,6 +1136,69 @@
             padding: 14px 10px; text-align: center;
             font-size: 12px; color: var(--muted);
         }
+        /* ── 文件源管理页（连接弹窗改造） ── */
+        .conn-manage-modal { width: min(560px, calc(100vw - 40px)); }
+        .conn-manage-list-wrap {
+            margin-bottom: 14px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+            background: var(--surface-2);
+        }
+        .conn-manage-list-head {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 10px 12px;
+            background: var(--surface-3);
+            border-bottom: 1px solid var(--border);
+        }
+        #webdavRecentsCount { font-size: 12.5px; font-weight: 600; color: var(--text); }
+        .conn-manage-add {
+            display: inline-flex; align-items: center; gap: 5px;
+            padding: 5px 11px; border-radius: 999px;
+            border: 1px solid rgba(59,108,255,.35);
+            background: rgba(59,108,255,.10);
+            color: #3b6cff; font-size: 12px; font-weight: 600; font-family: inherit;
+            cursor: pointer; transition: background .15s, color .15s;
+        }
+        .conn-manage-add:hover { background: rgba(59,108,255,.18); }
+        .conn-manage-add.active { background: rgba(148,163,184,.16); border-color: var(--border); color: var(--muted); }
+        .conn-manage-list {
+            max-height: 240px; overflow-y: auto;
+            padding: 8px; display: flex; flex-direction: column; gap: 6px;
+        }
+        .conn-manage-list .webdav-recent-item {
+            background: #fff; border-color: var(--border);
+        }
+        /* 管理页里的行：文字左对齐（弹窗居中布局会带歪），按钮常显 */
+        .conn-manage-list .webdav-recent-item { text-align: left; }
+        .conn-manage-list .webdav-recent-main { text-align: left; }
+        .conn-manage-list .webdav-recent-name { text-align: left; }
+        .conn-manage-list .webdav-recent-url { text-align: left; }
+        .conn-manage-list .webdav-recent-go,
+        .conn-manage-list .webdav-recent-edit,
+        .conn-manage-list .webdav-recent-del {
+            opacity: 1;
+            background: rgba(148,163,184,.10);
+            color: #64748b;
+        }
+        .conn-manage-list .webdav-recent-go:hover { background: rgba(59,108,255,.16); color: #3b6cff; }
+        .conn-manage-list .webdav-recent-edit:hover { background: rgba(59,108,255,.16); color: #3b6cff; }
+        .conn-manage-list .webdav-recent-del:hover { background: rgba(239,68,68,.14); color: #ef4444; }
+        .conn-manage-list .webdav-recent-empty {
+            padding: 22px 10px; font-size: 12.5px;
+        }
+        .conn-form-panel {
+            padding: 14px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: var(--surface-2);
+            margin-bottom: 4px;
+        }
+        .conn-form-panel-head {
+            font-size: 12.5px; font-weight: 700; color: var(--text);
+            margin-bottom: 10px;
+        }
+        .conn-manage-foot { margin-top: 14px; }
         /* 通用二次确认对话框 */
         .confirm-dialog-mask {
             position: fixed; inset: 0; z-index: 12000;
@@ -2673,13 +2736,27 @@
             </div>
             <!-- 连接/添加新文件源弹窗（仅配置时弹出，连接成功后自动关闭并在右侧展示） -->
             <div class="pl-modal-mask" id="connectSourceModalMask">
-                <div class="pl-modal">
+                <div class="pl-modal conn-manage-modal">
                     <div class="modal-head">
-                        <h3><i class="fa-solid fa-network-wired"></i>&nbsp; 连接文件源</h3>
+                        <h3><i class="fa-solid fa-network-wired"></i>&nbsp; 文件源管理</h3>
                         <button class="modal-close-icon" id="connectSourceClose"><i class="fa-solid fa-xmark"></i></button>
                     </div>
-                    <p class="pl-modal-desc">连接局域网 NAS、SMB 共享或 WebDAV 服务器，连接后在右侧直接浏览与播放</p>
-                    
+
+                    <!-- 已保存的文件源：管理页的主体内容，放最上面 -->
+                    <div class="conn-manage-list-wrap">
+                        <div class="conn-manage-list-head">
+                            <span id="webdavRecentsCount">已保存的文件源</span>
+                            <button type="button" class="conn-manage-add" id="connAddToggle">
+                                <i class="fa-solid fa-plus"></i><span>新增</span>
+                            </button>
+                        </div>
+                        <div class="webdav-recents conn-manage-list" id="webdavRecents"></div>
+                    </div>
+
+                    <!-- 新增 / 编辑表单：默认收起，点「新增」或列表项后展开 -->
+                    <div class="conn-form-panel" id="connFormPanel" style="display:none;">
+                        <div class="conn-form-panel-head" id="connFormPanelHead">新增文件源</div>
+
                     <!-- 类型切换页签：WebDAV / SMB -->
                     <div class="cb-type-tabs" style="display:flex; gap:8px; margin-bottom:12px;">
                         <button class="pl-modal-btn primary cb-type-btn" id="tabTypeWebdav" style="flex:1; justify-content:center;">WebDAV</button>
@@ -2715,16 +2792,11 @@
                         </div>
                     </div>
 
-                    <!-- 已保存的文件源：这里是唯一的管理入口（编辑 / 删除），
-                         右侧面板的来源下拉只负责切换，不再重复提供管理功能 -->
-                    <div class="webdav-recents-head" id="webdavRecentsHead" style="display:none;">
-                        <span>已保存的文件源</span>
-                    </div>
-                    <div class="webdav-recents" id="webdavRecents" style="margin-top:6px; max-height:168px; overflow-y:auto;"></div>
+                    </div><!-- /conn-form-panel -->
 
-                    <div class="pl-modal-btns" style="margin-top: 14px;">
-                        <button class="pl-modal-btn" id="connCancelBtn">取消</button>
-                        <button class="pl-modal-btn primary" id="connSubmitBtn"><i class="fa-solid fa-plug"></i>&nbsp; 连接并读取</button>
+                    <div class="pl-modal-btns conn-manage-foot">
+                        <button class="pl-modal-btn" id="connCancelBtn">关闭</button>
+                        <button class="pl-modal-btn primary" id="connSubmitBtn" style="display:none;"><i class="fa-solid fa-plug"></i>&nbsp; 连接并读取</button>
                     </div>
                 </div>
             </div>
@@ -8234,6 +8306,8 @@
             const list = [...webdav, ...smb].sort((a, b) => (b.lastUsedAt || 0) - (a.lastUsedAt || 0));
 
             webdavRecentsEl.innerHTML = '';
+            const countEl = document.getElementById('webdavRecentsCount');
+            if (countEl) countEl.textContent = list.length ? `已保存的文件源 · ${list.length}` : '已保存的文件源';
             if (headEl) headEl.style.display = list.length ? '' : 'none';
             if (!list.length) {
                 const empty = document.createElement('div');
@@ -8290,6 +8364,7 @@
                         if (webdavPassInput) webdavPassInput.value = '';
                     }
                     syncConnSubmitLabel();
+                    setConnFormPanel(!editing ? true : false, !editing);
                     renderWebdavRecents();
                 });
 
@@ -8577,6 +8652,23 @@
             loadCurrentCloudDirectory(currentCloudSource.kind === 'webdav' ? currentWebdavPath : currentSmbPath);
         }
 
+        /// 展开 / 收起「新增 · 编辑」表单区。
+        /// 管理页默认只看列表，点「新增」或点某个来源才展开表单。
+        function setConnFormPanel(open, isEditing) {
+            const panel = document.getElementById('connFormPanel');
+            const head = document.getElementById('connFormPanelHead');
+            const addBtn = document.getElementById('connAddToggle');
+            const submit = document.getElementById('connSubmitBtn');
+            if (panel) panel.style.display = open ? '' : 'none';
+            if (submit) submit.style.display = open ? '' : 'none';
+            if (head) head.textContent = isEditing ? '编辑文件源' : '新增文件源';
+            if (addBtn) {
+                addBtn.classList.toggle('active', !!open);
+                const t = addBtn.querySelector('span');
+                if (t) t.textContent = open ? '收起' : '新增';
+            }
+        }
+
         /// 打开连接弹窗。
         /// 默认重置为「新增」；从列表点「编辑」进来时传 keepEditing=true，
         /// 否则会把刚设好的 editingId 清掉，导致「编辑」被当成「新增」。
@@ -8588,6 +8680,8 @@
                 }
                 syncConnSubmitLabel();
                 connectSourceModalMask.classList.add('active');
+                // 默认收起表单，进来先看到「已保存的文件源」列表（管理页形态）
+                setConnFormPanel(keepEditing, keepEditing);
                 renderWebdavRecents();
             }
         }
@@ -8599,6 +8693,39 @@
             if (webdavPassInput) webdavPassInput.value = '';
             if (smbPassInput) smbPassInput.value = '';
             syncConnSubmitLabel();
+            setConnFormPanel(false, false);
+        }
+
+        // 「新增」按钮：展开空白表单
+        const connAddToggle = document.getElementById('connAddToggle');
+        if (connAddToggle) {
+            connAddToggle.addEventListener('click', () => {
+                const panel = document.getElementById('connFormPanel');
+                const isOpen = panel && panel.style.display !== 'none';
+                if (isOpen) {
+                    // 收起：顺便清空编辑态
+                    editingWebdavId = null;
+                    editingSmbId = null;
+                    syncConnSubmitLabel();
+                    setConnFormPanel(false, false);
+                } else {
+                    // 展开：清空表单，进入新增
+                    editingWebdavId = null;
+                    editingSmbId = null;
+                    if (webdavNameInput) webdavNameInput.value = '';
+                    if (webdavUrlInput) webdavUrlInput.value = '';
+                    if (webdavUserInput) webdavUserInput.value = '';
+                    if (webdavPassInput) webdavPassInput.value = '';
+                    if (smbNameInput) smbNameInput.value = '';
+                    if (smbHostInput) smbHostInput.value = '';
+                    if (smbShareInput) smbShareInput.value = '';
+                    if (smbUserInput) smbUserInput.value = '';
+                    if (smbPassInput) smbPassInput.value = '';
+                    syncConnSubmitLabel();
+                    setConnFormPanel(true, false);
+                }
+                renderWebdavRecents();
+            });
         }
 
         // 切换 WebDAV / SMB 连接表单（统一走 switchConnType，
