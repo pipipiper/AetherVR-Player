@@ -367,7 +367,7 @@ function transcodeFailureMessage(stderr) {
   return diagnostic || text.slice(-1000) || "FFmpeg 未返回错误详情";
 }
 
-function startTranscode(target, ownerIp, res, start = 0, cred = null) {
+function startTranscode(target, ownerIp, res, start = 0, cred = null, audioStream = 0) {
   if (hlsSession) stopHlsSession(hlsSession);
   const id = crypto.randomBytes(12).toString("hex");
   const dir = path.join(HLS_ROOT, id);
@@ -391,7 +391,7 @@ function startTranscode(target, ownerIp, res, start = 0, cred = null) {
     ...(start > 0 ? ["-ss", start.toFixed(3)] : []),
     ...VIDEO_INPUT_ACCEL,
     "-i", proxyInput,
-    "-map", "0:v:0", "-map", "0:a:0?",
+    "-map", "0:v:0", "-map", `0:a:${Math.max(0, Math.min(31, audioStream))}?`,
     ...VIDEO_ENCODER,
     "-vf", VIDEO_FILTER,
     ...VIDEO_PIXEL_FORMAT,
@@ -482,7 +482,7 @@ function probeRemoteMedia(target, res, cred) {
   const proc = spawn(FFPROBE, [
     "-v", "error",
     "-rw_timeout", "15000000",
-    "-show_entries", "stream=codec_type,codec_name,width,height:format=format_name",
+    "-show_entries", "stream=index,codec_type,codec_name,width,height:stream_tags=language,title:format=format_name",
     "-of", "json",
     proxyInput,
   ]);
@@ -518,6 +518,10 @@ function probeRemoteMedia(target, res, cred) {
         video: v ? { codec: v.codec_name || "", width: v.width || 0, height: v.height || 0 } : null,
         audio: a ? { codec: a.codec_name || "" } : null,
         formatName: format.format_name || "",
+        streams: streams.map((s) => ({
+          index: s.index, codec_type: s.codec_type, codec_name: s.codec_name || "",
+          width: s.width || 0, height: s.height || 0, tags: s.tags || {},
+        })),
       }));
     } catch {
       fail("探测结果解析失败");
@@ -961,6 +965,7 @@ const requestHandler = async (req, res) => {
       let target;
       let start = 0;
       let transcodeCred = "";
+      let audioStream = 0;
       try {
         const body = await readJson(req);
         target = typeof body.url === "string" ? body.url.trim() : "";
@@ -977,6 +982,10 @@ const requestHandler = async (req, res) => {
         if (Number.isFinite(startRaw) && startRaw > 0) {
           start = Math.min(startRaw, 12 * 3600);
         }
+        const requestedAudio = Number(body.audioStream);
+        if (Number.isInteger(requestedAudio) && requestedAudio >= 0) {
+          audioStream = Math.min(31, requestedAudio);
+        }
       } catch (err) {
         res.writeHead(400, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: err.message }));
@@ -984,7 +993,7 @@ const requestHandler = async (req, res) => {
       }
       sweepStaleEntries(transcodeStarts);
       transcodeStarts.set(ip, Date.now());
-      startTranscode(target, ip, res, start, transcodeCred);
+      startTranscode(target, ip, res, start, transcodeCred, audioStream);
       return;
     }
     if (urlPath === "/api/capabilities") {
@@ -1163,11 +1172,9 @@ const requestHandler = async (req, res) => {
           return;
         }
 
-        const executeOp = async (targetUrl, redirectCount = 0) => {
+        const sendWebdavRequest = async (method, targetUrl, reqBody = null, extraHeaders = {}, redirectCount = 0) => {
           if (redirectCount > 5) {
-            res.writeHead(502, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ error: "WebDAV 重定向过多 (Too many redirects)" }));
-            return;
+            throw Object.assign(new Error("WebDAV 重定向过多 (Too many redirects)"), { httpStatus: 502 });
           }
 
           const u = new URL(targetUrl);
@@ -1176,33 +1183,13 @@ const requestHandler = async (req, res) => {
           const headers = {
             "Host": u.host,
             "User-Agent": "AetherVR-WebDAV-Client/1.0",
+            ...extraHeaders,
           };
           if (username || password) {
             headers["Authorization"] = "Basic " + Buffer.from(`${username}:${password}`).toString("base64");
           }
-
-          let method = "GET";
-          let reqBody = null;
-          if (op === "upload") {
-            method = "PUT";
-            headers["Content-Type"] = "application/json; charset=utf-8";
-            reqBody = Buffer.from(content, "utf8");
+          if (reqBody != null) {
             headers["Content-Length"] = reqBody.length;
-          } else if (op === "delete") {
-            method = "DELETE";
-          } else if (op === "move") {
-            method = "MOVE";
-            if (!rawDestUrl) {
-              res.writeHead(400, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "Missing destUrl for move" }));
-              return;
-            }
-            headers["Destination"] = rawDestUrl;
-            headers["Overwrite"] = "T";
-          } else if (op === "read") {
-            method = "GET";
-          } else {
-            res.writeHead(400, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "Unsupported op: " + op }));
-            return;
           }
 
           const options = {
@@ -1217,48 +1204,91 @@ const requestHandler = async (req, res) => {
           };
           if (u.protocol === "https:" && !net.isIP(u.hostname)) options.servername = u.hostname;
 
-          const preq = lib.request(options, (pres) => {
-            // 支持 301, 302, 307, 308 重定向自动跟随
-            if ([301, 302, 307, 308].includes(pres.statusCode) && pres.headers.location) {
-              pres.resume();
-              const nextUrl = new URL(pres.headers.location, u).href;
-              executeOp(nextUrl, redirectCount + 1).catch(err => {
-                if (!res.headersSent) {
-                  res.writeHead(500, { "Content-Type": "application/json" });
-                  res.end(JSON.stringify({ error: err.message }));
-                }
-              });
-              return;
-            }
-
-            let respData = "";
-            pres.setEncoding("utf8");
-            pres.on("data", (chunk) => { respData += chunk; });
-            pres.on("end", () => {
-              if (pres.statusCode >= 200 && pres.statusCode < 300) {
-                res.writeHead(200, { "Content-Type": "application/json" });
-                res.end(JSON.stringify({ success: true, status: pres.statusCode, data: respData }));
-              } else {
-                res.writeHead(pres.statusCode, { "Content-Type": "application/json" });
-                res.end(JSON.stringify({ error: `WebDAV 服务器返回 ${pres.statusCode}`, status: pres.statusCode, details: respData }));
+          return await new Promise((resolve, reject) => {
+            const preq = lib.request(options, (pres) => {
+              if ([301, 302, 307, 308].includes(pres.statusCode) && pres.headers.location) {
+                pres.resume();
+                const nextUrl = new URL(pres.headers.location, u).href;
+                sendWebdavRequest(method, nextUrl, reqBody, extraHeaders, redirectCount + 1).then(resolve, reject);
+                return;
               }
+              let respData = "";
+              pres.setEncoding("utf8");
+              pres.on("data", (chunk) => { respData += chunk; });
+              pres.on("end", () => {
+                resolve({ status: pres.statusCode, data: respData, finalUrl: u.href });
+              });
             });
+            preq.on("timeout", () => {
+              preq.destroy();
+              reject(Object.assign(new Error("WebDAV 操作超时"), { httpStatus: 504 }));
+            });
+            preq.on("error", (e) => {
+              reject(Object.assign(new Error("WebDAV 操作失败：" + e.message), { httpStatus: 502 }));
+            });
+            if (reqBody) preq.write(reqBody);
+            preq.end();
           });
-          preq.on("timeout", () => { preq.destroy(); res.writeHead(504).end(JSON.stringify({ error: "WebDAV 操作超时" })); });
-          preq.on("error", (e) => {
-            if (!res.headersSent) {
-              res.writeHead(502, { "Content-Type": "application/json" });
-              res.end(JSON.stringify({ error: "WebDAV 操作失败：" + e.message }));
-            }
-          });
-          if (reqBody) preq.write(reqBody);
-          preq.end();
         };
 
-        await executeOp(rawUrl);
+        let method = "GET";
+        let reqBody = null;
+        const extraHeaders = {};
+        if (op === "upload") {
+          method = "PUT";
+          extraHeaders["Content-Type"] = "application/json; charset=utf-8";
+          reqBody = Buffer.from(content, "utf8");
+        } else if (op === "delete") {
+          method = "DELETE";
+        } else if (op === "move") {
+          method = "MOVE";
+          if (!rawDestUrl) {
+            res.writeHead(400, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "Missing destUrl for move" }));
+            return;
+          }
+          extraHeaders["Destination"] = rawDestUrl;
+          extraHeaders["Overwrite"] = "T";
+        } else if (op === "read") {
+          method = "GET";
+        } else {
+          res.writeHead(400, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "Unsupported op: " + op }));
+          return;
+        }
+
+        let result = await sendWebdavRequest(method, rawUrl, reqBody, extraHeaders);
+        if (op === "upload" && (result.status === 404 || result.status === 409)) {
+          const u = new URL(result.finalUrl || rawUrl);
+          const parts = u.pathname.split("/").filter(Boolean);
+          if (parts.length > 1) {
+            let prefix = "";
+            for (let i = 0; i < parts.length - 1; i += 1) {
+              prefix += "/" + parts[i];
+              const dirUrl = `${u.origin}${prefix}/`;
+              const mkRes = await sendWebdavRequest("MKCOL", dirUrl);
+              if ((mkRes.status >= 200 && mkRes.status < 300) || mkRes.status === 405 || mkRes.status === 403 || mkRes.status === 301) {
+                continue;
+              }
+              if (mkRes.status === 401) {
+                result = mkRes;
+                break;
+              }
+            }
+            if (result.status === 404 || result.status === 409) {
+              result = await sendWebdavRequest(method, rawUrl, reqBody, extraHeaders);
+            }
+          }
+        }
+
+        if (result.status >= 200 && result.status < 300) {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ success: true, status: result.status, data: result.data }));
+        } else {
+          res.writeHead(result.status, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: `WebDAV 服务器返回 ${result.status}`, status: result.status, details: result.data }));
+        }
       } catch (err) {
         if (!res.headersSent) {
-          res.writeHead(400, { "Content-Type": "application/json" });
+          res.writeHead(err.httpStatus || 400, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: err.message }));
         }
       }

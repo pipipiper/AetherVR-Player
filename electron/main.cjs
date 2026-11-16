@@ -9,7 +9,7 @@
  *   - checkPaths(paths)  批量检查磁盘路径是否存在，返回 { path: { exists, size } }
  *   - platform           process.platform
  */
-const { app, BrowserWindow, dialog, ipcMain } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, safeStorage } = require('electron');
 const crypto = require('crypto');
 const fs = require('fs');
 const net = require('net');
@@ -113,6 +113,39 @@ async function start() {
       fs.writeFileSync(cfgFile(), JSON.stringify(obj && typeof obj === 'object' ? obj : {}));
       return true;
     } catch { return false; }
+  });
+
+  // 文件源密码由系统钥匙串/DPAPI 加密。localStorage 只保留地址和账号，
+  // 即使页面源端口变化或浏览器数据被导出，也不会直接泄露明文密码。
+  const credentialsFile = () => path.join(app.getPath('userData'), 'vr-player-credentials.json');
+  ipcMain.handle('credentials:read', () => {
+    try {
+      const envelope = JSON.parse(fs.readFileSync(credentialsFile(), 'utf8'));
+      if (!envelope || typeof envelope.encrypted !== 'string' || !safeStorage.isEncryptionAvailable()) return null;
+      return JSON.parse(safeStorage.decryptString(Buffer.from(envelope.encrypted, 'base64')).toString('utf8'));
+    } catch { return null; }
+  });
+  ipcMain.handle('credentials:write', (event, payload) => {
+    try {
+      if (!safeStorage.isEncryptionAvailable()) return { ok: false, error: '系统安全存储不可用' };
+      const encrypted = safeStorage.encryptString(JSON.stringify(payload || {})).toString('base64');
+      const target = credentialsFile();
+      const temporary = target + '.tmp';
+      fs.writeFileSync(temporary, JSON.stringify({ version: 1, encrypted }), { mode: 0o600 });
+      fs.renameSync(temporary, target);
+      return { ok: true };
+    } catch (error) { return { ok: false, error: error.message }; }
+  });
+
+  ipcMain.handle('smb:resolveUNC', async (event, payload) => {
+    const unc = String((payload && payload.unc) || '');
+    if (!/^\\\\[^\\]+\\[^\\]+/.test(unc)) return { ok: false, error: '无效 SMB UNC 路径' };
+    try {
+      const stat = await fs.promises.stat(unc);
+      return { ok: true, localPath: unc, isDirectory: stat.isDirectory() };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
   });
 
   // ── 播放列表库：播放列表与收藏夹以 dpl 文件形式存放在用户选择的目录 ──
@@ -416,6 +449,28 @@ async function start() {
     } catch (err) {
       return { ok: false, error: err.message || String(err), entries: [] };
     }
+  });
+
+  ipcMain.handle('smb:rename', async (event, payload) => {
+    const oldPath = String(payload?.path || '');
+    const name = String(payload?.name || '').trim();
+    if (!oldPath || !name || name === '.' || name === '..' || /[\\/]/.test(name)) {
+      return { ok: false, error: '名称无效' };
+    }
+    try {
+      const dest = path.join(path.dirname(oldPath), name);
+      await fs.promises.rename(oldPath, dest);
+      return { ok: true, path: dest };
+    } catch (error) { return { ok: false, error: error.message }; }
+  });
+
+  ipcMain.handle('smb:delete', async (event, payload) => {
+    const target = String(payload?.path || '');
+    if (!target || target === path.parse(target).root) return { ok: false, error: '路径无效' };
+    try {
+      await fs.promises.rm(target, { recursive: !!payload?.directory, force: false });
+      return { ok: true };
+    } catch (error) { return { ok: false, error: error.message }; }
   });
 
   ipcMain.handle('gpu:diagnostics', async () => {

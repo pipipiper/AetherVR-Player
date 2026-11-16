@@ -17,6 +17,9 @@ contextBridge.exposeInMainWorld('vrDesktop', {
   // 应用配置（与端口无关的持久化）
   readCfg: () => ipcRenderer.invoke('cfg:read'),
   writeCfg: (obj) => ipcRenderer.invoke('cfg:write', obj),
+  readCredentials: () => ipcRenderer.invoke('credentials:read'),
+  writeCredentials: (data) => ipcRenderer.invoke('credentials:write', data),
+  resolveSmbUNC: (unc) => ipcRenderer.invoke('smb:resolveUNC', { unc }),
   gpuDiagnostics: () => ipcRenderer.invoke('gpu:diagnostics'),
   // File 对象 → 磁盘绝对路径（Electron webUtils；拿不到时返回空串）
   pathForFile: (file) => {
@@ -28,5 +31,7 @@ contextBridge.exposeInMainWorld('vrDesktop', {
   smbConnectShare: (host, share, user, password) =>
     ipcRenderer.invoke('smb:connectShare', { host, share, user, password }),
   smbListDir: (dirPath) => ipcRenderer.invoke('smb:listDir', { path: dirPath }),
+  smbRename: (path, name) => ipcRenderer.invoke('smb:rename', { path, name }),
+  smbDelete: (path, directory) => ipcRenderer.invoke('smb:delete', { path, directory }),
   platform: process.platform,
 });

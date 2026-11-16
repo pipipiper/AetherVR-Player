@@ -2131,6 +2131,9 @@
         }
         .cb-item-actions { display: none; gap: 4px; flex: none; }
         .cb-item:hover .cb-item-actions { display: flex; }
+        .cb-item-actions button { border:0; background:transparent; color:#94a3b8; cursor:pointer; padding:4px; }
+        .cb-item-actions button:hover { color:#fff; }
+        @media (pointer:coarse) { .cb-item-actions { display:flex; } }
         .cb-empty {
             padding: 40px 16px; text-align: center; color: #94a3b8; font-size: 13px;
             min-height: 180px; box-sizing: border-box;
@@ -2419,7 +2422,7 @@
             <div class="drop-zone hero active" id="dropZone">
                 <div class="hero-icon"><i class="fa-solid fa-vr-cardboard"></i></div>
                 <h2 class="hero-title">AetherVR Player</h2>
-                <p class="hero-sub">本地文件与在线直链即点即播 · 支持 360° 全景与 SBS 分屏</p>
+                <p class="hero-sub">本地文件与在线直链即点即播 · 支持 180° / 360° 全景与 SBS 分屏</p>
                 <p class="hero-version" id="heroVersion">v__APP_VERSION__</p>
                 <div class="url-input-wrapper hero-url" id="onlineUrlSection">
                     <input type="url" id="videoUrl" placeholder="粘贴视频链接，回车播放…" spellcheck="false" autocomplete="off">
@@ -2485,6 +2488,10 @@
                         <span>左右分屏</span>
                     </label>
                 </div>
+                <div class="sbs-row">
+                    <label><input type="radio" name="vrProjection" value="vr360" checked><span>360° 全球</span></label>
+                    <label><input type="radio" name="vrProjection" value="vr180"><span>180° 半球</span></label>
+                </div>
             </div>
 
             <div class="video-container" id="videoContainer">
@@ -2542,6 +2549,7 @@
                             <button class="control-btn" id="favBtn" title="收藏当前视频" style="display:none"><i class="fa-solid fa-star"></i></button>
                             <button class="control-btn" id="addToListBtn" title="把当前视频加入播放列表" style="display:none"><i class="fa-solid fa-square-plus"></i></button>
                             <button class="control-btn" id="bookmarkBtn" title="标记当前时间为重点（再次点击可取消）" style="display:none"><i class="fa-solid fa-bookmark"></i></button>
+                            <button class="control-btn" id="bookmarkManagerBtn" title="管理全部书签"><i class="fa-solid fa-list-check"></i></button>
                         </div>
 
                         <div class="controls-center">
@@ -2556,6 +2564,7 @@
                             <button class="control-btn is-stop" id="stopBtn" title="停止播放并返回"><i class="fa-solid fa-stop"></i></button>
                             <button class="control-btn playlist-ctl" id="playlistBtn" title="播放列表" style="display:none"><i class="fa-solid fa-list-ul"></i></button>
                             <button class="control-btn" id="diagnosticsBtn" title="播放诊断"><i class="fa-solid fa-chart-line"></i></button>
+                            <button class="control-btn" id="mediaTracksBtn" title="字幕与音轨"><i class="fa-solid fa-closed-captioning"></i></button>
                             <button class="control-btn" id="fullscreenBtn" title="全屏"><i class="fa-solid fa-expand"></i></button>
                         </div>
                     </div>
@@ -2572,6 +2581,7 @@
                     <div class="diagnostics-body" id="diagnosticsBody"></div>
                 </section>
                 <video id="videoPlayer" playsinline webkit-playsinline></video>
+                <input type="file" id="subtitleFileInput" accept=".srt,.vtt,text/vtt,application/x-subrip" hidden>
                 <canvas id="vrCanvas"></canvas>
                 <button class="big-play-btn" id="bigPlayBtn" title="播放"><i class="fa-solid fa-play"></i></button>
                 <div class="seek-loading" id="seekLoading"><div class="seek-loading-spinner"></div><span id="seekLoadingText">转码加载中…</span></div>
@@ -2645,6 +2655,8 @@
                 <div class="cb-path-bar" id="cloudBrowserPathBar" style="display:none" title="当前路径">
                     <i class="fa-solid fa-folder"></i>
                     <span class="cb-path-text" id="cloudBrowserPathText">/</span>
+                    <button class="pl-tab-nav" id="cloudSortBtn" title="名称 / 时间 / 大小排序"><i class="fa-solid fa-arrow-down-a-z"></i></button>
+                    <button class="pl-tab-nav" id="cloudSortDirBtn" title="切换升降序"><i class="fa-solid fa-arrow-up"></i></button>
                 </div>
                 <div class="playlist-summary" id="playlistSummary" style="display:none"></div>
                 <div class="panel-lists">
@@ -2942,6 +2954,26 @@
                 </div>
             </div>
 
+            <div class="pl-modal-mask" id="mediaTracksModalMask">
+                <div class="pl-modal">
+                    <div class="modal-head"><h3><i class="fa-solid fa-closed-captioning"></i>&nbsp; 字幕与音轨</h3>
+                        <button class="modal-close-icon" id="mediaTracksClose"><i class="fa-solid fa-xmark"></i></button></div>
+                    <h4>字幕</h4><div id="subtitleTrackList" class="history-list"></div>
+                    <button class="pl-modal-btn" id="addSubtitleBtn"><i class="fa-solid fa-file-import"></i>&nbsp; 加载外挂 SRT / VTT</button>
+                    <h4>音轨</h4><div id="audioTrackList" class="history-list"></div>
+                    <p class="pl-modal-desc" id="audioTrackHint"></p>
+                </div>
+            </div>
+
+            <div class="pl-modal-mask" id="bookmarkManagerMask">
+                <div class="pl-modal pl-modal-lg">
+                    <div class="modal-head"><h3><i class="fa-solid fa-bookmark"></i>&nbsp; 书签管理</h3>
+                        <button class="modal-close-icon" id="bookmarkManagerClose"><i class="fa-solid fa-xmark"></i></button></div>
+                    <div class="history-toolbar"><input type="search" id="bookmarkManagerSearch" placeholder="搜索影片或地址…"></div>
+                    <div id="bookmarkManagerList" class="history-list"></div>
+                </div>
+            </div>
+
             <!-- 空间计算全景 Toast 提示容器 -->
             <div class="spatial-toast" id="spatialToast"></div>
 
@@ -3023,6 +3055,8 @@
         let rotation = { x: 0, y: 0 };
         let isSbsVideo = false;
         let sbsMode = 'left'; // 'left', 'right', or 'split'
+        let defaultVrProjection = 'vr360';
+        try { defaultVrProjection = localStorage.getItem('aethervr-default-projection') || 'vr360'; } catch {}
         let pendingVrMode = false;
         let mediaLoadGeneration = 0;
         let mediaReadyGeneration = 0;
@@ -3161,13 +3195,47 @@
         let posCurrentKey = '';
         let posSaveTimer = null;
 
+        // SMB 的永久身份始终是 UNC；macOS 的 /tmp 挂载路径只用于本次读取。
+        const posterWallSmbMountMap = new Map();
+        const posterWallSmbMountJobs = new Map();
+        function smbUNCFromPath(p, source) {
+            const raw = String(p || '');
+            if (raw.startsWith('\\\\')) return raw;
+            if (raw.startsWith('/tmp/') && typeof pwUNCFromMountedPath === 'function') {
+                const mapped = pwUNCFromMountedPath(raw);
+                if (mapped) return mapped;
+            }
+            const src = source || (typeof currentCloudSource !== 'undefined' ? currentCloudSource : null);
+            if (!src || src.kind !== 'smb' || !src.host || !src.share) return raw;
+            const root = String(typeof currentSmbMountRoot !== 'undefined' ? currentSmbMountRoot : '').replace(/[\\/]+$/, '');
+            let relative = raw;
+            if (root && (raw === root || raw.startsWith(root + '/') || raw.startsWith(root + '\\'))) {
+                relative = raw.slice(root.length);
+            }
+            const suffix = relative.replace(/^[/\\]+|[/\\]+$/g, '').replace(/\//g, '\\');
+            return `\\\\${src.host}\\${src.share}${suffix ? '\\' + suffix : ''}`;
+        }
+        function portableMediaPath(path, source) {
+            const raw = String(path || '');
+            const identity = smbUNCFromPath(raw, source);
+            if (identity.startsWith('\\\\') || !/^\/tmp\/aethervr-smb\//.test(raw)) return identity;
+            const parts = raw.slice('/tmp/aethervr-smb/'.length).split('/');
+            parts.shift();
+            const src = source?.kind === 'smb' ? source
+                : typeof currentCloudSource !== 'undefined' && currentCloudSource?.kind === 'smb'
+                ? currentCloudSource : null;
+            return src && src.host && src.share
+                ? `\\\\${src.host}\\${src.share}${parts.length ? '\\' + parts.join('\\') : ''}`
+                : raw;
+        }
+
         function posKeyFromUrl(url) {
             if (!url) return '';
             try {
                 const u = new URL(url, location.origin);
                 if (u.pathname === '/local') {
                     const p = u.searchParams.get('path');
-                    return p ? 'local:' + p : '';
+                    return p ? 'local:' + portableMediaPath(p) : '';
                 }
                 return 'url:' + u.href;
             } catch { return 'url:' + String(url); }
@@ -3664,17 +3732,20 @@
                 playlistIndex = i;
                 renderPlaylist();
                 updatePlaylistButtons();
-                window.vrDesktop.checkPaths([item.originalPath]).then((map) => {
-                    const rec = map && map[item.originalPath];
+                (async () => {
+                    const diskPath = /^\\\\/.test(item.originalPath)
+                        ? await resolveSmbPlaybackPath(item.originalPath) : item.originalPath;
+                    const map = await window.vrDesktop.checkPaths([diskPath]);
+                    const rec = map && map[diskPath];
                     if (rec && rec.exists) {
-                        item.url = localUrl(item.originalPath);
+                        item.url = localUrl(diskPath);
                         item.status = 'ready';
                         item.error = '';
                         playAt(i);
                     } else {
                         showPlaylistBanner(`磁盘上找不到「${item.originalPath}」，请确认文件是否存在、盘符/路径是否变化。`);
                     }
-                });
+                })().catch((error) => showPlaylistBanner(error.message));
             } else {
                 playlistIndex = i;
                 renderPlaylist();
@@ -3954,7 +4025,7 @@
             };
             // 桌面端：dpl 里的绝对路径直接查磁盘，存在即可播（/local 流式读取）
             if (isDesktopApp) {
-                if (desktopDiskMap === null) return item; // 尚未做磁盘检查（启动恢复第一遍）：保持未解析
+                if (desktopDiskMap === null || /^\\\\/.test(rawPath)) return item;
                 const rec = desktopDiskMap[rawPath];
                 if (rec && rec.exists) {
                     item.url = localUrl(rawPath);
@@ -4219,17 +4290,12 @@
             playedFromPosterWall = false;   // 收藏夹起播，停止后回首页
             playOrigin = 'fav';
             if (f.kind === 'local') {
-                let rec = null;
                 try {
-                    const map = await window.vrDesktop.checkPaths([f.target]);
-                    rec = map && map[f.target];
-                } catch { /* 按不存在处理 */ }
-                if (!rec || !rec.exists) {
-                    showPlaylistBanner(`磁盘上找不到「${f.name}」（${f.target}），文件可能已移动或删除。`);
+                    await playLocalMediaReference(f.name, f.target, f.position);
+                } catch (error) {
+                    showPlaylistBanner(`无法打开「${f.name}」：${error.message}`);
                     switchTab('playlist');
-                    return;
                 }
-                playTarget(f.name, localUrl(f.target), f.position);
             } else {
                 playTarget(f.name, f.target, f.position);
             }
@@ -4344,10 +4410,23 @@
         // 把一组 dpl 条目解析为播放列表项（桌面端批量查磁盘）
         async function resolveDplEntries(entries) {
             const localPaths = entries.filter((e) => !/^https?:\/\//i.test(e.file)).map((e) => e.file);
+            const resolvedUNC = new Map();
+            for (const unc of localPaths.filter((p) => /^\\\\/.test(p))) {
+                try { resolvedUNC.set(unc, await resolveSmbPlaybackPath(unc)); } catch { /* 点击时仍会提示重连 */ }
+            }
             try {
-                desktopDiskMap = localPaths.length ? await window.vrDesktop.checkPaths(localPaths) : {};
+                const diskPaths = localPaths.map((p) => resolvedUNC.get(p) || p);
+                const checked = diskPaths.length ? await window.vrDesktop.checkPaths(diskPaths) : {};
+                desktopDiskMap = Object.fromEntries(localPaths.map((p) => [p, checked[resolvedUNC.get(p) || p]]));
             } catch { desktopDiskMap = {}; }
-            return entries.map(entryToItem);
+            return entries.map((entry) => {
+                const item = entryToItem(entry);
+                if (resolvedUNC.has(entry.file) && desktopDiskMap[entry.file]?.exists) {
+                    item.url = localUrl(resolvedUNC.get(entry.file));
+                    item.status = 'ready';
+                }
+                return item;
+            });
         }
         // 打开/新建一个播放列表页签并切换过去；autoplay 时首播第一个可播条目
         function openPlaylistTab(name, path, items, entries, autoplay) {
@@ -4634,7 +4713,10 @@
             }
             const src = videoPlayer.dataset.remoteUrl || '';
             const m = src.match(/^\/local\?path=([^&]+)/);
-            if (m) return { name: fileName.textContent || '本地视频', target: safeDecode(m[1]), kind: 'local' };
+            if (m) return {
+                name: fileName.textContent || '本地视频',
+                target: portableMediaPath(safeDecode(m[1])), kind: 'local'
+            };
             if (/^https?:\/\//i.test(src) && !src.startsWith(location.origin)) {
                 return { name: videoPlayer.dataset.remoteName || fileName.textContent || '网络视频', target: src, kind: 'online' };
             }
@@ -4699,9 +4781,47 @@
                     url: ref.target, file: null, fileHandle: null,
                     status: 'remote', error: '', position: position || 0 };
             }
+            if (/^\\\\/.test(ref.target)) {
+                return { name: ref.name, originalPath: ref.target, normalizedPath: normalizePath(ref.target),
+                    url: '', file: null, fileHandle: null,
+                    status: 'unresolved', error: '', position: position || 0 };
+            }
             return { name: ref.name, originalPath: ref.target, normalizedPath: normalizePath(ref.target),
                 url: localUrl(ref.target), file: null, fileHandle: null,
                 status: 'ready', error: '', position: position || 0 };
+        }
+
+        function smbServerForUNC(unc) {
+            const match = String(unc || '').match(/^\\\\([^\\]+)\\([^\\]+)(?:\\|$)/);
+            if (!match) return null;
+            return getSmbServers().find((s) => (s.host || '').toLowerCase() === match[1].toLowerCase()
+                && (s.share || '').toLowerCase() === match[2].toLowerCase()) || null;
+        }
+        async function resolveSmbPlaybackPath(unc) {
+            const server = smbServerForUNC(unc);
+            if (!server || !window.vrDesktop?.smbConnectShare) {
+                throw new Error('找不到对应的 SMB 文件源，请先重新连接');
+            }
+            currentCloudSource = { kind: 'smb', ...server };
+            const conn = await window.vrDesktop.smbConnectShare(
+                server.host, server.share, server.user || '', server.pass || ''
+            );
+            if (!conn || !conn.ok) throw new Error(conn?.error || 'SMB 重新连接失败');
+            currentSmbMountRoot = conn.localPath;
+            markSmbServerMounted(server, conn.localPath);
+            const prefix = `\\\\${server.host}\\${server.share}`;
+            const relative = unc.slice(prefix.length).replace(/^[\\/]+/, '').replace(/\\/g, '/');
+            return conn.localPath.replace(/[\\/]+$/, '') + (relative ? '/' + relative : '');
+        }
+        async function playLocalMediaReference(name, target, position) {
+            let diskPath = target;
+            if (/^\\\\/.test(target)) diskPath = await resolveSmbPlaybackPath(target);
+            if (!isDesktopApp) throw new Error('本地文件记录需在桌面版中播放');
+            if (!/^\\\\/.test(target)) {
+                const map = await window.vrDesktop.checkPaths([diskPath]);
+                if (!map || !map[diskPath]?.exists) throw new Error('文件不存在或暂时不可访问');
+            }
+            playTarget(name, localUrl(diskPath), position);
         }
 
         // ── 导入 / 导出 ──
@@ -4955,7 +5075,7 @@
                     renderer.setPixelRatio(window.devicePixelRatio);
 
                     // Create sphere geometry
-                    const geometry = new THREE.SphereGeometry(500, 60, 40);
+                    const geometry = createVRProjectionGeometry(defaultVrProjection);
                     geometry.scale(-1, 1, 1); // Invert the sphere
 
                     // Create video texture
@@ -4987,6 +5107,26 @@
             });
 
             return vrInitPromise;
+        }
+
+        function createVRProjectionGeometry(projection) {
+            // 180° 只有半球，经度 pi；不能把它重复拉伸到完整球体。
+            return new THREE.SphereGeometry(500, 60, 40, 0,
+                projection === 'vr180' ? Math.PI : Math.PI * 2);
+        }
+        function syncProjectionControls() {
+            document.querySelectorAll('input[name="vrProjection"]').forEach((radio) => {
+                radio.checked = radio.value === defaultVrProjection;
+            });
+        }
+        function setVRProjection(projection) {
+            defaultVrProjection = projection === 'vr180' ? 'vr180' : 'vr360';
+            try { localStorage.setItem('aethervr-default-projection', defaultVrProjection); } catch {}
+            syncProjectionControls();
+            if (sphere) {
+                sphere.geometry.dispose();
+                sphere.geometry = createVRProjectionGeometry(defaultVrProjection);
+            }
         }
 
         // Detect if video is SBS format (check aspect ratio)
@@ -6748,11 +6888,62 @@
 
         // ── 视频重点标记（书签）────────────────────────────────
         const BOOKMARK_STORE_KEY = 'aethervr-bookmarks-v1';
+        const BOOKMARK_META_KEY = 'aethervr-bookmarks-meta-v1';
         let bookmarkStore = {};
+        let bookmarkMeta = {};
         try { bookmarkStore = JSON.parse(localStorage.getItem(BOOKMARK_STORE_KEY)) || {}; } catch { bookmarkStore = {}; }
+        try { bookmarkMeta = JSON.parse(localStorage.getItem(BOOKMARK_META_KEY)) || {}; } catch { bookmarkMeta = {}; }
+        let lastBookmarkAddedAt = 0;
         const bookmarkBtn = document.getElementById('bookmarkBtn');
         const bookmarkTrack = document.getElementById('bookmarkTrack');
 
+        function normalizeBookmarkAddedAt(raw) {
+            const n = Number(raw);
+            if (!Number.isFinite(n) || n <= 0) return 0;
+            return n > 1e12 ? n / 1000 : n;
+        }
+        function nextBookmarkTimestamp() {
+            const now = Date.now() / 1000;
+            lastBookmarkAddedAt = Math.max(now, lastBookmarkAddedAt + 0.001);
+            return lastBookmarkAddedAt;
+        }
+        function findBookmarkMeta(entries, time) {
+            if (!Array.isArray(entries) || !entries.length) return null;
+            const exact = entries.find((m) => m && Number(m.time) === time);
+            if (exact) return exact;
+            let best = null;
+            let bestDiff = Infinity;
+            for (const entry of entries) {
+                if (!entry || !Number.isFinite(Number(entry.time))) continue;
+                const diff = Math.abs(Number(entry.time) - time);
+                if (diff <= 0.5 && diff < bestDiff) {
+                    best = entry;
+                    bestDiff = diff;
+                }
+            }
+            return best;
+        }
+        function reconcileAllBookmarkMeta() {
+            const nextMeta = {};
+            Object.entries(bookmarkStore).forEach(([key, list]) => {
+                if (!Array.isArray(list) || !list.length) return;
+                const existing = Array.isArray(bookmarkMeta[key]) ? bookmarkMeta[key] : [];
+                const validTimes = list.filter((t) => Number.isFinite(t) && t >= 0);
+                if (!validTimes.length) return;
+                nextMeta[key] = validTimes.map((time) => {
+                    const matched = findBookmarkMeta(existing, time);
+                    const addedAt = matched ? normalizeBookmarkAddedAt(matched.addedAt) : 0;
+                    lastBookmarkAddedAt = Math.max(lastBookmarkAddedAt, addedAt);
+                    return { time, addedAt };
+                });
+            });
+            bookmarkMeta = nextMeta;
+        }
+        reconcileAllBookmarkMeta();
+        function persistBookmarks() {
+            try { localStorage.setItem(BOOKMARK_STORE_KEY, JSON.stringify(bookmarkStore)); } catch { /* 忽略 */ }
+            try { localStorage.setItem(BOOKMARK_META_KEY, JSON.stringify(bookmarkMeta)); } catch { /* 忽略 */ }
+        }
         function bookmarkCurrentKey() {
             if (posCurrentKey) return posCurrentKey;
             const raw = videoPlayer.dataset.remoteUrl || videoPlayer.currentSrc || '';
@@ -6763,12 +6954,98 @@
             const list = key && Array.isArray(bookmarkStore[key]) ? bookmarkStore[key] : [];
             return list.filter((t) => Number.isFinite(t)).sort((a, b) => a - b);
         }
+        function bookmarkAddedAt(key, time) {
+            const entries = Array.isArray(bookmarkMeta[key]) ? bookmarkMeta[key] : [];
+            if (!entries.length) return 0;
+            const exact = entries.find((m) => m && Number(m.time) === time);
+            if (exact) return normalizeBookmarkAddedAt(exact.addedAt);
+            let maxTs = 0;
+            for (const entry of entries) {
+                if (entry && Math.abs(Number(entry.time) - time) <= 0.5) {
+                    maxTs = Math.max(maxTs, normalizeBookmarkAddedAt(entry.addedAt));
+                }
+            }
+            return maxTs;
+        }
+        function bookmarkLatestAddedAt(key) {
+            const entries = Array.isArray(bookmarkMeta[key]) ? bookmarkMeta[key] : [];
+            let latest = 0;
+            for (const entry of entries) {
+                if (entry) latest = Math.max(latest, normalizeBookmarkAddedAt(entry.addedAt));
+            }
+            return latest;
+        }
+        function bookmarkTimesNewestFirst(key) {
+            const list = key && Array.isArray(bookmarkStore[key]) ? bookmarkStore[key] : [];
+            return list
+                .filter((t) => Number.isFinite(t) && t >= 0)
+                .sort((a, b) => {
+                    const leftAdded = bookmarkAddedAt(key, a);
+                    const rightAdded = bookmarkAddedAt(key, b);
+                    if (leftAdded !== rightAdded) return rightAdded - leftAdded;
+                    return b - a;
+                });
+        }
+        function bookmarkSortedKeysNewestFirst() {
+            const historyTimes = new Map();
+            try {
+                getPlaybackHistory().forEach((r) => {
+                    if (!r || !r.url) return;
+                    const ts = Number(r.lastPlayedAt || 0);
+                    const prev = historyTimes.get(r.url) || 0;
+                    if (ts > prev) historyTimes.set(r.url, ts);
+                });
+            } catch { /* 测试或无历史环境安全降级 */ }
+            return Object.keys(bookmarkStore).sort((a, b) => {
+                const leftAdded = bookmarkLatestAddedAt(a);
+                const rightAdded = bookmarkLatestAddedAt(b);
+                if (leftAdded !== rightAdded) return rightAdded - leftAdded;
+                const leftTarget = a.replace(/^(url|local):/, '');
+                const rightTarget = b.replace(/^(url|local):/, '');
+                const leftHist = historyTimes.get(leftTarget) || 0;
+                const rightHist = historyTimes.get(rightTarget) || 0;
+                if (leftHist !== rightHist) return rightHist - leftHist;
+                return a.localeCompare(b);
+            });
+        }
         function saveBookmarks(list) {
             const key = bookmarkCurrentKey();
             if (!key) return;
-            if (list.length) bookmarkStore[key] = list;
-            else delete bookmarkStore[key];
-            try { localStorage.setItem(BOOKMARK_STORE_KEY, JSON.stringify(bookmarkStore)); } catch { /* 忽略 */ }
+            const cleaned = [...new Set(list.filter((t) => Number.isFinite(t) && t >= 0))].sort((a, b) => a - b);
+            if (cleaned.length) {
+                const prevTimes = Array.isArray(bookmarkStore[key]) ? bookmarkStore[key] : [];
+                bookmarkStore[key] = cleaned;
+                let remaining = Array.isArray(bookmarkMeta[key]) ? [...bookmarkMeta[key]] : [];
+                bookmarkMeta[key] = cleaned.map((time) => {
+                    const idx = remaining.findIndex((m) => m && Number(m.time) === time);
+                    if (idx >= 0) {
+                        const [matched] = remaining.splice(idx, 1);
+                        return { time, addedAt: normalizeBookmarkAddedAt(matched.addedAt) };
+                    }
+                    if (prevTimes.includes(time)) {
+                        return { time, addedAt: 0 };
+                    }
+                    return { time, addedAt: nextBookmarkTimestamp() };
+                });
+            } else {
+                delete bookmarkStore[key];
+                delete bookmarkMeta[key];
+            }
+            persistBookmarks();
+        }
+        function removeBookmarkForKey(key, time) {
+            if (!key || !Array.isArray(bookmarkStore[key])) return;
+            const next = bookmarkStore[key].filter((t) => Math.abs(t - time) > 0.5);
+            if (next.length) {
+                bookmarkStore[key] = next;
+                if (Array.isArray(bookmarkMeta[key])) {
+                    bookmarkMeta[key] = bookmarkMeta[key].filter((m) => m && Math.abs(Number(m.time) - time) > 0.5);
+                }
+            } else {
+                delete bookmarkStore[key];
+                delete bookmarkMeta[key];
+            }
+            persistBookmarks();
         }
         function removeBookmarkAt(time) {
             const next = currentBookmarks().filter((t) => Math.abs(t - time) > 0.5);
@@ -6818,6 +7095,70 @@
             showSpatialToast(`已标记重点 ${formatTime(t)}`);
         }
         if (bookmarkBtn) bookmarkBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleBookmarkAtCurrent(); });
+
+        const bookmarkManagerMask = document.getElementById('bookmarkManagerMask');
+        const bookmarkManagerList = document.getElementById('bookmarkManagerList');
+        const bookmarkManagerSearch = document.getElementById('bookmarkManagerSearch');
+        function bookmarkDisplayName(key) {
+            const target = key.replace(/^(url|local):/, '');
+            const history = getPlaybackHistory().find((r) => r.url === target);
+            return history?.title || safeDecode(target).split(/[\\/]/).filter(Boolean).pop() || key;
+        }
+        async function playBookmarkReference(key, time) {
+            const target = key.startsWith('url:') ? key.slice(4) : key.startsWith('local:') ? key.slice(6) : '';
+            if (!target) throw new Error(key.startsWith('file:') ? 'PC 本地文件书签请从原文件起播后使用进度条跳转' : '无法恢复此书签地址');
+            if (key.startsWith('url:')) playTarget(bookmarkDisplayName(key), target, time);
+            else await playLocalMediaReference(bookmarkDisplayName(key), target, time);
+            bookmarkManagerMask.classList.remove('active');
+        }
+        function renderBookmarkManager() {
+            const query = (bookmarkManagerSearch.value || '').trim().toLowerCase();
+            bookmarkManagerList.innerHTML = '';
+            bookmarkSortedKeysNewestFirst().forEach((key) => {
+                const times = bookmarkTimesNewestFirst(key);
+                if (!times.length) return;
+                const name = bookmarkDisplayName(key);
+                if (query && !name.toLowerCase().includes(query) && !key.toLowerCase().includes(query)) return;
+                const section = document.createElement('div');
+                section.className = 'history-item';
+                const head = document.createElement('div');
+                head.className = 'history-item-main';
+                head.innerHTML = `<div class="history-item-title"></div><div class="history-item-meta"></div>`;
+                head.querySelector('.history-item-title').textContent = name;
+                head.querySelector('.history-item-meta').textContent = key;
+                section.appendChild(head);
+                times.forEach((time) => {
+                    const row = document.createElement('div');
+                    row.style.cssText = 'display:flex;gap:8px;margin:6px 0;';
+                    const play = document.createElement('button');
+                    play.className = 'pl-modal-btn primary';
+                    play.textContent = `▶ ${formatTime(time)}`;
+                    play.addEventListener('click', () => playBookmarkReference(key, time).catch((error) => showSpatialToast(error.message)));
+                    const del = document.createElement('button');
+                    del.className = 'pl-modal-btn danger-ghost';
+                    del.innerHTML = '<i class="fa-solid fa-trash-can"></i>';
+                    del.addEventListener('click', () => {
+                        removeBookmarkForKey(key, time);
+                        renderBookmarkManager();
+                        renderBookmarks();
+                    });
+                    row.append(play, del);
+                    section.appendChild(row);
+                });
+                bookmarkManagerList.appendChild(section);
+            });
+            if (!bookmarkManagerList.children.length) {
+                bookmarkManagerList.innerHTML = '<div class="history-empty"><p>没有匹配的书签</p></div>';
+            }
+        }
+        document.getElementById('bookmarkManagerBtn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            bookmarkManagerSearch.value = '';
+            renderBookmarkManager();
+            bookmarkManagerMask.classList.add('active');
+        });
+        document.getElementById('bookmarkManagerClose').addEventListener('click', () => bookmarkManagerMask.classList.remove('active'));
+        bookmarkManagerSearch.addEventListener('input', renderBookmarkManager);
         videoPlayer.addEventListener('loadedmetadata', () => {
             if (bookmarkBtn) bookmarkBtn.style.display = '';
             renderBookmarks();
@@ -6833,6 +7174,121 @@
             videoPlayer.playbackRate = parseFloat(e.target.value);
         });
 
+        // ── 字幕 / 音轨 ──────────────────────────────────────
+        const mediaTracksModalMask = document.getElementById('mediaTracksModalMask');
+        const subtitleTrackList = document.getElementById('subtitleTrackList');
+        const audioTrackList = document.getElementById('audioTrackList');
+        const subtitleFileInput = document.getElementById('subtitleFileInput');
+        let selectedAudioStream = 0;
+        let externalSubtitleURL = '';
+
+        function srtToVtt(text) {
+            const body = String(text || '').replace(/^\uFEFF/, '').replace(/\r/g, '')
+                .replace(/(\d\d:\d\d:\d\d),(\d\d\d)/g, '$1.$2');
+            return 'WEBVTT\n\n' + body;
+        }
+        function showSubtitleTrack(index) {
+            [...videoPlayer.textTracks].forEach((track, i) => {
+                track.mode = i === index ? 'showing' : 'disabled';
+            });
+            renderMediaTrackLists();
+        }
+        function renderMediaTrackLists() {
+            if (!subtitleTrackList || !audioTrackList) return;
+            subtitleTrackList.innerHTML = '';
+            const off = document.createElement('button');
+            off.className = 'pl-modal-btn';
+            off.textContent = '关闭字幕';
+            off.addEventListener('click', () => showSubtitleTrack(-1));
+            subtitleTrackList.appendChild(off);
+            [...videoPlayer.textTracks].forEach((track, index) => {
+                const button = document.createElement('button');
+                button.className = 'pl-modal-btn';
+                button.textContent = `${track.mode === 'showing' ? '✓ ' : ''}${track.label || track.language || '字幕 ' + (index + 1)}`;
+                button.addEventListener('click', () => showSubtitleTrack(index));
+                subtitleTrackList.appendChild(button);
+            });
+            audioTrackList.innerHTML = '';
+            const tracks = videoPlayer.audioTracks;
+            if (tracks && tracks.length) {
+                Array.from(tracks).forEach((track, index) => {
+                    const button = document.createElement('button');
+                    button.className = 'pl-modal-btn';
+                    button.textContent = `${track.enabled ? '✓ ' : ''}${track.label || track.language || '音轨 ' + (index + 1)}`;
+                    button.addEventListener('click', () => {
+                        [...tracks].forEach((t) => { t.enabled = false; });
+                        track.enabled = true;
+                        renderMediaTrackLists();
+                    });
+                    audioTrackList.appendChild(button);
+                });
+                document.getElementById('audioTrackHint').textContent = '使用浏览器原生音轨切换';
+            } else {
+                const streams = lastMediaProbe?.streams?.filter((s) => s.codec_type === 'audio') || [];
+                streams.forEach((stream, index) => {
+                    const button = document.createElement('button');
+                    button.className = 'pl-modal-btn';
+                    button.textContent = `${selectedAudioStream === index ? '✓ ' : ''}音轨 ${index + 1} · ${stream.tags?.language || stream.codec_name || '未知语言'}`;
+                    button.addEventListener('click', () => startTranscodeWithAudio(index));
+                    audioTrackList.appendChild(button);
+                });
+                document.getElementById('audioTrackHint').textContent = streams.length
+                    ? '此浏览器未开放内嵌音轨，选择后由服务器转码到指定音轨。'
+                    : '浏览器未提供可切换音轨；远程片源可由服务器探测后提供转码选轨。';
+            }
+        }
+        async function startTranscodeWithAudio(index) {
+            const source = transcodeSrcUrl || videoPlayer.dataset.remoteUrl;
+            if (!source || !transcodeAvailable) {
+                showSpatialToast('该来源无法使用服务器转码选轨');
+                return;
+            }
+            selectedAudioStream = index;
+            const position = effectiveCurrentTime();
+            const auth = findMatchingWebdavAuth(source);
+            try {
+                const resp = await fetch(backendUrl('transcode'), {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        url: source, start: Math.max(0, position - 1), audioStream: index,
+                        username: auth?.username || '', password: auth?.password || '',
+                    }),
+                });
+                const data = await resp.json();
+                if (!resp.ok || !data.playlist) throw new Error(data.error || '转码失败');
+                loadVideoURL(backendUrl(data.playlist));
+                transcodeSrcUrl = source;
+                hlsOffset = data.start || 0;
+                fallbackDuration = data.duration || fallbackDuration;
+                mediaTracksModalMask.classList.remove('active');
+                showSpatialToast(`已切换音轨 ${index + 1}`);
+            } catch (error) { showError('音轨切换失败：' + error.message); }
+        }
+        document.getElementById('mediaTracksBtn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            renderMediaTrackLists();
+            mediaTracksModalMask.classList.add('active');
+        });
+        document.getElementById('mediaTracksClose').addEventListener('click', () => mediaTracksModalMask.classList.remove('active'));
+        document.getElementById('addSubtitleBtn').addEventListener('click', () => subtitleFileInput.click());
+        subtitleFileInput.addEventListener('change', async () => {
+            const file = subtitleFileInput.files?.[0];
+            subtitleFileInput.value = '';
+            if (!file) return;
+            const raw = await file.text();
+            const vtt = /\.srt$/i.test(file.name) ? srtToVtt(raw) : raw;
+            if (externalSubtitleURL) URL.revokeObjectURL(externalSubtitleURL);
+            externalSubtitleURL = URL.createObjectURL(new Blob([vtt], { type: 'text/vtt' }));
+            const element = document.createElement('track');
+            element.kind = 'subtitles';
+            element.label = file.name;
+            element.src = externalSubtitleURL;
+            element.default = true;
+            videoPlayer.appendChild(element);
+            element.addEventListener('load', () => showSubtitleTrack(videoPlayer.textTracks.length - 1), { once: true });
+        });
+        videoPlayer.addEventListener('loadedmetadata', renderMediaTrackLists);
+
         // View toggle buttons
         normalViewBtn.addEventListener('click', switchToNormalView);
         vrViewBtn.addEventListener('click', switchToVRView);
@@ -6846,6 +7302,10 @@
                 }
             });
         });
+        document.querySelectorAll('input[name="vrProjection"]').forEach((radio) => {
+            radio.addEventListener('change', (e) => setVRProjection(e.target.value));
+        });
+        syncProjectionControls();
 
         // iPhone Safari 不支持普通元素全屏（仅 <video> 可以），隐藏全屏按钮
         if (!document.documentElement.requestFullscreen && !document.documentElement.webkitRequestFullscreen) {
@@ -7252,14 +7712,14 @@
             const d = new Date(t);
             return (d.getMonth() + 1) + '月' + d.getDate() + '日';
         }
-        function playHistoryRecord(rec) {
+        async function playHistoryRecord(rec) {
             const isLocal = rec.kind === 'local' || /^[a-z]:[\\/]/i.test(rec.url) || rec.url.startsWith('\\\\');
             const resume = rec.position > 3 && rec.duration && rec.position < rec.duration - 5 ? rec.position : null;
             if (isLocal) {
-                if (isDesktopApp) {
-                    playTarget(rec.title, localUrl(rec.url), resume);
-                } else {
-                    showSpatialToast('本地文件记录需在桌面版或重新选择文件后播放');
+                try {
+                    await playLocalMediaReference(rec.title, rec.url, resume);
+                } catch (error) {
+                    showSpatialToast('无法打开记录：' + error.message);
                     return;
                 }
             } else if (/^https?:\/\//i.test(rec.url)) {
@@ -7317,7 +7777,9 @@
                         <button class="history-item-del" title="删除该记录"><i class="fa-solid fa-trash-can"></i></button>
                     </div>`;
                 item.querySelector('.history-item-title').textContent = rec.title || rec.url;
-                item.addEventListener('click', () => playHistoryRecord(rec));
+                item.addEventListener('click', () => {
+                    playHistoryRecord(rec).catch((error) => showSpatialToast('无法打开记录：' + error.message));
+                });
                 item.querySelector('.history-item-del').addEventListener('click', (e) => {
                     e.stopPropagation();
                     deleteHistoryRecord(rec.id);
@@ -7398,17 +7860,28 @@
                     });
                 });
             }
-            // WebDAV 服务器连接记录（对齐 iOS BackupServer：含名称与密码，全部导出）
+            // WebDAV + SMB 全部导出，ID 使用 iOS 可解码的 UUID。
             const servers = [];
             try {
                 getWebdavServers().forEach((s, i) => {
                     servers.push({
-                        id: s.id || ('webdav-' + Date.now().toString(36) + i),
+                        id: s.id || stableSourceUUID('webdav'),
                         type: 'webdav',
                         address: s.url,
                         username: s.user || '',
                         password: s.pass || null,
                         name: s.name || null,
+                    });
+                });
+                getSmbServers().forEach((s) => {
+                    servers.push({
+                        id: s.id || stableSourceUUID('smb'),
+                        type: 'smb',
+                        address: s.host + (s.port && Number(s.port) !== 445 ? ':' + s.port : ''),
+                        username: s.user || '',
+                        password: s.pass || null,
+                        name: s.name || null,
+                        share: s.share || '',
                     });
                 });
             } catch {}
@@ -7429,8 +7902,9 @@
                 playlists: lists,
                 // 视频重点标记：key -> [秒...]，随完整备份/云端备份一起保存
                 bookmarks: bookmarkStore,
+                bookmarkMeta: bookmarkMeta,
                 settings: {
-                    defaultProjection: { string: "vr360" },
+                    defaultProjection: { string: defaultVrProjection },
                     defaultHardwareDecode: { bool: true },
                     rememberPosition: { bool: true },
                     autoPlayNext: { bool: true }
@@ -7461,7 +7935,7 @@
         function restoreFromBackupJSON(rawText) {
             try {
                 const data = JSON.parse(rawText);
-                if (!data || (!data.history && !data.playlists && !data.servers && !data.bookmarks)) {
+                if (!data || (!data.history && !data.playlists && !data.servers && !data.bookmarks && !data.settings)) {
                     throw new Error('不合法的 AetherVR 备份文件');
                 }
                 // 1. 恢复播放记录（iOS 记录用 Apple 秒时间戳，统一归一化）
@@ -7476,15 +7950,29 @@
                         lastPlayedAt: fromAppleOrUnixOrISO(r.updatedAt != null ? r.updatedAt : r.lastPlayedAt),
                         updatedAt: r.updatedAt != null ? r.updatedAt : toAppleSeconds(Date.now()),
                     })).filter(r => r.url);
-                    savePlaybackHistory(normalized);
+                    const byUrl = new Map();
+                    getPlaybackHistory().forEach((item) => {
+                        if (item && item.url) byUrl.set(item.url, item);
+                    });
+                    normalized.forEach((item) => {
+                        const prev = byUrl.get(item.url);
+                        if (!prev || (item.lastPlayedAt || 0) >= (prev.lastPlayedAt || 0)) {
+                            byUrl.set(item.url, item);
+                        }
+                    });
+                    const mergedHist = [...byUrl.values()]
+                        .sort((a, b) => (b.lastPlayedAt || 0) - (a.lastPlayedAt || 0))
+                        .slice(0, 200);
+                    savePlaybackHistory(mergedHist);
                 }
                 // 2. 恢复服务器记录 → 写入连接记录（localStorage，随下次备份再导出）
                 if (Array.isArray(data.servers)) {
                     const existing = getWebdavServers();
+                    const existingSmb = getSmbServers();
                     data.servers.filter(s => s.type === 'webdav').forEach(dav => {
                         const idx = existing.findIndex((x) => x.url === dav.address);
                         const rec = {
-                            id: (idx >= 0 && existing[idx].id) || ('webdav-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)),
+                            id: (idx >= 0 && existing[idx].id) || dav.id || stableSourceUUID('webdav'),
                             url: dav.address,
                             user: dav.username || '',
                             pass: dav.password || (idx >= 0 ? existing[idx].pass : '') || '',
@@ -7494,11 +7982,29 @@
                         if (idx >= 0) existing.splice(idx, 1);
                         existing.unshift(rec);
                     });
+                    data.servers.filter(s => s.type === 'smb').forEach((smb) => {
+                        const separator = smb.address.lastIndexOf(':');
+                        const port = separator > 0 && /^\d+$/.test(smb.address.slice(separator + 1))
+                            ? Number(smb.address.slice(separator + 1)) : 445;
+                        const host = port !== 445 ? smb.address.slice(0, separator) : smb.address;
+                        const share = String(smb.share || '').replace(/^[\\/]+|[\\/]+$/g, '');
+                        const idx = existingSmb.findIndex((x) => x.host === host && (x.share || '') === share);
+                        const rec = {
+                            id: (idx >= 0 && existingSmb[idx].id) || smb.id || stableSourceUUID('smb'),
+                            host, share, port,
+                            user: smb.username || '',
+                            pass: smb.password || (idx >= 0 ? existingSmb[idx].pass : '') || '',
+                            name: smb.name || (idx >= 0 ? existingSmb[idx].name : '') || '',
+                            lastUsedAt: Date.now(),
+                        };
+                        if (idx >= 0) existingSmb.splice(idx, 1);
+                        if (share) existingSmb.unshift(rec);
+                    });
                     const webdav = data.servers.find(s => s.type === 'webdav');
                     if (webdav) {
                         localStorage.setItem(WEBDAV_CFG_KEY, JSON.stringify({
                             url: webdav.address, user: webdav.username || '',
-                            pass: webdav.password || '', name: webdav.name || ''
+                            name: webdav.name || ''
                         }));
                         if (webdavUrlInput) webdavUrlInput.value = webdav.address;
                         if (webdavUserInput) webdavUserInput.value = webdav.username || '';
@@ -7506,42 +8012,111 @@
                         if (webdavNameInput) webdavNameInput.value = webdav.name || '';
                     }
                     saveWebdavServers(existing.slice(0, 20));
+                    saveSmbServers(existingSmb.slice(0, 20));
                     renderWebdavRecents();
                 }
                 // 3. 恢复播放列表与收藏夹
                 if (Array.isArray(data.playlists)) {
                     data.playlists.forEach(pl => {
                         if (pl.name === '收藏夹') {
-                            favorites = (pl.items || []).map(it => ({
-                                name: it.title || it.file,
-                                target: it.file,
-                                kind: /^https?:\/\//i.test(it.file) ? 'online' : 'local',
-                                position: it.position || 0,
-                                addedAt: Date.now()
-                            }));
+                            const existingTargets = new Set(favorites.map(f => f.target));
+                            (pl.items || []).forEach(it => {
+                                if (!it.file) return;
+                                if (existingTargets.has(it.file)) {
+                                    const cur = favorites.find(f => f.target === it.file);
+                                    if (cur && (it.position || 0) > (cur.position || 0)) cur.position = it.position;
+                                } else {
+                                    existingTargets.add(it.file);
+                                    favorites.push({
+                                        name: it.title || it.file,
+                                        target: it.file,
+                                        kind: /^https?:\/\//i.test(it.file) ? 'online' : 'local',
+                                        position: it.position || 0,
+                                        addedAt: Date.now()
+                                    });
+                                }
+                            });
                             saveFavs();
                             renderFavs();
                         } else {
                             const newEntries = (pl.items || []).map(it => ({
                                 file: it.file, title: it.title || it.file, position: it.position || 0
                             }));
-                            openPlaylistTab(pl.name, null, newEntries.map(e => entryToItem(e)), newEntries, false);
+                            const existTab = playlists.find(p => p.name === pl.name);
+                            if (existTab) {
+                                const mergedEntries = Array.isArray(existTab.entries) ? [...existTab.entries] : [];
+                                const seen = new Set(mergedEntries.map(e => e.file));
+                                newEntries.forEach(e => {
+                                    if (!e.file) return;
+                                    if (!seen.has(e.file)) {
+                                        seen.add(e.file);
+                                        mergedEntries.push(e);
+                                    }
+                                });
+                                existTab.entries = mergedEntries;
+                                existTab.items = mergedEntries.map(e => entryToItem(e));
+                                saveTabsState();
+                            } else {
+                                openPlaylistTab(pl.name, null, newEntries.map(e => entryToItem(e)), newEntries, false);
+                            }
                         }
                     });
                 }
                 // 4. 恢复视频重点标记（按 key 合并，保留本机已有标记）
                 if (data.bookmarks && typeof data.bookmarks === 'object' && !Array.isArray(data.bookmarks)) {
+                    const incomingMeta = data.bookmarkMeta && typeof data.bookmarkMeta === 'object' && !Array.isArray(data.bookmarkMeta)
+                        ? data.bookmarkMeta : {};
                     Object.entries(data.bookmarks).forEach(([key, list]) => {
                         if (typeof key !== 'string' || !key || !Array.isArray(list)) return;
                         const merged = new Set(Array.isArray(bookmarkStore[key]) ? bookmarkStore[key] : []);
+                        const existingMeta = Array.isArray(bookmarkMeta[key]) ? [...bookmarkMeta[key]] : [];
+                        const keyIncomingMeta = Array.isArray(incomingMeta[key]) ? incomingMeta[key] : [];
+                        const updatedMeta = [...merged].map((time) => {
+                            const localEntry = findBookmarkMeta(existingMeta, time);
+                            let addedAt = localEntry ? normalizeBookmarkAddedAt(localEntry.addedAt) : 0;
+                            if (addedAt <= 0) {
+                                const remoteEntry = findBookmarkMeta(keyIncomingMeta, time);
+                                if (remoteEntry) addedAt = normalizeBookmarkAddedAt(remoteEntry.addedAt);
+                            }
+                            return { time, addedAt };
+                        });
                         list.forEach((t) => {
                             const n = Number(t);
-                            if (Number.isFinite(n) && n >= 0) merged.add(n);
+                            if (!Number.isFinite(n) || n < 0) return;
+                            const existsNear = [...merged].some((m) => Math.abs(m - n) <= 0.5);
+                            if (!existsNear) {
+                                merged.add(n);
+                                const remoteEntry = findBookmarkMeta(keyIncomingMeta, n);
+                                const addedAt = remoteEntry ? normalizeBookmarkAddedAt(remoteEntry.addedAt) : 0;
+                                updatedMeta.push({ time: n, addedAt });
+                            }
                         });
                         bookmarkStore[key] = [...merged].sort((a, b) => a - b);
+                        if (bookmarkStore[key].length) bookmarkMeta[key] = updatedMeta;
                     });
-                    try { localStorage.setItem(BOOKMARK_STORE_KEY, JSON.stringify(bookmarkStore)); } catch { /* 忽略配额 */ }
+                    reconcileAllBookmarkMeta();
+                    persistBookmarks();
                     renderBookmarks();
+                    if (bookmarkManagerMask && bookmarkManagerMask.classList.contains('active')) {
+                        renderBookmarkManager();
+                    }
+                }
+                // 设置值兼容 Swift 旧 enum {"bool":{"_0":true}} 与新扁平结构。
+                if (data.settings && typeof data.settings === 'object') {
+                    const wrapped = data.settings.defaultProjection?.string;
+                    const projection = wrapped && typeof wrapped === 'object' ? wrapped._0 : wrapped;
+                    const normalizedProjection = (() => {
+                        if (typeof projection !== 'string') return '';
+                        const low = projection.trim().toLowerCase();
+                        if (low === 'vr180' || low === '180°' || low === '180') return 'vr180';
+                        if (low === 'vr360' || low === '360°' || low === '360') return 'vr360';
+                        return '';
+                    })();
+                    if (normalizedProjection) {
+                        defaultVrProjection = normalizedProjection;
+                        try { localStorage.setItem('aethervr-default-projection', normalizedProjection); } catch {}
+                        syncProjectionControls();
+                    }
                 }
                 showSpatialToast('🎉 备份数据已恢复成功！');
                 if (backupModalMask) backupModalMask.classList.remove('active');
@@ -7896,6 +8471,14 @@
             return key.toLowerCase().trim();
         }
 
+        function posterDirectoryOf(item) {
+            const raw = String(item.href || item.url || item.path || item.name || '').replace(/\\/g, '/');
+            return raw.slice(0, raw.lastIndexOf('/') + 1).toLowerCase() || '/';
+        }
+        function posterIdentityOf(item) {
+            return posterDirectoryOf(item) + '\u001f' + posterKeyOf(stripExt(item.name));
+        }
+
         /// 把 WebDAV 目录条目聚合成「影片」列表
         /// 返回 { movies: [...], others: [...], folders: [...] }
         ///   movie = { key, title, videos:[], poster, thumbs:[], fanart, nfo, size }
@@ -7903,7 +8486,7 @@
             const movies = new Map();   // key -> movie
             const folders = [];
             const others = [];
-            const looseImages = [];     // 未能配对到影片的图（可能是目录级兜底封面）
+            const looseImages = new Map(); // 每个目录独立的通用封面
 
             // 先按 key 归集所有文件（视频/图/nfo）
             const byKey = new Map();
@@ -7918,19 +8501,20 @@
                 if (POSTER_VIDEO_EXT.test(it.name)) {
                     // 低于 150MB 的小视频（素材/预告片）不上墙；size 未知(0)时保留
                     if (it.size > 0 && it.size < PW_MIN_VIDEO_SIZE) return;
-                    ensure(posterKeyOf(base)).videos.push(it);
+                    ensure(posterIdentityOf(it)).videos.push(it);
                 } else if (POSTER_IMAGE_EXT.test(it.name)) {
                     const kind = posterKindOf(base);
                     // 目录级通用封面（poster.jpg / folder.jpg / cover.jpg）不参与影片配对，
                     // 单独收集，稍后给所有缺少封面的影片当兜底
                     if (GENERIC_POSTER_NAMES.test(base.trim())) {
-                        looseImages.push(it);
+                        const dir = posterDirectoryOf(it);
+                        if (!looseImages.has(dir)) looseImages.set(dir, it);
                         return;
                     }
                     // 无用途后缀的图：可能是 `影片名.jpg` 形式的封面，挂到同 key
-                    ensure(posterKeyOf(base)).images.push({ item: it, kind: kind || 'poster' });
+                    ensure(posterIdentityOf(it)).images.push({ item: it, kind: kind || 'poster' });
                 } else if (/\.nfo$/i.test(it.name)) {
-                    ensure(posterKeyOf(base)).nfos.push(it);
+                    ensure(posterIdentityOf(it)).nfos.push(it);
                 } else {
                     others.push(it);
                 }
@@ -7978,15 +8562,14 @@
 
             // 目录级兜底封面：整目录只有一张 poster/folder/cover 图时，
             // 给所有自身没有封面的影片复用（对齐 Infuse / Kodi 的 folder.jpg 习惯）
-            const dirFallback = looseImages[0];
-            if (dirFallback) {
-                movies.forEach((m) => {
-                    if (!m.posterUrl) {
-                        m.poster = dirFallback;
-                        m.posterUrl = toUrl(dirFallback);
-                    }
-                });
-            }
+            movies.forEach((m) => {
+                if (m.posterUrl) return;
+                const dirFallback = looseImages.get(posterDirectoryOf(m.videos[0] || {}));
+                if (dirFallback) {
+                    m.poster = dirFallback;
+                    m.posterUrl = toUrl(dirFallback);
+                }
+            });
 
             // 排序前统一兜底：nfo 异步回填 title 时可能为空/undefined，
             // 直接 localeCompare 会抛 "Cannot read properties of undefined"
@@ -8084,6 +8667,85 @@
         const WEBDAV_CFG_KEY = 'aethervr-webdav-cfg';
         const WEBDAV_SERVERS_KEY = 'aethervr-webdav-servers';
         const SMB_SERVERS_KEY = 'aethervr-smb-servers';
+        const SECURE_CREDENTIALS_KEY = 'aethervr-source-credentials-v1';
+        let secureCredentials = {};
+        let sourceCredentialsMigrated = false;
+
+        function stableSourceUUID(prefix) {
+            const bytes = new Uint8Array(16);
+            if (globalThis.crypto?.getRandomValues) crypto.getRandomValues(bytes);
+            else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+            bytes[6] = (bytes[6] & 0x0f) | 0x40;
+            bytes[8] = (bytes[8] & 0x3f) | 0x80;
+            const hex = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+            return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+        }
+        function normalizeSourceRecord(server, prefix) {
+            const rec = { ...server };
+            if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rec.id || '')) {
+                // 保留旧 id，避免既有海报缓存失去来源关联。
+                rec.id = rec.id || stableSourceUUID(prefix);
+            }
+            return rec;
+        }
+        function publicSourceRecord(rec) {
+            const copy = { ...rec };
+            delete copy.pass;
+            return copy;
+        }
+        function persistSourceCredentials() {
+            if (isDesktopApp && window.vrDesktop?.writeCredentials) {
+                window.vrDesktop.writeCredentials(secureCredentials).then((result) => {
+                    if (!result?.ok) showSpatialToast('密码安全存储失败：' + (result?.error || '未知错误'));
+                }).catch((error) => showSpatialToast('密码安全存储失败：' + error.message));
+            } else {
+                // 自托管网页版没有系统钥匙串，沿用浏览器本地存储作为兼容回退。
+                try { localStorage.setItem(SECURE_CREDENTIALS_KEY, JSON.stringify(secureCredentials)); } catch {}
+            }
+        }
+        function stripPlaintextSourcePasswords() {
+            [WEBDAV_SERVERS_KEY, SMB_SERVERS_KEY].forEach((key) => {
+                try {
+                    const list = JSON.parse(localStorage.getItem(key) || '[]');
+                    localStorage.setItem(key, JSON.stringify(list.map(publicSourceRecord)));
+                } catch {}
+            });
+            try {
+                const cfg = JSON.parse(localStorage.getItem(WEBDAV_CFG_KEY) || '{}');
+                delete cfg.pass;
+                localStorage.setItem(WEBDAV_CFG_KEY, JSON.stringify(cfg));
+            } catch {}
+        }
+        async function hydrateSourceCredentials() {
+            if (sourceCredentialsMigrated) return;
+            sourceCredentialsMigrated = true;
+            let stored = null;
+            if (isDesktopApp && window.vrDesktop?.readCredentials) {
+                try { stored = await window.vrDesktop.readCredentials(); } catch {}
+            } else {
+                try { stored = JSON.parse(localStorage.getItem(SECURE_CREDENTIALS_KEY) || '{}'); } catch {}
+            }
+            secureCredentials = stored && typeof stored === 'object' ? stored : {};
+            const migrate = (list, kind) => {
+                list.forEach((server) => {
+                    const rec = normalizeSourceRecord(server, kind);
+                    if (rec.pass) secureCredentials[rec.id] = rec.pass;
+                });
+            };
+            migrate(getWebdavServers(), 'webdav');
+            migrate(getSmbServers(), 'smb');
+            saveWebdavServers(getWebdavServers());
+            saveSmbServers(getSmbServers());
+            try {
+                const cfg = JSON.parse(localStorage.getItem(WEBDAV_CFG_KEY) || '{}');
+                const match = getWebdavServers().find((s) => s.url === cfg.url && (s.user || '') === (cfg.user || ''));
+                if (match && cfg.pass) secureCredentials[match.id] = cfg.pass;
+            } catch {}
+            persistSourceCredentials();
+            stripPlaintextSourcePasswords();
+            loadSavedWebdavConfig();
+            renderCloudSourceSelect();
+        }
 
         let currentConnType = 'webdav'; // 'webdav' | 'smb'
         /// 当前正在「编辑」的服务器记录 id；null 表示新增。
@@ -8103,11 +8765,22 @@
         let smbLastEntries = null;   // SMB 当前目录缓存（A-Z 筛选重渲染用）
 
         function getWebdavServers() {
-            try { return JSON.parse(localStorage.getItem(WEBDAV_SERVERS_KEY)) || []; }
+            try {
+                const list = JSON.parse(localStorage.getItem(WEBDAV_SERVERS_KEY)) || [];
+                return list.map((server) => {
+                    const rec = normalizeSourceRecord(server, 'webdav');
+                    rec.pass = secureCredentials[rec.id] || rec.pass || '';
+                    return rec;
+                });
+            }
             catch { return []; }
         }
         function saveWebdavServers(list) {
-            try { localStorage.setItem(WEBDAV_SERVERS_KEY, JSON.stringify(list)); } catch {}
+            list.forEach((server) => {
+                if (server.pass) secureCredentials[server.id] = server.pass;
+            });
+            try { localStorage.setItem(WEBDAV_SERVERS_KEY, JSON.stringify(list.map(publicSourceRecord))); } catch {}
+            persistSourceCredentials();
         }
         /// 保存 / 更新 WebDAV 服务器记录。
         /// editId 非空时按 id 定位到既有记录做「编辑」；
@@ -8123,7 +8796,7 @@
             }
             const rec = idx >= 0
                 ? list[idx]
-                : { id: 'webdav-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6) };
+                : { id: stableSourceUUID('webdav') };
             rec.url = url;
             rec.user = user || '';
             // 密码留空表示「不修改」，避免编辑时把已保存的密码清掉
@@ -8140,11 +8813,23 @@
         }
 
         function getSmbServers() {
-            try { return JSON.parse(localStorage.getItem(SMB_SERVERS_KEY)) || []; }
+            try {
+                const list = JSON.parse(localStorage.getItem(SMB_SERVERS_KEY)) || [];
+                return list.map((server) => {
+                    const rec = normalizeSourceRecord(server, 'smb');
+                    rec.pass = secureCredentials[rec.id] || rec.pass || '';
+                    rememberSmbShareMount(rec, rec.mountRoot);
+                    return rec;
+                });
+            }
             catch { return []; }
         }
         function saveSmbServers(list) {
-            try { localStorage.setItem(SMB_SERVERS_KEY, JSON.stringify(list)); } catch {}
+            list.forEach((server) => {
+                if (server.pass) secureCredentials[server.id] = server.pass;
+            });
+            try { localStorage.setItem(SMB_SERVERS_KEY, JSON.stringify(list.map(publicSourceRecord))); } catch {}
+            persistSourceCredentials();
         }
         /// 保存 / 更新 SMB 服务器记录（editId 用法同 WebDAV）
         function rememberSmbServer({ name, host, share, user, pass, port = 445, editId = null }) {
@@ -8159,7 +8844,7 @@
             }
             const rec = idx >= 0
                 ? list[idx]
-                : { id: 'smb-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6) };
+                : { id: stableSourceUUID('smb') };
             rec.host = host;
             rec.share = cleanShare;
             rec.user = user || '';
@@ -8191,6 +8876,7 @@
             renderWebdavRecents();
         }
         loadSavedWebdavConfig();
+        hydrateSourceCredentials();
 
         /// 通用二次确认对话框（不依赖 confirm()，样式与全站一致）
         function showConfirmDialog(title, message, confirmText, onConfirm) {
@@ -8850,6 +9536,108 @@
         }
         function clearCloudDirCache() { cloudDirCache.clear(); }
 
+        let cloudSortMode = 'name';
+        let cloudSortAscending = true;
+        function cloudSortKey() {
+            const src = currentCloudSource || {};
+            return `aethervr-cloud-sort|${src.kind}|${src.id || src.url || src.host}|${src.kind === 'smb' ? currentSmbPath : currentWebdavPath}`;
+        }
+        function restoreCloudSort() {
+            try {
+                const saved = JSON.parse(localStorage.getItem(cloudSortKey()) || '{}');
+                cloudSortMode = ['name', 'time', 'size'].includes(saved.mode) ? saved.mode : 'name';
+                cloudSortAscending = saved.ascending !== false;
+            } catch { cloudSortMode = 'name'; cloudSortAscending = true; }
+            syncCloudSortControls();
+        }
+        function syncCloudSortControls() {
+            const icons = { name: 'fa-arrow-down-a-z', time: 'fa-clock', size: 'fa-weight-hanging' };
+            const names = { name: '按名称', time: '按修改时间', size: '按大小' };
+            const button = document.getElementById('cloudSortBtn');
+            const dir = document.getElementById('cloudSortDirBtn');
+            if (button) { button.innerHTML = `<i class="fa-solid ${icons[cloudSortMode]}"></i>`; button.title = names[cloudSortMode]; }
+            if (dir) dir.innerHTML = `<i class="fa-solid ${cloudSortAscending ? 'fa-arrow-up' : 'fa-arrow-down'}"></i>`;
+        }
+        function sortCloudEntries(entries) {
+            const dir = cloudSortAscending ? 1 : -1;
+            entries.sort((a, b) => {
+                const aDir = !!(a.isDir ?? a.isDirectory), bDir = !!(b.isDir ?? b.isDirectory);
+                if (aDir !== bDir) return aDir ? -1 : 1;
+                if (cloudSortMode === 'size') return dir * ((a.size || 0) - (b.size || 0));
+                if (cloudSortMode === 'time') return dir * ((a.modifiedAt || 0) - (b.modifiedAt || 0));
+                return dir * a.name.localeCompare(b.name, 'zh-Hans-CN', { numeric: true });
+            });
+            return entries;
+        }
+        document.getElementById('cloudSortBtn').addEventListener('click', () => {
+            const fields = ['name', 'time', 'size'];
+            cloudSortMode = fields[(fields.indexOf(cloudSortMode) + 1) % fields.length];
+            try { localStorage.setItem(cloudSortKey(), JSON.stringify({ mode: cloudSortMode, ascending: cloudSortAscending })); } catch {}
+            syncCloudSortControls();
+            if (currentCloudSource?.kind === 'smb') renderSmbItems(smbLastEntries || [], '');
+            else if (webdavLastItems && webdavLastBase) renderWebdavItems(webdavLastItems, webdavLastBase);
+        });
+        document.getElementById('cloudSortDirBtn').addEventListener('click', () => {
+            cloudSortAscending = !cloudSortAscending;
+            try { localStorage.setItem(cloudSortKey(), JSON.stringify({ mode: cloudSortMode, ascending: cloudSortAscending })); } catch {}
+            syncCloudSortControls();
+            if (currentCloudSource?.kind === 'smb') renderSmbItems(smbLastEntries || [], '');
+            else if (webdavLastItems && webdavLastBase) renderWebdavItems(webdavLastItems, webdavLastBase);
+        });
+
+        function cloudActionButtons() {
+            return `<div class="cb-item-actions"><button data-rename title="重命名"><i class="fa-solid fa-pen"></i></button><button data-delete title="删除"><i class="fa-solid fa-trash-can"></i></button></div>`;
+        }
+        function bindCloudActions(el, item, kind, sourceUrl) {
+            el.querySelector('[data-rename]').addEventListener('click', async (event) => {
+                event.stopPropagation();
+                const name = prompt('重命名为', item.name);
+                if (!name || name === item.name) return;
+                try {
+                    if (kind === 'smb') {
+                        const result = await window.vrDesktop.smbRename(item.path, name);
+                        if (!result?.ok) throw new Error(result?.error || '重命名失败');
+                    } else {
+                        const oldUrl = sourceUrl(item);
+                        const url = new URL(oldUrl);
+                        url.pathname = url.pathname.replace(/[^/]+\/?$/, encodeURIComponent(name) + (item.isDir ? '/' : ''));
+                        const result = await webdavFileOperation('move', oldUrl, url.href);
+                        if (!result.ok) throw new Error(result.error);
+                    }
+                    clearCloudDirCache();
+                    kind === 'smb' ? await fetchSmbDirectory(currentSmbPath, { force: true }) : await fetchWebdavDirectory(currentWebdavPath, { force: true });
+                } catch (error) { showError('重命名失败：' + error.message); }
+            });
+            el.querySelector('[data-delete]').addEventListener('click', async (event) => {
+                event.stopPropagation();
+                const directory = !!(item.isDir ?? item.isDirectory);
+                if (!await askConfirm('删除网络文件', `确定删除「${item.name}」${directory ? '及其全部内容' : ''}？此操作不可撤销。`, '删除')) return;
+                try {
+                    if (kind === 'smb') {
+                        const result = await window.vrDesktop.smbDelete(item.path, directory);
+                        if (!result?.ok) throw new Error(result?.error || '删除失败');
+                    } else {
+                        const result = await webdavFileOperation('delete', sourceUrl(item));
+                        if (!result.ok) throw new Error(result.error);
+                    }
+                    clearCloudDirCache();
+                    kind === 'smb' ? await fetchSmbDirectory(currentSmbPath, { force: true }) : await fetchWebdavDirectory(currentWebdavPath, { force: true });
+                } catch (error) { showError('删除失败：' + error.message); }
+            });
+        }
+        async function webdavFileOperation(op, url, destUrl) {
+            const src = currentCloudSource || {};
+            const response = await fetch('/api/webdav/op', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ op, url, destUrl, username: src.user || '', password: src.pass || '' }),
+            });
+            if (!response.ok) {
+                const data = await response.json().catch(() => ({}));
+                return { ok: false, error: data.error || `HTTP ${response.status}` };
+            }
+            return { ok: true };
+        }
+
         // ── WebDAV 目录读取 ──
         async function fetchWebdavDirectory(targetPath, options) {
             const force = !!(options && options.force);
@@ -8871,6 +9659,7 @@
             if (!u.pathname.endsWith('/') && targetPath.endsWith('/')) u.pathname += '/';
 
             currentWebdavPath = targetPath;
+            restoreCloudSort();
             if (cloudBrowserPathText) cloudBrowserPathText.textContent = fullPath;
             const cacheKey = cloudDirCacheKey('webdav', targetPath);
             if (!force) {
@@ -8927,10 +9716,7 @@
                 return;
             }
 
-            filtered.sort((a, b) => {
-                if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
-                return a.name.localeCompare(b.name, undefined, { numeric: true });
-            });
+            sortCloudEntries(filtered);
 
             // A-Z 筛选：更新右侧竖向字母条（无内容的字母灰掉）
             updatePanelAzBar(filtered.map((it) => it.name));
@@ -8960,8 +9746,9 @@
                         <i class="fa-solid ${item.isDir ? 'fa-folder' : (isVideo ? 'fa-film' : 'fa-file')}"></i>
                     </div>
                     <div class="cb-item-name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div>
-                    <div class="cb-item-size">${item.isDir ? '›' : formatFileSize(item.size)}</div>
+                    <div class="cb-item-size">${item.isDir ? '›' : formatFileSize(item.size)}</div>${cloudActionButtons()}
                 `;
+                bindCloudActions(el, item, 'webdav', toPlayUrl);
                 el.addEventListener('click', (e) => {
                     if (item.isDir) {
                         let sub = currentWebdavPath.replace(/\/$/, '') + '/' + item.name + '/';
@@ -8975,17 +9762,18 @@
             });
         }
 
-        // WebDAV 视频起播：只播放当前点击的文件，不灌入整个文件夹；
+        // WebDAV 视频起播：当前目录视频全部进入临时列表，支持上下集和播完连播。
         // 面板停留在云端列表，正在播放的条目高亮
         function playWebdavFromQueue(item, dirVideos, toPlayUrl) {
-            const queue = [{
-                name: item.name,
-                originalPath: item.href,
-                normalizedPath: normalizePath(item.href),
-                url: toPlayUrl(item),
+            const queue = dirVideos.map((video) => ({
+                name: video.name,
+                originalPath: video.href,
+                normalizedPath: normalizePath(video.href),
+                url: toPlayUrl(video),
                 file: null, fileHandle: null,
                 status: 'remote', error: '', position: 0,
-            }];
+            }));
+            const startIndex = Math.max(0, queue.findIndex((video) => video.originalPath === item.href));
             lastDplEntries = null;
             const t = ensureTempTab();
             activeTab = 'playlist';
@@ -8994,8 +9782,8 @@
             playOrigin = 'cloud';
             setCloudPlaying(item.href);   // 云端列表高亮当前播放
             renderTabs();
-            setPlaylist(queue, 0);
-            showSpatialToast(`起播 WebDAV：${item.name}`);
+            setPlaylist(queue, startIndex);
+            showSpatialToast(`起播 WebDAV：${item.name}（目录共 ${queue.length} 集）`);
         }
 
         // ── SMB 目录读取与播放 ──
@@ -9020,6 +9808,7 @@
             }
             cloudBrowserFileList.innerHTML = '<div class="cb-empty"><i class="fa-solid fa-spinner fa-spin"></i><span>正在读取 SMB 共享…</span></div>';
             currentSmbPath = subPath || '/';
+            restoreCloudSort();
 
             // 1. 先确保挂载/连接会话建立
             if (!currentSmbMountRoot) {
@@ -9029,6 +9818,7 @@
                     return;
                 }
                 currentSmbMountRoot = conn.localPath;
+                markSmbServerMounted(server, conn.localPath);
             }
 
             // 2. 构造目标本地绝对路径
@@ -9054,6 +9844,8 @@
 
         function renderSmbItems(entries, currentDiskPath) {
             smbLastEntries = entries;   // A-Z 筛选重渲染用
+            entries = [...entries];
+            sortCloudEntries(entries);
             cloudBrowserFileList.innerHTML = '';
             if (!entries.length) {
                 cloudBrowserFileList.innerHTML = '<div class="cb-empty"><i class="fa-solid fa-folder-open"></i><span>此目录为空</span></div>';
@@ -9079,8 +9871,9 @@
                         <i class="fa-solid ${item.isDirectory ? 'fa-folder' : (item.isVideo ? 'fa-film' : 'fa-file')}"></i>
                     </div>
                     <div class="cb-item-name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div>
-                    <div class="cb-item-size">${item.isDirectory ? '›' : formatFileSize(item.size)}</div>
+                    <div class="cb-item-size">${item.isDirectory ? '›' : formatFileSize(item.size)}</div>${cloudActionButtons()}
                 `;
+                bindCloudActions(el, item, 'smb', null);
                 el.addEventListener('click', () => {
                     if (item.isDirectory) {
                         const cleanSub = currentSmbPath.replace(/^[\\/]+|[\\/]+$/g, '');
@@ -9096,17 +9889,21 @@
         }
 
         // SMB 视频起播（直接走本地 /local 流式端点，原生极速 Seek）：
-        // 只播放当前点击的文件，不灌入整个文件夹；
+        // 当前目录视频全部进入临时列表，macOS 只把读取路径留在 url，身份存 UNC。
         // 面板停留在云端列表，正在播放的条目高亮
         function playSmbFromQueue(item, dirVideos) {
-            const queue = [{
-                name: item.name,
-                originalPath: item.path,
-                normalizedPath: normalizePath(item.path),
-                url: localUrl(item.path),
-                file: null, fileHandle: null,
-                status: 'ready', error: '', position: 0,
-            }];
+            const queue = dirVideos.map((video) => {
+                const identity = smbUNCFromPath(video.path);
+                return {
+                    name: video.name,
+                    originalPath: identity,
+                    normalizedPath: normalizePath(identity),
+                    url: localUrl(video.path),
+                    file: null, fileHandle: null,
+                    status: 'ready', error: '', position: 0,
+                };
+            });
+            const startIndex = Math.max(0, queue.findIndex((video) => video.name === item.name));
             lastDplEntries = null;
             const t = ensureTempTab();
             activeTab = 'playlist';
@@ -9115,8 +9912,8 @@
             playOrigin = 'cloud';
             setCloudPlaying(item.path);   // 云端列表高亮当前播放
             renderTabs();
-            setPlaylist(queue, 0);
-            showSpatialToast(`起播 SMB：${item.name}`);
+            setPlaylist(queue, startIndex);
+            showSpatialToast(`起播 SMB：${item.name}（目录共 ${queue.length} 集）`);
         }
 
         // 连接弹窗提交按钮
@@ -9341,7 +10138,8 @@
                 }
                 // 单碟：直接起播；多碟：展开选择
                 if (movie.videos.length === 1) {
-                    playMovieFromWall(movie, movie.videos[0], entries, toUrl);
+                    playMovieFromWall(movie, movie.videos[0], entries, toUrl)
+                        .catch((err) => showSpatialToast('起播失败：' + err.message));
                 } else {
                     showMovieDiscPicker(movie, entries, toUrl);
                 }
@@ -9429,16 +10227,36 @@
         }
 
         /// 从海报墙起播：把当前影片（番号）的几个分段加入临时播放列表，从当前碟起播
-        function playMovieFromWall(movie, startVideo, entries, toUrl) {
+        async function playMovieFromWall(movie, startVideo, entries, toUrl) {
             // 队列 = 当前番号的各碟片/分段（不再跨片连播整个目录）
-            const queueItems = (movie.videos || []).map((v) => ({
-                name: movie.videos.length > 1 ? `${movie.title} · ${v.name}` : movie.title,
-                originalPath: v.href,
-                normalizedPath: normalizePath(v.href),
-                url: toUrl(v),
-                file: null, fileHandle: null,
-                status: 'remote', error: '', position: 0,
-            }));
+            const src = posterWallCurrentSource();
+            const smbShares = new Map();
+            if (src?.kind === 'smb') {
+                const identities = (movie.videos || []).map((v) => smbUNCFromPath(v.href, src));
+                for (const identity of identities) {
+                    const server = smbServerForUNC(identity);
+                    if (!server || smbShares.has(smbShareKey(server.host, server.share))) continue;
+                    const root = await pwEnsureSmbMountForUNC(identity);
+                    if (!root) {
+                        showSpatialToast('SMB 重连失败：找不到对应的文件源');
+                        return;
+                    }
+                    smbShares.set(smbShareKey(server.host, server.share), root);
+                }
+            }
+            const queueItems = (movie.videos || []).map((v) => {
+                const identity = src?.kind === 'smb' ? smbUNCFromPath(v.href, src) : v.href;
+                const url = src?.kind === 'smb'
+                    ? localUrl(resolveMountedSmbPath(identity) || identity) : toUrl(v);
+                return {
+                    name: movie.videos.length > 1 ? `${movie.title} · ${v.name}` : movie.title,
+                    originalPath: identity,
+                    normalizedPath: normalizePath(identity),
+                    url,
+                    file: null, fileHandle: null,
+                    status: src?.kind === 'smb' ? 'ready' : 'remote', error: '', position: 0,
+                };
+            });
             const startUrl = toUrl(startVideo);
             const startIdx = Math.max(0, queueItems.findIndex((q) => q.url === startUrl));
 
@@ -9481,10 +10299,11 @@
             mask.querySelector('[data-close]').addEventListener('click', () => mask.remove());
             mask.addEventListener('click', (e) => { if (e.target === mask) mask.remove(); });
             mask.querySelectorAll('.disc-pick-btn').forEach((btn) => {
-                btn.addEventListener('click', () => {
+                btn.addEventListener('click', async () => {
                     const idx = Number(btn.dataset.idx);
                     mask.remove();
-                    playMovieFromWall(movie, movie.videos[idx], entries, toUrl);
+                    try { await playMovieFromWall(movie, movie.videos[idx], entries, toUrl); }
+                    catch (err) { showSpatialToast('起播失败：' + err.message); }
                 });
             });
             document.body.appendChild(mask);
@@ -9555,6 +10374,95 @@
             return list.find((x) => x.id === posterWallSourceId) || list[0] || null;
         }
 
+        // 快照身份始终是 UNC；挂载根只属于本次桌面会话，不能写入备份。
+        function smbShareKey(host, share) {
+            return `${String(host || '').toLowerCase()}/${String(share || '').toLowerCase()}`;
+        }
+        function rememberSmbShareMount(server, localPath) {
+            if (!server?.host || !server?.share || !localPath) return;
+            posterWallSmbMountMap.set(smbShareKey(server.host, server.share), {
+                root: String(localPath).replace(/[\\/]+$/, ''),
+                host: server.host,
+                share: server.share,
+            });
+        }
+        function resolveMountedSmbPath(unc) {
+            const match = String(unc || '').match(/^\\\\([^\\]+)\\([^\\]+)(?:\\(.*))?$/);
+            if (!match) return '';
+            const mount = posterWallSmbMountMap.get(smbShareKey(match[1], match[2]));
+            if (mount) return mount.root + (match[3] ? '/' + match[3].replace(/\\/g, '/') : '');
+            // Windows 可以直接访问 UNC；macOS 必须先重连得到挂载根。
+            return window.vrDesktop?.platform === 'win32' ? String(unc) : '';
+        }
+        function pwUNCFromMountedPath(path) {
+            const raw = String(path || '');
+            let best = null;
+            posterWallSmbMountMap.forEach((mount) => {
+                if ((raw === mount.root || raw.startsWith(mount.root + '/'))
+                    && (!best || mount.root.length > best.root.length)) best = mount;
+            });
+            if (!best) return '';
+            const relative = raw.slice(best.root.length).replace(/^[/\\]+/, '').replace(/\//g, '\\');
+            return `\\\\${best.host}\\${best.share}${relative ? '\\' + relative : ''}`;
+        }
+        async function pwEnsureSnapshotMounts(snap, src) {
+            if (src?.kind !== 'smb' || !snap) return;
+            const identities = new Set();
+            const add = (raw) => {
+                if (!raw) return;
+                try {
+                    const url = new URL(raw, location.origin);
+                    if (url.pathname === '/local') {
+                        const stable = portableMediaPath(url.searchParams.get('path'), src);
+                        if (stable.startsWith('\\\\')) identities.add(stable);
+                    }
+                } catch { /* 忽略单个旧条目 */ }
+            };
+            (snap.movies || []).forEach((m) => {
+                (m.videos || []).forEach((v) => identities.add(smbUNCFromPath(v.href, src)));
+                add(m.posterUrl);
+                add(m.fanartUrl);
+                add(m.nfoUrl);
+                (m.thumbs || []).forEach((t) => add(t.url));
+            });
+            await Promise.all([...identities].map(async (unc) => {
+                try { await pwEnsureSmbMountForUNC(unc); } catch { /* 已缓存图片仍可离线显示 */ }
+            }));
+        }
+        async function pwEnsureSmbMountForUNC(unc) {
+            const current = resolveMountedSmbPath(unc);
+            if (current) return current;
+            const server = smbServerForUNC(unc);
+            if (!server || !window.vrDesktop?.smbConnectShare) return '';
+            const key = smbShareKey(server.host, server.share);
+            let job = posterWallSmbMountJobs.get(key);
+            if (!job) {
+                job = window.vrDesktop.smbConnectShare(
+                    server.host, server.share, server.user || '', server.pass || ''
+                ).then((conn) => {
+                    if (!conn?.ok) throw new Error(conn?.error || 'SMB 重新连接失败');
+                    markSmbServerMounted(server, conn.localPath);
+                    posterWallSmbMountJobs.delete(key);
+                    return conn.localPath;
+                }).catch((err) => {
+                    posterWallSmbMountJobs.delete(key);
+                    throw err;
+                });
+                posterWallSmbMountJobs.set(key, job);
+            }
+            await job;
+            return resolveMountedSmbPath(unc);
+        }
+        function markSmbServerMounted(server, localPath) {
+            rememberSmbShareMount(server, localPath);
+            if (!server?.id || !localPath) return;
+            const list = getSmbServers();
+            const found = list.find((s) => s.id === server.id);
+            if (!found) return;
+            found.mountRoot = localPath;
+            saveSmbServers(list);
+        }
+
         // ── 每来源独立存储 ────────────────────────────────
         const PW_STORE_PREFIX = 'aethervr-poster-source-v1|';
 
@@ -9567,6 +10475,33 @@
                 if (!raw) return null;
                 const obj = JSON.parse(raw);
                 if (!obj || !Array.isArray(obj.movies)) return null;
+                if (obj.kind === 'smb') {
+                    const src = posterWallSources().find((s) => s.id === sourceId);
+                    if (src?.share) {
+                        // 旧版只保存了临时挂载路径；用来源共享名无损恢复 UNC。
+                        const stable = (path) => String(path || '').startsWith('/tmp/')
+                            ? smbUNCFromPath(path, src) : path;
+                        const stableUrl = (rawUrl) => {
+                            try {
+                                const u = new URL(rawUrl || '', location.origin);
+                                if (u.pathname !== '/local') return rawUrl || '';
+                                u.searchParams.set('path', stable(u.searchParams.get('path')));
+                                u.searchParams.delete('token');
+                                return u.toString();
+                            } catch { return rawUrl || ''; }
+                        };
+                        [...obj.movies, ...(obj.trash || [])].forEach((m) => {
+                            (m.videos || []).forEach((v) => { v.href = stable(v.href); });
+                            if (m.poster) m.poster.href = stable(m.poster.href);
+                            if (m.nfo) m.nfo.href = stable(m.nfo.href);
+                            m.posterUrl = stableUrl(m.posterUrl);
+                            m.fanartUrl = stableUrl(m.fanartUrl);
+                            m.nfoUrl = stableUrl(m.nfoUrl);
+                            (m.thumbs || []).forEach((t) => { t.url = stableUrl(t.url); });
+                        });
+                        if (src.mountRoot) markSmbServerMounted(src, src.mountRoot);
+                    }
+                }
                 return obj;
             } catch { return null; }
         }
@@ -9695,21 +10630,42 @@
             } catch { /* 非 URL 原样保留 */ }
             return u;
         }
+
+        function pwStableLocalImageUrl(u, src) {
+            try {
+                const url = new URL(u, location.origin);
+                if (url.pathname === '/local') {
+                    const p = url.searchParams.get('path');
+                    if (p) {
+                        const identity = src?.kind === 'smb' ? smbUNCFromPath(p, src) : portableMediaPath(p);
+                        url.searchParams.set('path', identity);
+                    }
+                }
+                url.searchParams.delete('token');
+                return url.toString();
+            } catch { return u; }
+        }
         /// 恢复快照时按当前会话重新补 token；WebDAV 旧快照里的直连图片地址
         /// 重新走 /proxy 带凭据（直连 <img> 会 401 导致封面全黑）
         /// 注意：不要对 URL 再套 encodeURI——快照里的 %5C/%E6 等已编码片段
         /// 会被二次编码成 %255C/%25E6，导致封面 404。
         function pwReviveUrl(u, srcOverride) {
             if (!u) return '';
+            const src = srcOverride || posterWallCurrentSource();
             try {
                 const url = new URL(u, location.origin);
                 if (url.pathname === '/local') {
                     const p = url.searchParams.get('path');
-                    return p ? localUrl(p) : '';
+                    if (!p) return '';
+                    const stable = portableMediaPath(p, src);
+                    if (stable.startsWith('\\\\')) {
+                        const mapped = resolveMountedSmbPath(stable);
+                        return mapped ? localUrl(mapped) : '';
+                    }
+                    return localUrl(stable);
                 }
                 if (url.pathname === '/proxy') return u;   // 已是代理地址
                 // WebDAV 旧快照的直连图片/nfo → 重新代理
-                const src = srcOverride || posterWallCurrentSource();
                 if (src && src.kind === 'webdav'
                     && /^https?:$/i.test(url.protocol)
                     && /\.(jpe?g|png|webp|bmp|avif|gif|nfo)$/i.test(url.pathname)) {
@@ -9719,39 +10675,46 @@
             return u;
         }
 
-        function pwSnapshotMovie(m, rootPath) {
+        function pwSnapshotMovie(m, rootPath, src = posterWallCurrentSource()) {
+            const snapshotItem = (item) => item ? {
+                name: item.name,
+                href: src?.kind === 'smb' ? smbUNCFromPath(item.href, src) : item.href,
+                ...(typeof item.size === 'number' ? { size: item.size } : {}),
+            } : null;
             return {
                 key: m.key,
                 title: m.title,
                 rootPath,
-                videos: (m.videos || []).map((v) => ({ name: v.name, href: v.href, size: v.size })),
-                poster: m.poster ? { name: m.poster.name, href: m.poster.href } : null,
-                posterUrl: pwStripToken(m.posterUrl || ''),
+                videos: (m.videos || []).map(snapshotItem),
+                poster: snapshotItem(m.poster),
+                posterUrl: pwStableLocalImageUrl(pwStripToken(m.posterUrl || ''), src),
                 thumbs: (m.thumbs || []).map((t) => ({
-                    name: t.name || '', url: pwStripToken(t.url || ''),
+                    name: t.name || '', url: pwStableLocalImageUrl(pwStripToken(t.url || ''), src),
                 })),
-                fanartUrl: pwStripToken(m.fanart || ''),
-                nfo: m.nfo ? { name: m.nfo.name, href: m.nfo.href } : null,
-                nfoUrl: pwStripToken(m.nfoUrl || ''),
+                fanartUrl: pwStableLocalImageUrl(pwStripToken(m.fanart || ''), src),
+                nfo: snapshotItem(m.nfo),
+                nfoUrl: pwStableLocalImageUrl(pwStripToken(m.nfoUrl || ''), src),
                 size: m.size || 0,
             };
         }
 
         /// 快照 → 卡片可用结构（/local URL 按当前会话重新补 token）
-        function pwRestoreMovies(snap) {
+        function pwRestoreMovies(snap, srcOverride) {
+            const src = srcOverride || posterWallSources().find((s) => s.id === snap.sourceId)
+                || posterWallCurrentSource();
             return (snap.movies || []).map((m) => ({
                 key: m.key,
                 title: m.title || '未命名影片',
                 rawTitle: m.title || '',
                 videos: (m.videos || []).map((v) => ({ ...v })),
                 poster: m.poster ? { ...m.poster } : null,
-                posterUrl: pwReviveUrl(m.posterUrl || ''),
+                posterUrl: pwReviveUrl(m.posterUrl || '', src),
                 thumbs: (m.thumbs || []).map((t) => ({
-                    name: t.name || '', url: pwReviveUrl(t.url || ''),
+                    name: t.name || '', url: pwReviveUrl(t.url || '', src),
                 })),
-                fanart: pwReviveUrl(m.fanartUrl || ''),
+                fanart: pwReviveUrl(m.fanartUrl || '', src),
                 nfo: m.nfo ? { ...m.nfo } : null,
-                nfoUrl: pwReviveUrl(m.nfoUrl || ''),
+                nfoUrl: pwReviveUrl(m.nfoUrl || '', src),
                 size: m.size || 0,
                 meta: null,
                 rootPath: m.rootPath || '',
@@ -9765,6 +10728,10 @@
             if (!snap) return;
             snap.movies = (snap.movies || []).filter((m) => m.rootPath !== rootPath);
             snap.roots = (snap.roots || []).filter((r) => r !== rootPath);
+            if (snap.rootMeta) delete snap.rootMeta[rootPath];
+            snap.trash = (snap.trash || []).filter((m) => m.rootPath !== rootPath);
+            const active = new Set([...(snap.movies || []), ...(snap.trash || [])].map((m) => m.key));
+            snap.removed = (snap.removed || []).filter((key) => active.has(key));
             snap.updatedAt = Date.now();
             pwSaveSource(snap);
         }
@@ -10106,8 +11073,6 @@
 
         // SMB 会话缓存：扫描时同一共享会列几十上百个目录，
         // 每次都 net use / mount_smbfs 会非常慢，按 来源|共享名 复用已连接的本地根
-        const pwSmbBaseCache = new Map();
-
         /// 列出 SMB 目录内容
         async function pwListSmbDir(src, dirPath) {
             if (!window.vrDesktop || typeof window.vrDesktop.smbListDir !== 'function') {
@@ -10116,48 +11081,34 @@
             // 前端虚拟路径形如 /Share/sub/dir/（也可能带 smb://host 前缀）。
             // 必须先拆出共享名、建立会话拿到真实磁盘根，再拼接子目录——
             // 直接把 "/Share/sub/" 当本地路径读，会被 Node 解析成 C:\Share\sub\ 而 ENOENT
-            const raw = String(dirPath || '')
+            const originalUNC = /^\\\\/.test(dirPath) ? dirPath : smbUNCFromPath(dirPath, src);
+            const raw = String(originalUNC.startsWith('\\\\') ? originalUNC : dirPath)
                 .replace(/^smb:\/\//i, '')
                 .replace(/^[\\/]+|[\\/]+$/g, '');
             const parts = raw.split(/[\\/]/).filter(Boolean);
             if (!parts.length) throw new Error('无效的 SMB 路径');
-            // smb://host/share/... 形式：首段是主机名时去掉
-            if (parts.length > 1 && src.host
-                && parts[0].toLowerCase() === String(src.host).toLowerCase()) {
+            // smb://host/share/... 或 UNC：首段是主机名时去掉
+            const host = originalUNC.startsWith('\\\\') ? parts[0] : src.host;
+            if (parts.length > 1 && host
+                && parts[0].toLowerCase() === String(host).toLowerCase()) {
                 parts.shift();
             }
             const share = parts[0];
             const rest = parts.slice(1);
 
-            // 先建立/复用 SMB 会话，拿到可访问的本地根（Windows: UNC；macOS: 挂载点）
-            const cacheKey = (src.id || src.host || '') + '|' + share;
-            let base = pwSmbBaseCache.get(cacheKey) || '';
-            if (!base && typeof window.vrDesktop.smbConnectShare === 'function') {
-                const conn = await window.vrDesktop.smbConnectShare(
-                    src.host, share, src.user || '', src.pass || '');
-                if (conn && conn.ok && conn.localPath) {
-                    base = conn.localPath;
-                    pwSmbBaseCache.set(cacheKey, base);
-                }
-            }
-            if (!base) {
-                base = window.vrDesktop.platform === 'win32'
-                    ? `\\\\${src.host}\\${share}`
-                    : `//${src.user ? encodeURIComponent(src.user) + '@' : ''}${src.host}/${share}`;
-            }
-            const sep = window.vrDesktop.platform === 'win32' ? '\\' : '/';
-            const diskPath = base.replace(/[\\/]+$/, '')
-                + (rest.length ? sep + rest.join(sep) : '');
+            const unc = `\\\\${host}\\${share}${rest.length ? '\\' + rest.join('\\') : ''}`;
+            const diskPath = await pwEnsureSmbMountForUNC(unc);
+            if (!diskPath) throw new Error('SMB 未连接，无法读取目录');
 
             const r = await window.vrDesktop.smbListDir(diskPath);
             if (!r || !r.ok) {
-                // 连接可能已失效（重启/网络抖动），清缓存让下次重建会话
-                pwSmbBaseCache.delete(cacheKey);
+                // 下次读取会重新建立挂载；保留稳定 UNC 便于重试。
+                posterWallSmbMountMap.delete(smbShareKey(host, share));
                 throw new Error((r && r.error) || '无法读取 SMB 目录');
             }
             return (r.entries || []).map((e) => ({
                 name: e.name,
-                href: e.path,
+                href: smbUNCFromPath(e.path, { ...src, share }),
                 isDir: e.isDirectory,
                 size: e.size || 0,
             }));
@@ -10182,7 +11133,11 @@
         function posterWallToUrl(item, srcOverride) {
             const href = typeof item === 'string' ? item : String((item && item.href) || '');
             const src = srcOverride || posterWallCurrentSource();
-            if (src && src.kind === 'smb') return localUrl(href);
+            if (src && src.kind === 'smb') {
+                const unc = smbUNCFromPath(href, src);
+                const diskPath = resolveMountedSmbPath(unc);
+                return diskPath ? localUrl(diskPath) : '';
+            }
             if (src && src.kind === 'webdav') {
                 if (src.user || src.pass) {
                     // 海报墙直接起播时补齐代理转码所需的上游凭据
@@ -10689,6 +11644,8 @@
         /// 构建含图片的备份：每部影片的 封面/预览图/剧照 全部内嵌 base64
         async function pwBuildBackupWithImages(snap) {
             const out = { ...snap, exportedAt: Date.now(), withImages: true };
+            const source = posterWallSources().find((s) => s.id === snap.sourceId);
+            await pwEnsureSnapshotMounts(snap, source);
             const src = (snap.movies || []);
             const movies = new Array(src.length);
             let idx = 0;
@@ -10864,7 +11821,9 @@
                         // 若导入的就是当前来源，立刻刷新
                         if (snap.sourceId === posterWallSourceId) {
                             pwRenderStatusBar(target);
-                            pwApplyView(pwRestoreMovies(target));
+                            pwEnsureSnapshotMounts(target, posterWallCurrentSource()).then(() => {
+                                pwApplyView(pwRestoreMovies(target));
+                            });
                         }
                         pwRenderSourceSelect();
                         showSpatialToast(`✅ 已导入 ${snap.movies.length} 部影片`);
@@ -11200,6 +12159,11 @@
                 pwRenderStatusBar(snap);
                 if (snap && (snap.movies || []).length) {
                     pwApplyView(pwRestoreMovies(snap));
+                    pwEnsureSnapshotMounts(snap, posterWallCurrentSource()).then(() => {
+                        if (posterWallMask.classList.contains('active')) {
+                            pwApplyView(pwRestoreMovies(snap));
+                        }
+                    });
                 } else {
                     pwShowEmptyGuide();
                 }
@@ -11359,6 +12323,9 @@
                 });
             });
             if (!tasks.length) return;
+            await Promise.all(posterWallSources()
+                .filter((src) => src.kind === 'smb')
+                .map((src) => pwEnsureSnapshotMounts(pwLoadSource(src.id), src)));
 
             // 之前确认不存在/连续失败的图片不再每次启动重试
             const failMap = pwLoadImageFails();

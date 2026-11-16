@@ -100,6 +100,20 @@ test("folder-level poster.jpg is used as fallback cover for cover-less movies", 
   assert.ok(movies[0].posterUrl.endsWith("poster.jpg"), "directory poster becomes the fallback");
 });
 
+test("generic artwork never leaks into another directory", () => {
+  const entries = [
+    { name: "A.mp4", href: "/A/A.mp4", size: 200_000_000 },
+    { name: "poster.jpg", href: "/A/poster.jpg", size: 10 },
+    { name: "B.mp4", href: "/B/B.mp4", size: 200_000_000 },
+  ];
+  const { movies } = helpers.buildPosterWall(entries, toUrl);
+  const a = movies.find((m) => m.title === "A");
+  const b = movies.find((m) => m.title === "B");
+  assert.ok(a.posterUrl.endsWith("/A/poster.jpg"));
+  assert.equal(b.posterUrl, "");
+  assert.equal(b.poster, null);
+});
+
 test("unrecognised files are reported separately instead of leaking into the wall", () => {
   const entries = [
     entry("A-cd1.mp4"),
@@ -181,4 +195,18 @@ test("videos smaller than 150MB are filtered out (extrafanart clips, samples)", 
   assert.equal(movies.length, 1, `expected only the real movie, got ${movies.map((m) => m.title)}`);
   assert.equal(movies[0].title, "Movie A");
   assert.equal(movies[0].videos.length, 1, "sample segment must be dropped from the group");
+});
+
+test("same movie name in different directories never merges or shares artwork", () => {
+  const entries = [
+    { name: "Same.mp4", href: "/A/Same.mp4", size: 200_000_000 },
+    { name: "Same-poster.jpg", href: "/A/Same-poster.jpg", size: 10 },
+    { name: "Same.mp4", href: "/B/Same.mp4", size: 300_000_000 },
+    { name: "Same-poster.jpg", href: "/B/Same-poster.jpg", size: 10 },
+  ];
+  const { movies } = helpers.buildPosterWall(entries, toUrl);
+  assert.equal(movies.length, 2);
+  assert.equal(new Set(movies.map((m) => m.key)).size, 2);
+  assert.equal(new Set(movies.map((m) => m.posterUrl)).size, 2);
+  assert.deepEqual([...movies.map((m) => m.size)].sort((a, b) => a - b), [200_000_000, 300_000_000]);
 });
