@@ -6987,24 +6987,15 @@
                 });
         }
         function bookmarkSortedKeysNewestFirst() {
-            const historyTimes = new Map();
-            try {
-                getPlaybackHistory().forEach((r) => {
-                    if (!r || !r.url) return;
-                    const ts = Number(r.lastPlayedAt || 0);
-                    const prev = historyTimes.get(r.url) || 0;
-                    if (ts > prev) historyTimes.set(r.url, ts);
-                });
-            } catch { /* 测试或无历史环境安全降级 */ }
-            return Object.keys(bookmarkStore).sort((a, b) => {
+            const keys = Object.keys(bookmarkStore);
+            const insertionOrder = new Map(keys.map((key, idx) => [key, idx]));
+            return keys.sort((a, b) => {
                 const leftAdded = bookmarkLatestAddedAt(a);
                 const rightAdded = bookmarkLatestAddedAt(b);
                 if (leftAdded !== rightAdded) return rightAdded - leftAdded;
-                const leftTarget = a.replace(/^(url|local):/, '');
-                const rightTarget = b.replace(/^(url|local):/, '');
-                const leftHist = historyTimes.get(leftTarget) || 0;
-                const rightHist = historyTimes.get(rightTarget) || 0;
-                if (leftHist !== rightHist) return rightHist - leftHist;
+                const leftIdx = insertionOrder.get(a) ?? 0;
+                const rightIdx = insertionOrder.get(b) ?? 0;
+                if (leftIdx !== rightIdx) return rightIdx - leftIdx;
                 return a.localeCompare(b);
             });
         }

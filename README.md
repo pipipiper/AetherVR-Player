@@ -6,7 +6,7 @@ VR 视频本质上只是全景画面——AetherVR Player 把 VR / 360° / SBS �
 
 **在线体验 Demo：<https://pipipiper.github.io/AetherVR-Player/>**（纯静态版，打开即用，本地文件不上传）
 
-**当前版本：1.16.0**
+**当前版本：1.16.1**
 
 ## 为什么用它
 

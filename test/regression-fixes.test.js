@@ -128,7 +128,10 @@ test("bookmarks sort newest-added first at both video and timestamp levels", () 
       getItem: (k) => (storage.has(k) ? storage.get(k) : null),
       setItem: (k, v) => storage.set(k, String(v)),
     },
-    getPlaybackHistory: () => [],
+    getPlaybackHistory: () => [
+      { url: "https://example.com/a.mp4", lastPlayedAt: 9999999999999 },
+      { url: "https://example.com/b.mp4", lastPlayedAt: 1000 },
+    ],
     posCurrentKey: "",
     videoPlayer: { dataset: {}, currentSrc: "" },
     bookmarkTrack: null,
@@ -143,7 +146,7 @@ test("bookmarks sort newest-added first at both video and timestamp levels", () 
   vm.runInContext([
     "const BOOKMARK_STORE_KEY = 'aethervr-bookmarks-v1';",
     "const BOOKMARK_META_KEY = 'aethervr-bookmarks-meta-v1';",
-    "let bookmarkStore = { 'url:https://example.com/a.mp4': [10, 80] };",
+    "let bookmarkStore = { 'url:https://example.com/a.mp4': [10, 80], 'url:https://example.com/b.mp4': [20] };",
     "let bookmarkMeta = {};",
     "let lastBookmarkAddedAt = 0;",
     functionSource("normalizeBookmarkAddedAt"),
@@ -162,6 +165,12 @@ test("bookmarks sort newest-added first at both video and timestamp levels", () 
     "reconcileAllBookmarkMeta();",
   ].join("\n"), context);
 
+  // Legacy un-timestamped entries ignore playback history time and keep reverse insertion order
+  assert.deepEqual([...context.bookmarkSortedKeysNewestFirst()], [
+    "url:https://example.com/b.mp4",
+    "url:https://example.com/a.mp4",
+  ]);
+
   // Legacy un-timestamped entry sorts playback time descending
   assert.deepEqual([...context.bookmarkTimesNewestFirst("url:https://example.com/a.mp4")], [80, 10]);
 
@@ -178,6 +187,7 @@ test("bookmarks sort newest-added first at both video and timestamp levels", () 
   assert.deepEqual([...context.bookmarkSortedKeysNewestFirst()], [
     "url:https://example.com/a.mp4",
     "url:https://example.com/z.mp4",
+    "url:https://example.com/b.mp4",
   ]);
   assert.deepEqual([...context.bookmarkTimesNewestFirst("url:https://example.com/a.mp4")], [45, 80, 10]);
 });

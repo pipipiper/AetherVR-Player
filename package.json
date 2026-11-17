@@ -1,6 +1,6 @@
 {
   "name": "aethervr-player",
-  "version": "1.16.0",
+  "version": "1.16.1",
   "private": true,
   "author": "pipipiper <80835169+pipipiper@users.noreply.github.com>",
   "description": "AetherVR Player：本地与网络视频播放器，支持 180°/360° VR、SBS、字幕、音轨和跨端备份。",
