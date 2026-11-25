@@ -201,12 +201,42 @@ function resolveExecutable(configured, command, commonPaths) {
   return commonPaths.find((file) => fs.existsSync(file)) || findOnPath(command) || command;
 }
 
+function optionalPackageBinary(pkgName, subPath) {
+  try {
+    const mod = require(pkgName);
+    const p = typeof mod === "string" ? mod : (mod && mod.path);
+    return typeof p === "string" && p ? p : null;
+  } catch {
+    return subPath ? null : null;
+  }
+}
+
+function bundledBinaryCandidates(name) {
+  const exe = process.platform === "win32" ? `${name}.exe` : name;
+  const list = [];
+  if (process.resourcesPath) list.push(path.join(process.resourcesPath, "bin", exe));
+  list.push(path.join(__dirname, "bin", exe));
+  list.push(path.join(__dirname, "resources", "bin", exe));
+  if (process.platform === "win32") {
+    const localAppData = process.env.LOCALAPPDATA || "";
+    const programFiles = process.env.ProgramFiles || "C:\\Program Files";
+    if (localAppData) list.push(path.join(localAppData, "Microsoft", "WinGet", "Links", exe));
+    list.push(path.join(programFiles, "ffmpeg", "bin", exe));
+    list.push(path.join("C:\\ffmpeg\\bin", exe));
+  } else {
+    list.push(`/opt/homebrew/bin/${exe}`, `/usr/local/bin/${exe}`, `/usr/bin/${exe}`);
+  }
+  return list;
+}
+
 const FFMPEG = resolveExecutable(process.env.FFMPEG, "ffmpeg", [
-  "/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg",
-]);
+  ...bundledBinaryCandidates("ffmpeg"),
+  optionalPackageBinary("ffmpeg-static"),
+].filter(Boolean));
 const FFPROBE = resolveExecutable(process.env.FFPROBE, "ffprobe", [
-  "/opt/homebrew/bin/ffprobe", "/usr/local/bin/ffprobe", "/usr/bin/ffprobe",
-]);
+  ...bundledBinaryCandidates("ffprobe"),
+  optionalPackageBinary("ffprobe-static"),
+].filter(Boolean));
 const FFMPEG_AVAILABLE = path.isAbsolute(FFMPEG) && fs.existsSync(FFMPEG);
 const FFPROBE_AVAILABLE = path.isAbsolute(FFPROBE) && fs.existsSync(FFPROBE);
 
@@ -367,15 +397,14 @@ function transcodeFailureMessage(stderr) {
   return diagnostic || text.slice(-1000) || "FFmpeg 未返回错误详情";
 }
 
-function startTranscode(target, ownerIp, res, start = 0, cred = null, audioStream = 0) {
+function startTranscode(target, ownerIp, res, start = 0, cred = null, audioStream = 0, isLocal = false) {
   if (hlsSession) stopHlsSession(hlsSession);
   const id = crypto.randomBytes(12).toString("hex");
   const dir = path.join(HLS_ROOT, id);
   fs.mkdirSync(dir, { recursive: true });
 
-  const proxyInput = localProxyInput(target, cred);
-  const proc = spawn(FFMPEG, [
-    "-hide_banner", "-loglevel", "info", "-nostdin",
+  const mediaInput = isLocal ? target : localProxyInput(target, cred);
+  const remoteInputOpts = isLocal ? [] : [
     "-rw_timeout", FFMPEG_RW_TIMEOUT_US,
     // FFmpeg reads through the local HTTP proxy. If a remote Range request is
     // interrupted, reopen it at the current byte offset instead of treating the
@@ -386,11 +415,15 @@ function startTranscode(target, ownerIp, res, start = 0, cred = null, audioStrea
     "-reconnect_delay_max", "3",
     "-reconnect_max_retries", "10",
     "-reconnect_delay_total_max", "30",
+  ];
+  const proc = spawn(FFMPEG, [
+    "-hide_banner", "-loglevel", "info", "-nostdin",
+    ...remoteInputOpts,
     // 从指定时间点开始转码（快进重启）。-ss 放在 -i 前走 HTTP Range 快速
     // 定位，重编码下输出帧精确；输出时间轴从 0 开始，前端自行加偏移显示。
     ...(start > 0 ? ["-ss", start.toFixed(3)] : []),
     ...VIDEO_INPUT_ACCEL,
-    "-i", proxyInput,
+    "-i", mediaInput,
     "-map", "0:v:0", "-map", `0:a:${Math.max(0, Math.min(31, audioStream))}?`,
     ...VIDEO_ENCODER,
     "-vf", VIDEO_FILTER,
@@ -475,16 +508,16 @@ function startTranscode(target, ownerIp, res, start = 0, cred = null, audioStrea
   });
 }
 
-/* ffprobe 远程视频信息探测：只读容器/流头（配合 Range 秒级返回），
- * 让前端在尝试播放前就知道编码是否可能不支持，避免长时间黑屏。 */
-function probeRemoteMedia(target, res, cred) {
-  const proxyInput = localProxyInput(target, cred);
+/* ffprobe 视频信息探测：只读容器/流头，让前端在尝试播放前就知道编码是否可能不支持，
+ * 避免长时间黑屏；桌面端同时支持本地磁盘与 SMB 挂载路径。 */
+function probeRemoteMedia(target, res, cred, isLocal = false) {
+  const mediaInput = isLocal ? target : localProxyInput(target, cred);
   const proc = spawn(FFPROBE, [
     "-v", "error",
-    "-rw_timeout", "15000000",
+    ...(isLocal ? [] : ["-rw_timeout", "15000000"]),
     "-show_entries", "stream=index,codec_type,codec_name,width,height:stream_tags=language,title:format=format_name",
     "-of", "json",
-    proxyInput,
+    mediaInput,
   ]);
   let out = "";
   let err = "";
@@ -637,6 +670,21 @@ async function resolveSafeTarget(u) {
   const addresses = await dns.lookup(u.hostname, { all: true, verbatim: true });
   if (!addresses.length) throw new Error("Cannot resolve host");
   return addresses[0];
+}
+
+async function resolveMediaTarget(rawTarget) {
+  const u = new URL(rawTarget, `http://127.0.0.1:${PORT || 7100}`);
+  if (LOCAL_FS && u.pathname === "/local" && isLoopbackHost(u.hostname)) {
+    if (u.searchParams.get("token") !== LOCAL_TOKEN) throw new Error("Forbidden local target");
+    const filePath = u.searchParams.get("path") || "";
+    if (!filePath) throw new Error("Missing local file path");
+    const st = await fs.promises.stat(filePath);
+    if (!st.isFile()) throw new Error("Local target is not a file");
+    return { isLocal: true, target: filePath };
+  }
+  const absolute = new URL(rawTarget);
+  await resolveSafeTarget(absolute);
+  return { isLocal: false, target: absolute.href };
 }
 
 /* 远程链接预检：只取前 2KB（Range），判断上游返回的是不是视频数据。
@@ -963,15 +1011,17 @@ const requestHandler = async (req, res) => {
         return;
       }
       let target;
+      let isLocalTarget = false;
       let start = 0;
       let transcodeCred = "";
       let audioStream = 0;
       try {
         const body = await readJson(req);
-        target = typeof body.url === "string" ? body.url.trim() : "";
-        if (!target || target.length > 4096) throw new Error("Invalid video URL");
-        const u = new URL(target);
-        await resolveSafeTarget(u);
+        const rawUrl = typeof body.url === "string" ? body.url.trim() : "";
+        if (!rawUrl || rawUrl.length > 4096) throw new Error("Invalid video URL");
+        const resolvedMedia = await resolveMediaTarget(rawUrl);
+        target = resolvedMedia.target;
+        isLocalTarget = resolvedMedia.isLocal;
         // 上游 Basic 认证凭据（用于转码 WebDAV/私有源视频）
         transcodeCred = encodeUpstreamCred(
           typeof body.username === "string" ? body.username : "",
@@ -993,7 +1043,7 @@ const requestHandler = async (req, res) => {
       }
       sweepStaleEntries(transcodeStarts);
       transcodeStarts.set(ip, Date.now());
-      startTranscode(target, ip, res, start, transcodeCred, audioStream);
+      startTranscode(target, ip, res, start, transcodeCred, audioStream, isLocalTarget);
       return;
     }
     if (urlPath === "/api/capabilities") {
@@ -1336,12 +1386,15 @@ const requestHandler = async (req, res) => {
         return;
       }
       let target;
+      let isLocalTarget = false;
       let probeCred = "";
       try {
         const body = await readJson(req);
-        target = typeof body.url === "string" ? body.url.trim() : "";
-        if (!target || target.length > 4096) throw new Error("Invalid video URL");
-        await resolveSafeTarget(new URL(target));
+        const rawUrl = typeof body.url === "string" ? body.url.trim() : "";
+        if (!rawUrl || rawUrl.length > 4096) throw new Error("Invalid video URL");
+        const resolvedMedia = await resolveMediaTarget(rawUrl);
+        target = resolvedMedia.target;
+        isLocalTarget = resolvedMedia.isLocal;
         // WebDAV / 私有源需要 Basic 认证才能探测，凭据随请求体传入
         probeCred = encodeUpstreamCred(
           typeof body.username === "string" ? body.username : "",
@@ -1366,6 +1419,10 @@ const requestHandler = async (req, res) => {
       }
       sweepStaleEntries(probeStarts);
       probeStarts.set(ip, Date.now());
+      if (isLocalTarget) {
+        probeRemoteMedia(target, res, "", true);
+        return;
+      }
       // 先预检上游返回的是不是视频（OpenList 路径错误/签名过期会返回 JSON/HTML），
       // 不是视频时直接给出具体原因，而不是让 ffprobe/播放器报误导性错误
       preflightRemote(target, 0, probeCred).then((pf) => {
@@ -1374,7 +1431,7 @@ const requestHandler = async (req, res) => {
           res.end(JSON.stringify({ preflight_error: pf.error }));
           return;
         }
-        probeRemoteMedia(target, res, probeCred);
+        probeRemoteMedia(target, res, probeCred, false);
       });
       return;
     }
@@ -1617,7 +1674,12 @@ function startServer({ host = "127.0.0.1", port = 7100, localFs = false, localTo
     const done = (ipv6Server = null) => {
       const actualPort = server.address().port;
       PORT = actualPort;
-      resolve({ server, host: HOST, port: actualPort, localToken: LOCAL_TOKEN, ipv6Server });
+      const close = () => {
+        stopHlsSession();
+        try { server.close(); } catch { /* ignore */ }
+        try { ipv6Server?.close(); } catch { /* ignore */ }
+      };
+      resolve({ server, host: HOST, port: actualPort, localToken: LOCAL_TOKEN, ipv6Server, close });
     };
 
     // "localhost" may resolve to ::1 only. Never bind the unspecified address

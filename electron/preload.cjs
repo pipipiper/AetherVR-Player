@@ -17,6 +17,15 @@ contextBridge.exposeInMainWorld('vrDesktop', {
   // 应用配置（与端口无关的持久化）
   readCfg: () => ipcRenderer.invoke('cfg:read'),
   writeCfg: (obj) => ipcRenderer.invoke('cfg:write', obj),
+  readStorage: () => ipcRenderer.invoke('storage:read'),
+  writeStorage: (obj) => ipcRenderer.invoke('storage:write', obj),
+  consumePendingFiles: () => ipcRenderer.invoke('app:consumePendingFiles'),
+  onOpenFiles: (cb) => {
+    if (typeof cb !== 'function') return () => {};
+    const handler = (_event, files) => cb(files);
+    ipcRenderer.on('app:openFiles', handler);
+    return () => ipcRenderer.removeListener('app:openFiles', handler);
+  },
   readCredentials: () => ipcRenderer.invoke('credentials:read'),
   writeCredentials: (data) => ipcRenderer.invoke('credentials:write', data),
   resolveSmbUNC: (unc) => ipcRenderer.invoke('smb:resolveUNC', { unc }),

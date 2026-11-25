@@ -43,6 +43,7 @@
     <link rel="stylesheet" href="./vendor/fonts.css">
     <link rel="stylesheet" href="./vendor/fontawesome/all.min.css">
     <script src="./vendor/three.min.js"></script>
+    <script src="./vendor/hls.min.js"></script>
     <style>
         /* ── tokens ──────────────────────────────────────────── */
         :root {
@@ -3180,8 +3181,26 @@
         let transcodeDisplayName = null;
         let transcodeRestarting = false;
         let ignoreMediaError = false; // 重启转码切换流期间，忽略旧 HLS 流的报错
+        let hlsPlayerInstance = null; // hls.js 实例（Electron/Chrome 无原生 HLS 支持时使用）
         const seekLoading = document.getElementById('seekLoading');
         const seekLoadingText = document.getElementById('seekLoadingText');
+        function destroyHlsInstance() {
+            if (!hlsPlayerInstance) return;
+            try { hlsPlayerInstance.destroy(); } catch { /* 忽略 */ }
+            hlsPlayerInstance = null;
+        }
+        function isLocalStreamUrl(rawUrl) {
+            if (!rawUrl) return false;
+            try {
+                const u = new URL(rawUrl, location.href);
+                return u.origin === location.origin && u.pathname === '/local';
+            } catch { return false; }
+        }
+        function isTranscodableSourceUrl(rawUrl) {
+            if (!rawUrl) return false;
+            if (/^https?:\/\//i.test(rawUrl) && !rawUrl.startsWith(location.origin)) return true;
+            return isDesktopApp && isLocalStreamUrl(rawUrl);
+        }
         function effectiveCurrentTime() {
             return transcodeSrcUrl ? hlsOffset + videoPlayer.currentTime : videoPlayer.currentTime;
         }
@@ -3309,6 +3328,7 @@
             } catch { return false; }
         }
         function releaseRemoteTranscode() {
+            destroyHlsInstance();
             if (!transcodeSrcUrl || !backendAvailable) return;
             fetch(backendUrl('transcode/stop'), { method: 'POST', keepalive: true }).catch(() => {});
         }
@@ -4447,9 +4467,101 @@
             return pl;
         }
 
+        function snapshotLocalStorageForDesktop() {
+            const dump = {};
+            try {
+                for (let i = 0; i < localStorage.length; i++) {
+                    const k = localStorage.key(i);
+                    if (k) dump[k] = localStorage.getItem(k);
+                }
+            } catch { /* 忽略 */ }
+            return dump;
+        }
+        function syncDesktopStorageNow() {
+            if (!isDesktopApp || !window.vrDesktop?.writeStorage) return;
+            window.vrDesktop.writeStorage(snapshotLocalStorageForDesktop()).catch(() => {});
+        }
+        async function handleDesktopOpenFiles(files) {
+            const list = Array.isArray(files) ? files.filter((p) => typeof p === 'string' && p) : [];
+            if (!list.length) return;
+            const dplPath = list.find((p) => /\.dpl$/i.test(p));
+            if (dplPath && window.vrDesktop?.readDpl) {
+                try {
+                    const rec = await window.vrDesktop.readDpl(dplPath);
+                    if (rec && rec.data) {
+                        const entries = parseDpl(decodeDplBase64(rec.data));
+                        if (entries.length) {
+                            const items = await resolveDplEntries(entries);
+                            const name = (rec.name || '播放列表').replace(/\.dpl$/i, '');
+                            openPlaylistTab(name, rec.path || dplPath, items, entries, true);
+                            playlistPanel.classList.add('active');
+                        }
+                    }
+                } catch (e) { showError('打开播放列表失败：' + e.message); }
+                return;
+            }
+            const videoPath = list.find((p) => /\.(mp4|m4v|webm|mov|mkv|avi|ts|m2ts|flv|wmv|mpg|mpeg|3gp|ogv|ogg)$/i.test(p));
+            if (!videoPath) return;
+            try {
+                const map = await window.vrDesktop.checkPaths([videoPath]);
+                if (!map || !map[videoPath]?.exists) {
+                    showError('无法打开文件：文件不存在或无权访问');
+                    return;
+                }
+                const name = basenameOf(videoPath);
+                playOrigin = 'home';
+                playedFromPosterWall = false;
+                playTarget(name, localUrl(videoPath), 0);
+                // 自动收录同文件夹视频到临时播放列表
+                const dir = videoPath.replace(/[\\/][^\\/]+$/, '');
+                if (dir && window.vrDesktop?.listVideos) {
+                    const siblings = await window.vrDesktop.listVideos(dir);
+                    if (Array.isArray(siblings) && siblings.length > 1) {
+                        const items = siblings.map((s) => ({
+                            name: s.name,
+                            url: localUrl(s.path),
+                            originalPath: s.path,
+                            kind: 'local',
+                            playable: true,
+                        }));
+                        const idx = items.findIndex((it) => it.originalPath === videoPath);
+                        if (typeof openTempPlaylist === 'function') {
+                            openTempPlaylist(items, Math.max(0, idx));
+                        }
+                    }
+                }
+            } catch (e) { showError('打开本地视频失败：' + e.message); }
+        }
         // ── 启动恢复：有库目录从 dpl 文件加载；否则退回 localStorage（旧版数据）──
         async function restoreDesktopState() {
             if (!isDesktopApp) return;
+            // 若因默认端口被占用退回随机端口，从 userData 恢复本地存储镜像
+            if (window.vrDesktop?.readStorage && localStorage.length === 0) {
+                try {
+                    const mirror = await window.vrDesktop.readStorage();
+                    const keys = mirror && typeof mirror === 'object' ? Object.keys(mirror) : [];
+                    if (keys.length) {
+                        for (const k of keys) {
+                            if (typeof mirror[k] === 'string') localStorage.setItem(k, mirror[k]);
+                        }
+                        if (!sessionStorage.getItem('aethervr-storage-restored')) {
+                            sessionStorage.setItem('aethervr-storage-restored', '1');
+                            location.reload();
+                            return;
+                        }
+                    }
+                } catch { /* 忽略 */ }
+            }
+            if (window.vrDesktop?.writeStorage) {
+                setInterval(syncDesktopStorageNow, 30000);
+                window.addEventListener('pagehide', syncDesktopStorageNow);
+            }
+            if (window.vrDesktop?.onOpenFiles) {
+                window.vrDesktop.onOpenFiles(handleDesktopOpenFiles);
+            }
+            if (window.vrDesktop?.consumePendingFiles) {
+                window.vrDesktop.consumePendingFiles().then(handleDesktopOpenFiles).catch(() => {});
+            }
             // 配置存 userData（与端口无关）；localStorage 仅作旧版迁移来源
             let cfg = {};
             try { cfg = await window.vrDesktop.readCfg() || {}; } catch { /* 忽略 */ }
@@ -4802,16 +4914,23 @@
             if (!server || !window.vrDesktop?.smbConnectShare) {
                 throw new Error('找不到对应的 SMB 文件源，请先重新连接');
             }
-            currentCloudSource = { kind: 'smb', ...server };
-            const conn = await window.vrDesktop.smbConnectShare(
-                server.host, server.share, server.user || '', server.pass || ''
-            );
-            if (!conn || !conn.ok) throw new Error(conn?.error || 'SMB 重新连接失败');
-            currentSmbMountRoot = conn.localPath;
-            markSmbServerMounted(server, conn.localPath);
+            const mountKey = smbMountKey(server);
+            let mountRoot = smbMountRoots.get(mountKey) || '';
+            if (!mountRoot) {
+                const conn = await window.vrDesktop.smbConnectShare(
+                    server.host, server.share, server.user || '', server.pass || ''
+                );
+                if (!conn || !conn.ok) throw new Error(conn?.error || 'SMB 重新连接失败');
+                mountRoot = conn.localPath;
+                smbMountRoots.set(mountKey, mountRoot);
+            }
+            if (currentCloudSource?.kind === 'smb' && smbMountKey(currentCloudSource) === mountKey) {
+                currentSmbMountRoot = mountRoot;
+            }
+            markSmbServerMounted(server, mountRoot);
             const prefix = `\\\\${server.host}\\${server.share}`;
             const relative = unc.slice(prefix.length).replace(/^[\\/]+/, '').replace(/\\/g, '/');
-            return conn.localPath.replace(/[\\/]+$/, '') + (relative ? '/' + relative : '');
+            return mountRoot.replace(/[\\/]+$/, '') + (relative ? '/' + relative : '');
         }
         async function playLocalMediaReference(name, target, position) {
             let diskPath = target;
@@ -5514,6 +5633,11 @@
             hideError();
             document.getElementById('transcodeBtn').style.display = 'none';
             delete videoPlayer.dataset.remoteUrl;
+            const localDiskPath = isDesktopApp && window.vrDesktop?.pathForFile ? window.vrDesktop.pathForFile(file) : '';
+            if (localDiskPath) {
+                videoPlayer.dataset.remoteUrl = localUrl(localDiskPath);
+                videoPlayer.dataset.remoteName = file.name;
+            }
             fallbackDuration = null;
             hlsOffset = 0;
             transcodeSrcUrl = null;
@@ -5732,14 +5856,13 @@
                 : '';
             showPlaybackError(hint, retryUrl);
             if (!videoPlayer.paused) videoPlayer.pause();
-            // 编码不支持 + 源是远程链接 → 提供服务器实时转码播放入口
+            // 编码不支持 + 源支持服务器转码（远程直链 / WebDAV / 桌面端本地或 SMB）→ 提供实时转码入口
             const transcodeBtn = document.getElementById('transcodeBtn');
             if (transcodeBtn) {
                 const remoteUrl = videoPlayer.dataset.remoteUrl || '';
                 const canTranscode = err && err.code === 4
                     && transcodeAvailable
-                    && /^https?:\/\//.test(remoteUrl)
-                    && !remoteUrl.startsWith(location.origin);
+                    && isTranscodableSourceUrl(remoteUrl);
                 transcodeBtn.style.display = canTranscode ? 'inline-block' : 'none';
             }
         });
@@ -6008,7 +6131,7 @@
             // 不能停止，因为服务端已经用新会话替换了旧会话。
             if (!isTranscodePlaylistUrl(rawUrl)) releaseRemoteTranscode();
 
-            // 远程链接先做编码预探测：明显播不了就直接给转码入口，
+            // 远程链接或桌面端非常规本地容器先做编码预探测：明显播不了就直接给转码入口，
             // 不再让视频元素长时间黑屏干等 error 事件。
             //
             // 注意：判断"是不是远程源"必须看**原始地址**，不能看 `playable`。
@@ -6016,12 +6139,17 @@
             // 若用 playable 判断会误认为同源，从而跳过探测——
             // 表现为 WebDAV 的 HEVC 视频直接黑屏然后报"无法解码"。
             const isRemoteUrl = /^https?:\/\//i.test(rawUrl) && !rawUrl.startsWith(location.origin);
-            if (isRemoteUrl) {
+            const isLocalTranscodeContainer = isDesktopApp
+                && isLocalStreamUrl(rawUrl)
+                && !isTranscodePlaylistUrl(rawUrl)
+                && /\.(mkv|avi|ts|m2ts|flv|wmv|mpg|mpeg)(?:&|$)/i.test(rawUrl);
+            if (isRemoteUrl || isLocalTranscodeContainer) {
                 const controller = new AbortController();
                 activeProbeController = controller;
                 showHeroLoading('正在检测视频编码信息…');
-                const effectiveAuth = findMatchingWebdavAuth(rawUrl);
-                const probe = await probeRemoteMedia(rawUrl, controller.signal, true, effectiveAuth);
+                const effectiveAuth = isRemoteUrl ? findMatchingWebdavAuth(rawUrl) : null;
+                const probeTarget = isRemoteUrl ? rawUrl : new URL(rawUrl, location.origin).href;
+                const probe = await probeRemoteMedia(probeTarget, controller.signal, true, effectiveAuth);
                 if (requestId !== urlLoadRequestId) return;
                 if (activeProbeController === controller) activeProbeController = null;
                 hideHeroLoading();
@@ -6039,7 +6167,12 @@
                     hideLoadSpin(); // playAt 里可能已显示「加载中…」
                     let probeName = '网络视频';
                     try {
-                        probeName = decodeURIComponent(new URL(rawUrl).pathname).split('/').filter(Boolean).pop() || probeName;
+                        if (isRemoteUrl) {
+                            probeName = decodeURIComponent(new URL(rawUrl).pathname).split('/').filter(Boolean).pop() || probeName;
+                        } else {
+                            const lp = new URL(rawUrl, location.origin).searchParams.get('path') || '';
+                            probeName = lp.split(/[\\/]/).filter(Boolean).pop() || '本地视频';
+                        }
                     } catch (e) {}
                     videoPlayer.dataset.remoteUrl = rawUrl;
                     videoPlayer.dataset.remoteName = probeName;
@@ -6067,7 +6200,29 @@
             const generation = ++mediaLoadGeneration;
             armMediaReadyTriggers(generation);
             releaseLocalObjectURL();
-            videoPlayer.src = playable;
+            destroyHlsInstance();
+            const isHlsStream = isTranscodePlaylistUrl(playable);
+            const canNativeHls = videoPlayer.canPlayType('application/vnd.apple.mpegurl') !== '';
+            if (isHlsStream && !canNativeHls && window.Hls && window.Hls.isSupported()) {
+                const hls = new window.Hls({ enableWorker: true, lowLatencyMode: false });
+                hlsPlayerInstance = hls;
+                hls.on(window.Hls.Events.ERROR, (_event, data) => {
+                    if (!data || !data.fatal || ignoreMediaError) return;
+                    if (data.type === window.Hls.ErrorTypes.NETWORK_ERROR) {
+                        hls.startLoad();
+                    } else if (data.type === window.Hls.ErrorTypes.MEDIA_ERROR) {
+                        hls.recoverMediaError();
+                    } else {
+                        destroyHlsInstance();
+                        hideLoadSpin();
+                        showPlaybackError('HLS 转码流播放失败：' + (data.details || '解码错误'), '');
+                    }
+                });
+                hls.loadSource(playable);
+                hls.attachMedia(videoPlayer);
+            } else {
+                videoPlayer.src = playable;
+            }
             videoContainer.classList.add('active');
             document.body.classList.add('has-video');
             document.querySelector('.container')?.classList.add('has-video');
@@ -6105,7 +6260,7 @@
 
             // VR/360 is the default view once metadata is ready
             pendingVrMode = true;
-            videoPlayer.load();
+            if (!hlsPlayerInstance) videoPlayer.load();
             showLoadSpin('视频加载中…');
             startMediaSpeedMonitor('视频加载中…', requestId);
         }
@@ -6449,6 +6604,7 @@
         function unloadCurrentVideo() {
             try { posSaveNow(); } catch { /* 进度记录失败忽略 */ }
             try { videoPlayer.pause(); } catch { /* 忽略 */ }
+            try { destroyHlsInstance(); } catch { /* 忽略 */ }
             try { releaseRemoteTranscode(); } catch { /* 忽略 */ }
             try { hideLoadSpin(); } catch { /* 忽略 */ }
             try { hideHeroLoading(); } catch { /* 忽略 */ }
@@ -6545,8 +6701,10 @@
             transcodeBtn.disabled = true;
             transcodeBtn.textContent = '正在启动转码（8K 实时转码约需十几秒）…';
             try {
-                const transcodeAuth = findMatchingWebdavAuth(remoteUrl);
-                const payload = { url: remoteUrl };
+                const isRemoteSource = /^https?:\/\//i.test(remoteUrl) && !remoteUrl.startsWith(location.origin);
+                const transcodeAuth = isRemoteSource ? findMatchingWebdavAuth(remoteUrl) : null;
+                const transcodeUrl = isRemoteSource ? remoteUrl : new URL(remoteUrl, location.origin).href;
+                const payload = { url: transcodeUrl };
                 if (transcodeAuth && (transcodeAuth.username || transcodeAuth.password)) {
                     payload.username = transcodeAuth.username || '';
                     payload.password = transcodeAuth.password || '';
@@ -7228,20 +7386,43 @@
                     : '浏览器未提供可切换音轨；远程片源可由服务器探测后提供转码选轨。';
             }
         }
+        async function ensureAudioProbeForCurrentSource() {
+            const source = transcodeSrcUrl || videoPlayer.dataset.remoteUrl || '';
+            if (!source || !probeAvailable || !isTranscodableSourceUrl(source)) return;
+            if (lastMediaProbe && Array.isArray(lastMediaProbe.streams)) return;
+            const isRemote = /^https?:\/\//i.test(source) && !source.startsWith(location.origin);
+            const auth = isRemote ? findMatchingWebdavAuth(source) : null;
+            const probeTarget = isRemote ? source : new URL(source, location.origin).href;
+            const hint = document.getElementById('audioTrackHint');
+            if (hint) hint.textContent = '正在探测音轨信息…';
+            try {
+                const probe = await probeRemoteMedia(probeTarget, undefined, false, auth);
+                if (probe && Array.isArray(probe.streams)) {
+                    lastMediaProbe = probe;
+                    renderMediaTrackLists();
+                } else if (hint) {
+                    hint.textContent = '未能探测到可切换音轨。';
+                }
+            } catch {
+                if (hint) hint.textContent = '音轨探测失败。';
+            }
+        }
         async function startTranscodeWithAudio(index) {
             const source = transcodeSrcUrl || videoPlayer.dataset.remoteUrl;
-            if (!source || !transcodeAvailable) {
+            if (!source || !transcodeAvailable || !isTranscodableSourceUrl(source)) {
                 showSpatialToast('该来源无法使用服务器转码选轨');
                 return;
             }
             selectedAudioStream = index;
             const position = effectiveCurrentTime();
-            const auth = findMatchingWebdavAuth(source);
+            const isRemote = /^https?:\/\//i.test(source) && !source.startsWith(location.origin);
+            const auth = isRemote ? findMatchingWebdavAuth(source) : null;
+            const transcodeUrl = isRemote ? source : new URL(source, location.origin).href;
             try {
                 const resp = await fetch(backendUrl('transcode'), {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        url: source, start: Math.max(0, position - 1), audioStream: index,
+                        url: transcodeUrl, start: Math.max(0, position - 1), audioStream: index,
                         username: auth?.username || '', password: auth?.password || '',
                     }),
                 });
@@ -7259,6 +7440,10 @@
             e.stopPropagation();
             renderMediaTrackLists();
             mediaTracksModalMask.classList.add('active');
+            const tracks = videoPlayer.audioTracks;
+            if ((!tracks || !tracks.length) && (!lastMediaProbe || !Array.isArray(lastMediaProbe.streams))) {
+                ensureAudioProbeForCurrentSource();
+            }
         });
         document.getElementById('mediaTracksClose').addEventListener('click', () => mediaTracksModalMask.classList.remove('active'));
         document.getElementById('addSubtitleBtn').addEventListener('click', () => subtitleFileInput.click());
@@ -7336,13 +7521,41 @@
             }
         });
 
-        // Spacebar toggles play/pause
+        // 桌面播放器快捷键：仅在播放界面且无弹窗遮罩打开时生效
+        function isPlaybackShortcutAllowed() {
+            if (!document.body.classList.contains('has-video')) return false;
+            if (dropZone && dropZone.classList.contains('active')) return false;
+            return !document.querySelector('.pw-mask.active, .app-error-mask.active, .cc-mask.active, .pl-modal-mask.active, .modal-mask.active, .bookmark-mask.active');
+        }
         document.addEventListener('keydown', (e) => {
-            if (e.code !== 'Space') return;
             const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : '';
-            if (tag === 'input' || tag === 'textarea' || e.target.isContentEditable) return;
-            e.preventDefault();
-            playPauseBtn.click();
+            if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target?.isContentEditable) return;
+            if (!isPlaybackShortcutAllowed()) return;
+            if (e.code === 'Space') {
+                e.preventDefault();
+                playPauseBtn.click();
+            } else if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
+                e.preventDefault();
+                const delta = e.code === 'ArrowRight' ? 5 : -5;
+                const d = effectiveDuration();
+                const target = Math.max(0, effectiveCurrentTime() + delta);
+                seekToGlobal(d && isFinite(d) ? Math.min(d, target) : target);
+            } else if (e.code === 'ArrowUp' || e.code === 'ArrowDown') {
+                e.preventDefault();
+                const step = e.code === 'ArrowUp' ? 0.05 : -0.05;
+                videoPlayer.muted = false;
+                videoPlayer.volume = Math.max(0, Math.min(1, Number((videoPlayer.volume + step).toFixed(2))));
+                updateVolumeIcon();
+                showSpatialToast(`音量 ${Math.round(videoPlayer.volume * 100)}%`);
+            } else if (e.code === 'KeyF' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+                e.preventDefault();
+                fullscreenBtn.click();
+            } else if (e.code === 'KeyM' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+                e.preventDefault();
+                videoPlayer.muted = !videoPlayer.muted;
+                updateVolumeIcon();
+                showSpatialToast(videoPlayer.muted ? '已静音' : `音量 ${Math.round(videoPlayer.volume * 100)}%`);
+            }
         });
 
         // Fullscreen
@@ -8751,6 +8964,11 @@
         let currentWebdavPath = '/';
         let currentSmbPath = '/';
         let currentSmbMountRoot = '';    // 本地挂载根或 UNC 根
+        const smbMountRoots = new Map(); // 按 SMB 源隔离的挂载根缓存
+        function smbMountKey(server) {
+            if (!server) return '';
+            return `${server.host || ''}::${server.share || ''}::${server.user || ''}`.toLowerCase();
+        }
         let webdavLastItems = null;
         let webdavLastBase = null;
         let smbLastEntries = null;   // SMB 当前目录缓存（A-Z 筛选重渲染用）
@@ -9801,7 +10019,9 @@
             currentSmbPath = subPath || '/';
             restoreCloudSort();
 
-            // 1. 先确保挂载/连接会话建立
+            // 1. 先确保挂载/连接会话建立（按源隔离挂载根，避免多 SMB 源串台）
+            const mountKey = smbMountKey(server);
+            currentSmbMountRoot = smbMountRoots.get(mountKey) || '';
             if (!currentSmbMountRoot) {
                 const conn = await window.vrDesktop.smbConnectShare(server.host, server.share, server.user, server.pass);
                 if (!conn || !conn.ok) {
@@ -9809,6 +10029,7 @@
                     return;
                 }
                 currentSmbMountRoot = conn.localPath;
+                smbMountRoots.set(mountKey, conn.localPath);
                 markSmbServerMounted(server, conn.localPath);
             }
 

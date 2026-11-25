@@ -9,7 +9,7 @@
  *   - checkPaths(paths)  批量检查磁盘路径是否存在，返回 { path: { exists, size } }
  *   - platform           process.platform
  */
-const { app, BrowserWindow, dialog, ipcMain, safeStorage } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, safeStorage } = require('electron');
 const crypto = require('crypto');
 const fs = require('fs');
 const net = require('net');
@@ -60,6 +60,39 @@ ipcMain.handle = (channel, listener) => originalIpcHandle(channel, (event, ...ar
 });
 
 let mainWindow = null;
+let serverHandle = null;
+
+// 支持双击视频 / .dpl 文件启动或唤醒应用
+const OPEN_FILE_RE = /\.(mp4|m4v|webm|mov|mkv|avi|ts|m2ts|flv|wmv|mpg|mpeg|3gp|ogv|ogg|dpl)$/i;
+const pendingOpenFiles = [];
+function collectOpenFilesFromArgv(argv) {
+  const out = [];
+  for (const arg of (Array.isArray(argv) ? argv : [])) {
+    if (typeof arg !== 'string' || !arg || arg.startsWith('-')) continue;
+    if (!OPEN_FILE_RE.test(arg)) continue;
+    try {
+      const resolved = path.resolve(arg);
+      if (fs.statSync(resolved).isFile()) out.push(resolved);
+    } catch { /* 忽略不存在的路径 */ }
+  }
+  return out;
+}
+function enqueueOpenFiles(files) {
+  const list = (Array.isArray(files) ? files : [files]).filter((p) => typeof p === 'string' && p);
+  if (!list.length) return;
+  for (const p of list) {
+    if (!pendingOpenFiles.includes(p)) pendingOpenFiles.push(p);
+  }
+  if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isLoadingMainFrame()) {
+    const batch = pendingOpenFiles.splice(0, pendingOpenFiles.length);
+    if (batch.length) mainWindow.webContents.send('app:openFiles', batch);
+  }
+}
+
+app.on('open-file', (event, filePath) => {
+  event.preventDefault();
+  if (filePath && OPEN_FILE_RE.test(filePath)) enqueueOpenFiles([filePath]);
+});
 
 async function start() {
   // /local 接口访问令牌：每次启动随机生成，随 index.html 注入页面
@@ -67,11 +100,11 @@ async function start() {
   // 先尝试固定端口；listen 失败（被占用/竞态）则退回随机空闲端口
   let port = PREFERRED_PORT;
   try {
-    await startServer({ host: '127.0.0.1', port, localFs: true, localToken });
+    serverHandle = await startServer({ host: '127.0.0.1', port, localFs: true, localToken });
   } catch {
     port = await findFreePort();
     try {
-      await startServer({ host: '127.0.0.1', port, localFs: true, localToken });
+      serverHandle = await startServer({ host: '127.0.0.1', port, localFs: true, localToken });
     } catch (err) {
       dialog.showErrorBox('AetherVR Player', `内嵌服务器启动失败：${err.message}`);
       app.quit();
@@ -111,6 +144,24 @@ async function start() {
   ipcMain.handle('cfg:write', (event, obj) => {
     try {
       fs.writeFileSync(cfgFile(), JSON.stringify(obj && typeof obj === 'object' ? obj : {}));
+      return true;
+    } catch { return false; }
+  });
+
+  // 持久化镜像：避免 17395 端口被占用退回随机端口时，按源隔离的 localStorage 暂时丢失
+  const storageFile = () => path.join(app.getPath('userData'), 'vr-player-storage.json');
+  ipcMain.handle('storage:read', () => {
+    try {
+      const data = JSON.parse(fs.readFileSync(storageFile(), 'utf8'));
+      return data && typeof data === 'object' ? data : {};
+    } catch { return {}; }
+  });
+  ipcMain.handle('storage:write', (event, obj) => {
+    try {
+      const target = storageFile();
+      const tmp = target + '.tmp';
+      fs.writeFileSync(tmp, JSON.stringify(obj && typeof obj === 'object' ? obj : {}));
+      fs.renameSync(tmp, target);
       return true;
     } catch { return false; }
   });
@@ -319,25 +370,35 @@ async function start() {
   // 列出 SMB 服务器上的共享名
   ipcMain.handle('smb:listShares', async (event, payload) => {
     const host = String((payload && payload.host) || '').trim();
+    const user = String((payload && payload.user) || '').trim();
+    const pass = String((payload && payload.password) || '');
     if (!host) return { ok: false, error: '缺少服务器地址', shares: [] };
     if (process.platform === 'darwin') {
-      // smbutil view -g //user:pass@host
-      const user = String((payload && payload.user) || '').trim();
-      const pass = String((payload && payload.password) || '');
-      const target = user ? `//${user}:${pass}@${host}` : `//${host}`;
+      // smbutil view -g //[user[:pass]@]host（用户名/密码需 URL 编码，避免 @/:/ 破坏解析）
+      const encUser = encodeURIComponent(user);
+      const encPass = encodeURIComponent(pass);
+      const auth = user ? `${encUser}${pass ? ':' + encPass : ''}@` : '';
+      const target = `//${auth}${host}`;
       const r = await runCommand('smbutil', ['view', '-g', target]);
       if (!r.ok) {
         return { ok: false, error: (r.stderr || 'smbutil 调用失败').trim(), shares: [] };
       }
       const shares = r.stdout.split(/\r?\n/)
         .map((line) => {
-          const m = /^(\S+)\s+(Disk|IPC)\b/.exec(line.trim());
-          return m && m[2] === 'Disk' ? m[1] : null;
+          const m = /^(.+?)\s+(Disk|IPC)\b/.exec(line.trim());
+          return m && m[2] === 'Disk' ? m[1].trim() : null;
         })
         .filter(Boolean);
       return { ok: true, shares };
     }
     if (process.platform === 'win32') {
+      // 若提供了账号密码，先建立 IPC$ 凭据会话，避免禁用匿名访问的 NAS 拒绝 net view
+      if (user && !pass.startsWith('/') && !pass.startsWith('-')) {
+        const authArgs = ['use', `\\\\${host}\\IPC$`];
+        if (pass) authArgs.push(pass);
+        authArgs.push(`/user:${user}`);
+        await runCommand('net', authArgs, 15000, 'gbk');
+      }
       // net view \\host（net.exe 输出为系统 GBK 代码页，按 GBK 解码保中文共享名）
       const r = await runCommand('net', ['view', `\\\\${host}`], 20000, 'gbk');
       if (!r.ok) {
@@ -345,14 +406,27 @@ async function start() {
       }
       const shares = r.stdout.split(/\r?\n/)
         .map((line) => {
-          const m = /^(\S+)\s+Disk\b/i.exec(line.trim());
-          return m ? m[1] : null;
+          const m = /^(.+?)\s+Disk\b/i.exec(line.trim());
+          return m ? m[1].trim() : null;
         })
         .filter(Boolean);
       return { ok: true, shares };
     }
     return { ok: false, error: 'SMB 仅在 macOS 与 Windows 桌面端可用', shares: [] };
   });
+
+  // 判断目录是否为独立的已挂载点（macOS 下挂载点的 st_dev 与其父目录不同）
+  async function isMacMountPoint(dir) {
+    try {
+      const [dirStat, parentStat] = await Promise.all([
+        fs.promises.stat(dir),
+        fs.promises.stat(path.dirname(dir)),
+      ]);
+      return dirStat.isDirectory() && dirStat.dev !== parentStat.dev;
+    } catch {
+      return false;
+    }
+  }
 
   // 挂载/连接 SMB 共享（Windows 建立 net use 会话，macOS 挂载到临时目录）
   ipcMain.handle('smb:connectShare', async (event, payload) => {
@@ -368,46 +442,45 @@ async function start() {
 
     if (process.platform === 'win32') {
       const unc = `\\\\${host}\\${share}`;
-      // Windows: net use \\host\share pass /user:user
+      // Windows: net use \\host\share pass /user:user（按 GBK 解码错误信息）
       const args = ['use', unc];
       if (pass) args.push(pass);
       if (user) args.push(`/user:${user}`);
-      const r = await runCommand('net', args);
+      const r = await runCommand('net', args, 20000, 'gbk');
       // net use 如果已经连过可能会返回 "已建立连接" 或 code 0，尝试直接 stat unc
       try {
         await fs.promises.stat(unc);
         return { ok: true, localPath: unc };
       } catch (err) {
         if (r.ok) return { ok: true, localPath: unc };
-        return { ok: false, error: r.stderr || err.message || '连接 SMB 共享失败' };
+        return { ok: false, error: (r.stderr || err.message || '连接 SMB 共享失败').trim() };
       }
     }
 
     if (process.platform === 'darwin') {
-      const safeDirName = `${host}_${share}`.replace(/[^a-zA-Z0-9._-]/g, '_');
-      const mountDir = path.join('/tmp', 'aethervr-smb', safeDirName);
+      // 加入短哈希后缀，防止中文共享名被替换为下划线后发生目录冲突
+      const prefix = `${host}_${share}`.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 48);
+      const hash = crypto.createHash('sha1').update(`${host}\0${share}\0${user}`).digest('hex').slice(0, 10);
+      const mountDir = path.join('/tmp', 'aethervr-smb', `${prefix}_${hash}`);
       try { await fs.promises.mkdir(mountDir, { recursive: true }); } catch {}
 
-      // 检查是否已挂载
-      try {
-        const files = await fs.promises.readdir(mountDir);
-        if (files.length > 0) return { ok: true, localPath: mountDir };
-      } catch {}
+      // 只有 mountDir 确实是挂载点时才直接复用（空挂载目录不能视为已挂载）
+      if (await isMacMountPoint(mountDir)) {
+        return { ok: true, localPath: mountDir };
+      }
 
       // 构造 mount_smbfs //user:pass@host/share mountDir
       const encUser = encodeURIComponent(user);
       const encPass = encodeURIComponent(pass);
       const auth = user ? `${encUser}${pass ? ':' + encPass : ''}@` : '';
-      const smbUrl = `//${auth}${host}/${share}`;
+      const smbUrl = `//${auth}${host}/${encodeURIComponent(share)}`;
       const r = await runCommand('mount_smbfs', [smbUrl, mountDir]);
       if (!r.ok) {
-        // 如果已挂载报错，再测一次能否访问
-        try {
-          await fs.promises.stat(mountDir);
+        if (await isMacMountPoint(mountDir)) {
           return { ok: true, localPath: mountDir };
-        } catch {
-          return { ok: false, error: r.stderr || '挂载 SMB 失败' };
         }
+        try { await fs.promises.rmdir(mountDir); } catch { /* 清理空目录 */ }
+        return { ok: false, error: (r.stderr || '挂载 SMB 失败').trim() };
       }
       return { ok: true, localPath: mountDir };
     }
@@ -493,6 +566,50 @@ async function start() {
     };
   });
 
+  ipcMain.handle('app:consumePendingFiles', () => {
+    const batch = pendingOpenFiles.splice(0, pendingOpenFiles.length);
+    return batch;
+  });
+
+  // 应用菜单：Windows/Linux 移除默认调试菜单，macOS 仅保留基础应用与编辑快捷键
+  if (process.platform === 'darwin') {
+    Menu.setApplicationMenu(Menu.buildFromTemplate([
+      {
+        label: app.name,
+        submenu: [
+          { role: 'about', label: '关于 AetherVR Player' },
+          { type: 'separator' },
+          { role: 'hide', label: '隐藏' },
+          { role: 'hideOthers', label: '隐藏其他' },
+          { role: 'unhide', label: '全部显示' },
+          { type: 'separator' },
+          { role: 'quit', label: '退出' },
+        ],
+      },
+      {
+        label: '编辑',
+        submenu: [
+          { role: 'undo', label: '撤销' },
+          { role: 'redo', label: '重做' },
+          { type: 'separator' },
+          { role: 'cut', label: '剪切' },
+          { role: 'copy', label: '拷贝' },
+          { role: 'paste', label: '粘贴' },
+          { role: 'selectAll', label: '全选' },
+        ],
+      },
+      {
+        label: '窗口',
+        submenu: [
+          { role: 'minimize', label: '最小化' },
+          { role: 'close', label: '关闭窗口' },
+        ],
+      },
+    ]));
+  } else {
+    Menu.setApplicationMenu(null);
+  }
+
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -515,14 +632,20 @@ async function start() {
     try { same = new URL(url).origin === `http://127.0.0.1:${port}`; } catch { /* 非法 URL 一律拦截 */ }
     if (!same) event.preventDefault();
   });
+  mainWindow.webContents.on('did-finish-load', () => {
+    const batch = pendingOpenFiles.splice(0, pendingOpenFiles.length);
+    if (batch.length) mainWindow.webContents.send('app:openFiles', batch);
+  });
+  enqueueOpenFiles(collectOpenFilesFromArgv(process.argv.slice(1)));
   mainWindow.loadURL(`http://127.0.0.1:${port}/`);
 }
 
-// 单实例：第二个实例直接退出并聚焦已有窗口
+// 单实例：第二个实例直接退出并聚焦已有窗口，同时转发待打开的文件路径
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (event, argv) => {
+    enqueueOpenFiles(collectOpenFilesFromArgv(argv.slice(1)));
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
@@ -530,4 +653,7 @@ if (!app.requestSingleInstanceLock()) {
   });
   app.whenReady().then(start);
 }
+app.on('before-quit', () => {
+  try { serverHandle?.close?.(); } catch { /* 忽略关闭错误 */ }
+});
 app.on('window-all-closed', () => app.quit());
